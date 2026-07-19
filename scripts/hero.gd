@@ -62,6 +62,15 @@ func restore_health() -> void:
 	current_health = max_health
 	queue_redraw()
 
+func heal(amount: float) -> bool:
+	if amount <= 0.0:
+		return current_health >= max_health
+	var previous_health: float = current_health
+	current_health = minf(current_health + amount, max_health)
+	if current_health > previous_health:
+		queue_redraw()
+	return current_health >= max_health
+
 func apply_inventory_stats(move_bonus: float, health_bonus: float, attack_bonus: float, next_synergy_count: int) -> void:
 	move_speed = base_move_speed + move_bonus
 	var previous_max_health: float = max_health

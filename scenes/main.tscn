@@ -8,7 +8,7 @@ script = ExtResource("1")
 [node name="Camera2D" type="Camera2D" parent="."]
 enabled = true
 position_smoothing_enabled = true
-position_smoothing_speed = 6.0
+position_smoothing_speed = 9.0
 
 [node name="ActorLayer" type="Node2D" parent="."]
 
@@ -137,26 +137,19 @@ theme_override_constants/h_separation = 12
 theme_override_constants/separation = 12
 mouse_filter = 2
 
-[node name="LightButton" type="Button" parent="UI/BottomBar/Margin/Panel/VBox/Actions"]
-custom_minimum_size = Vector2(0, 52)
-layout_mode = 2
-size_flags_horizontal = 4
-theme_override_font_sizes/font_size = 18
-text = "Light Room"
-
-[node name="BuildButton" type="Button" parent="UI/BottomBar/Margin/Panel/VBox/Actions"]
-custom_minimum_size = Vector2(0, 52)
-layout_mode = 2
-size_flags_horizontal = 4
-theme_override_font_sizes/font_size = 18
-text = "Build"
-
 [node name="InventoryButton" type="Button" parent="UI/BottomBar/Margin/Panel/VBox/Actions"]
 custom_minimum_size = Vector2(0, 52)
 layout_mode = 2
 size_flags_horizontal = 4
 theme_override_font_sizes/font_size = 18
 text = "Inventory"
+
+[node name="HealButton" type="Button" parent="UI/BottomBar/Margin/Panel/VBox/Actions"]
+custom_minimum_size = Vector2(0, 52)
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_font_sizes/font_size = 18
+text = "Heal"
 
 [node name="RestartButton" type="Button" parent="UI/BottomBar/Margin/Panel/VBox/Actions"]
 custom_minimum_size = Vector2(0, 52)

@@ -16,23 +16,22 @@ const ENEMY_ROLE_CRYSTAL: String = "crystal"
 const ENEMY_ROLE_HUNTER: String = "hunter"
 const ENEMY_ROLE_SABOTEUR: String = "saboteur"
 const MINOR_MODULE_TURRET: String = "laser_turret"
+const MINOR_MODULE_PULSE: String = "pulse_turret"
+const MINOR_MODULE_CANNON: String = "cannon_turret"
 const MAJOR_MODULE_FOOD: String = "food"
 const MAJOR_MODULE_SCIENCE: String = "science"
 const MAJOR_MODULE_INDUSTRY: String = "industry"
-const MINOR_TURRET_COST: int = 3
 const MAJOR_MODULE_COST: int = 14
-const MINOR_MODULE_MAX_HEALTH: float = 22.0
-const MAJOR_MODULE_MAX_HEALTH: float = 46.0
-const TURRET_SHOT_COOLDOWN: float = 0.55
-const TURRET_DAMAGE: float = 11.0
+const MINOR_MODULE_MAX_HEALTH: float = 80.0
+const MAJOR_MODULE_MAX_HEALTH: float = 180.0
 const PROJECTILE_SPEED: float = 950.0
 const HERO_COUNT: int = 2
 const INVENTORY_CANVAS_SIZE: Vector2i = Vector2i(9, 8)
 const INVENTORY_BASE_ORIGIN: Vector2i = Vector2i(3, 3)
 const INVENTORY_BASE_SIZE: Vector2i = Vector2i(2, 2)
-const DOOR_REWARD_FOOD_BASE: int = 1
-const DOOR_REWARD_INDUSTRY_BASE: int = 2
-const DOOR_REWARD_SCIENCE_BASE: int = 0
+const DOOR_REWARD_FOOD_BASE: int = 4
+const DOOR_REWARD_INDUSTRY_BASE: int = 4
+const DOOR_REWARD_SCIENCE_BASE: int = 4
 const DOOR_REWARD_FOOD_MODULE: int = 2
 const DOOR_REWARD_INDUSTRY_MODULE: int = 3
 const DOOR_REWARD_SCIENCE_MODULE: int = 2
@@ -42,11 +41,20 @@ const WAVE_STAGGER_ENEMY_INTERVAL: float = 0.1
 const CRYSTAL_PRESSURE_INTERVAL: float = 6.0
 const CRYSTAL_PRESSURE_WARNING_DURATION: float = 0.65
 const CRYSTAL_PRESSURE_ENEMIES_PER_ROOM: int = 3
-const GROUND_ITEM_HOLD_DURATION: float = 0.28
-const GROUND_ITEM_HOLD_CANCEL_DISTANCE: float = 28.0
+const ROOM_ACTION_HOLD_DURATION: float = 0.28
+const ROOM_ACTION_HOLD_CANCEL_DISTANCE: float = 28.0
+const ROOM_ACTION_HOLD_VISUAL_DELAY: float = 0.09
+const ROOM_ACTION_MENU_RADIUS: float = 150.0
+const ROOM_ACTION_BUTTON_RADIUS: float = 56.0
 const GROUND_ITEM_DRAW_SCALE: float = 17.0
 const GROUND_ITEM_PICK_MIN_SIZE: float = 46.0
 const GROUND_ITEM_PICK_RADIUS: float = 34.0
+const RESOURCE_FLOAT_DURATION: float = 1.15
+const RESOURCE_FLOAT_RISE: float = 52.0
+const HEAL_FOOD_COST: int = 3
+const POST_WAVE_HEAL_RATE: float = 210.0
+const BUILD_DURATION_CALM: float = 0.9
+const BUILD_DURATION_WAVE: float = 2.4
 const LEVEL_UP_PACK_SEQUENCE: Array[Vector2i] = [
 	Vector2i(1, 2),
 	Vector2i(2, 1),
@@ -57,11 +65,12 @@ const LEVEL_UP_PACK_SEQUENCE: Array[Vector2i] = [
 const CAMERA_MIN_ZOOM: float = 0.72
 const CAMERA_MAX_ZOOM: float = 1.2
 const CAMERA_DEFAULT_ZOOM: float = 0.86
-const CAMERA_DRAG_THRESHOLD: float = 18.0
-const CAMERA_INTERACTION_COOLDOWN: float = 0.75
-const CAMERA_SOFT_FOLLOW_SPEED: float = 2.5
+const CAMERA_DRAG_THRESHOLD: float = 14.0
+const CAMERA_INTERACTION_COOLDOWN: float = 0.28
+const CAMERA_SOFT_FOLLOW_SPEED: float = 6.5
 const CAMERA_SOFT_FOLLOW_OFFSET: Vector2 = Vector2(0.0, -70.0)
 const CAMERA_BOUNDS_PADDING: Vector2 = Vector2(240.0, 220.0)
+const HERO_SELECTION_RADIUS: float = 40.0
 const CARDINAL_DIRS: Array[Vector2i] = [
 	Vector2i.LEFT,
 	Vector2i.RIGHT,
@@ -72,6 +81,8 @@ const CARDINAL_DIRS: Array[Vector2i] = [
 @onready var camera: Camera2D = $Camera2D
 @onready var actor_layer: Node2D = $ActorLayer
 @onready var enemy_layer: Node2D = $EnemyLayer
+@onready var top_bar_panel: PanelContainer = $UI/TopBar/Margin/Panel
+@onready var bottom_bar_panel: PanelContainer = $UI/BottomBar/Margin/Panel
 @onready var dust_label: Label = $UI/TopBar/Margin/Panel/HBox/DustLabel
 @onready var food_label: Label = $UI/TopBar/Margin/Panel/HBox/FoodLabel
 @onready var industry_label: Label = $UI/TopBar/Margin/Panel/HBox/IndustryLabel
@@ -81,9 +92,8 @@ const CARDINAL_DIRS: Array[Vector2i] = [
 @onready var center_button: Button = $UI/TopBar/Margin/Panel/HBox/CenterButton
 @onready var room_label: Label = $UI/BottomBar/Margin/Panel/VBox/RoomLabel
 @onready var hint_label: Label = $UI/BottomBar/Margin/Panel/VBox/HintLabel
-@onready var light_button: Button = $UI/BottomBar/Margin/Panel/VBox/Actions/LightButton
-@onready var build_button: Button = $UI/BottomBar/Margin/Panel/VBox/Actions/BuildButton
 @onready var inventory_button: Button = $UI/BottomBar/Margin/Panel/VBox/Actions/InventoryButton
+@onready var heal_button: Button = $UI/BottomBar/Margin/Panel/VBox/Actions/HealButton
 @onready var restart_button: Button = $UI/BottomBar/Margin/Panel/VBox/Actions/RestartButton
 @onready var build_menu: Control = $UI/BuildMenu
 @onready var build_menu_title: Label = $UI/BuildMenu/Panel/VBox/Title
@@ -99,6 +109,7 @@ var rooms: Dictionary = {}
 var heroes: Array = []
 var enemies: Array = []
 var projectiles: Array = []
+var floating_resource_texts: Array = []
 var pending_enemy_spawns: Array = []
 var opening_room: Vector2i = INVALID_ROOM
 var opening_origin_room: Vector2i = INVALID_ROOM
@@ -143,17 +154,21 @@ var exit_button: Button = null
 var hero_buttons: Array = []
 var inventory_overlay: Variant = null
 var inventory_session: Dictionary = {}
-var ground_item_hold: Dictionary = {}
-var pending_ground_item_pickups: Dictionary = {}
+var room_action_hold: Dictionary = {}
+var room_action_menu: Dictionary = {}
+var room_action_menu_ignore_release_once: bool = false
+var pending_room_loot_requests: Dictionary = {}
+var door_wave_auto_heal_pending: bool = false
+var door_wave_healing_active: bool = false
+var pending_room_constructions: Array = []
 var next_item_uid: int = 1
 
 func _ready() -> void:
 	rng.randomize()
 	item_defs = build_item_defs()
 	center_button.pressed.connect(_on_center_button_pressed)
-	light_button.pressed.connect(_on_light_button_pressed)
-	build_button.pressed.connect(_on_build_button_pressed)
 	inventory_button.pressed.connect(_on_inventory_button_pressed)
+	heal_button.pressed.connect(_on_heal_button_pressed)
 	turret_button.pressed.connect(_on_turret_button_pressed)
 	food_major_button.pressed.connect(_on_food_major_button_pressed)
 	science_major_button.pressed.connect(_on_science_major_button_pressed)
@@ -185,7 +200,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	if game_over:
 		return
-	advance_ground_item_hold(delta)
+	advance_room_action_hold(delta)
 	if inventory_overlay != null and inventory_overlay.visible:
 		queue_redraw()
 		return
@@ -195,9 +210,12 @@ func _physics_process(delta: float) -> void:
 	advance_crystal_pressure(delta)
 	advance_enemy_routes(delta)
 	advance_projectiles(delta)
+	advance_floating_resource_texts(delta)
+	advance_room_constructions(delta)
 	process_combat(delta)
 	process_modules(delta)
 	cleanup_enemies()
+	advance_wave_recovery(delta)
 	advance_camera(delta)
 	if crystal_health <= 0.0:
 		crystal_health = 0.0
@@ -212,6 +230,9 @@ func _draw() -> void:
 	draw_rooms()
 	draw_frontier_doors()
 	draw_projectiles()
+	draw_floating_resource_texts()
+	draw_room_action_hold()
+	draw_room_action_menu()
 
 func build_item_defs() -> Dictionary:
 	return {
@@ -271,11 +292,12 @@ func build_item_defs() -> Dictionary:
 	}
 
 func ensure_runtime_ui() -> void:
+	apply_hud_styling()
 	if hero_bar == null:
 		hero_bar = HBoxContainer.new()
 		hero_bar.add_theme_constant_override("separation", 6)
-		$UI/TopBar/Margin/Panel/HBox.add_child(hero_bar)
-		$UI/TopBar/Margin/Panel/HBox.move_child(hero_bar, $UI/TopBar/Margin/Panel/HBox.get_child_count() - 1)
+		top_bar_panel.get_node("HBox").add_child(hero_bar)
+		top_bar_panel.get_node("HBox").move_child(hero_bar, top_bar_panel.get_node("HBox").get_child_count() - 1)
 	if crystal_action_button == null:
 		crystal_action_button = Button.new()
 		crystal_action_button.visible = false
@@ -310,6 +332,18 @@ func ensure_runtime_ui() -> void:
 		inventory_overlay.level_up_requested.connect(_on_inventory_level_up_requested)
 		inventory_overlay.item_dropped.connect(_on_inventory_item_dropped)
 
+func apply_hud_styling() -> void:
+	var bottom_style: StyleBoxEmpty = StyleBoxEmpty.new()
+	bottom_bar_panel.add_theme_stylebox_override("panel", bottom_style)
+	room_label.add_theme_color_override("font_color", Color(0.93, 0.96, 1.0, 0.95))
+	hint_label.add_theme_color_override("font_color", Color(0.82, 0.90, 0.95, 0.88))
+	dust_label.add_theme_color_override("font_color", Color("f3d88f"))
+	food_label.add_theme_color_override("font_color", Color("9ee28b"))
+	industry_label.add_theme_color_override("font_color", Color("f1c26b"))
+	science_label.add_theme_color_override("font_color", Color("8bc1ff"))
+	crystal_label.add_theme_color_override("font_color", Color("f6e3a4"))
+	wave_label.add_theme_color_override("font_color", Color("d6e4ee"))
+
 func rebuild_hero_bar() -> void:
 	if hero_bar == null:
 		return
@@ -334,7 +368,9 @@ func build_dungeon(reset_resources: bool = true) -> void:
 	clear_floor_actors()
 	rooms.clear()
 	projectiles.clear()
+	floating_resource_texts.clear()
 	pending_enemy_spawns.clear()
+	pending_room_constructions.clear()
 	build_menu_open = false
 	pending_build_type = ""
 	opened_rooms = 1
@@ -345,10 +381,14 @@ func build_dungeon(reset_resources: bool = true) -> void:
 	crystal_ground_room = crystal_room
 	crystal_prompt_visible = false
 	crystal_pressure_timer_left = 0.0
+	door_wave_auto_heal_pending = false
+	door_wave_healing_active = false
 	opening_room = INVALID_ROOM
 	opening_origin_room = INVALID_ROOM
 	opening_hero = null
 	opening_timer_left = 0.0
+	room_action_hold.clear()
+	room_action_menu.clear()
 	if reset_resources:
 		floor_index = 1
 		dust = 4
@@ -363,6 +403,7 @@ func build_dungeon(reset_resources: bool = true) -> void:
 	crystal["crystal"] = true
 	crystal["minor_slots"] = 0
 	crystal["major_slots"] = 0
+	crystal["major_under_construction"] = false
 	var target_room_count: int = 12
 	var layout_attempts: int = 0
 	while rooms.size() < target_room_count and layout_attempts < 800:
@@ -383,7 +424,9 @@ func build_dungeon(reset_resources: bool = true) -> void:
 	refresh_camera_bounds()
 
 func clear_floor_actors() -> void:
-	pending_ground_item_pickups.clear()
+	pending_room_loot_requests.clear()
+	pending_room_constructions.clear()
+	floating_resource_texts.clear()
 	for hero in heroes:
 		if is_instance_valid(hero):
 			hero.queue_free()
@@ -463,6 +506,7 @@ func create_room(room_coord: Vector2i, template_id: String, door_dirs: Array) ->
 		"minor_modules": [],
 		"major_module_type": "",
 		"major_health": 0.0,
+		"major_under_construction": false,
 		"warning_timer_left": 0.0,
 		"ground_items": [],
 	}
@@ -699,6 +743,19 @@ func find_ground_item_index(room_coord: Vector2i, item_uid: int) -> int:
 			return item_index
 	return -1
 
+func prepare_ground_items_for_room(room_coord: Vector2i, ground_items: Array) -> Array:
+	var prepared_items: Array = []
+	for item_index in range(ground_items.size()):
+		var ground_item: Dictionary = (ground_items[item_index] as Dictionary).duplicate(true)
+		ground_item.erase("anchor")
+		if not ground_item.has("uid"):
+			ground_item["uid"] = next_item_uid
+			next_item_uid += 1
+		var fallback_position: Vector2 = room_center(room_coord) + random_room_offset(70.0 + float(item_index) * 20.0)
+		ground_item["position"] = clamp_point_to_room(Vector2(ground_item.get("position", fallback_position)), room_coord)
+		prepared_items.append(ground_item)
+	return prepared_items
+
 func inventory_base_cells() -> Array:
 	var cells: Array = []
 	for offset_y in range(INVENTORY_BASE_SIZE.y):
@@ -892,53 +949,51 @@ func apply_inventory_stats_to_hero(hero: Variant) -> void:
 		hero_profiles[hero.hero_index]["pack_modules"] = hero.pack_modules.duplicate(true)
 		hero_profiles[hero.hero_index]["inventory_items"] = hero.inventory_items.duplicate(true)
 
-func open_inventory_for_ground_item(hero: Variant, room_coord: Vector2i, item_uid: int, screen_position: Vector2, auto_drag_pending: bool = true) -> void:
-	var item_index: int = find_ground_item_index(room_coord, item_uid)
-	if item_index < 0:
+func open_room_loot_inventory(hero: Variant, room_coord: Vector2i) -> void:
+	if hero == null or not is_instance_valid(hero) or not rooms.has(room_coord):
 		return
-	var pending_item: Dictionary = rooms[room_coord]["ground_items"][item_index].duplicate(true)
-	clear_pending_ground_item_pickup(hero.hero_index)
-	open_hero_inventory(hero, pending_item, room_coord, item_uid, screen_position, auto_drag_pending)
+	clear_pending_room_loot_request(hero.hero_index)
+	open_hero_inventory(hero, room_coord)
 
-func open_hero_inventory(hero: Variant, pending_item: Dictionary = {}, room_coord: Vector2i = INVALID_ROOM, item_uid: int = -1, screen_position: Vector2 = Vector2.ZERO, auto_drag_pending: bool = false) -> void:
+func open_hero_inventory(hero: Variant, room_coord: Vector2i = INVALID_ROOM) -> void:
 	if hero == null or not is_instance_valid(hero):
 		return
 	build_menu_open = false
 	clear_build_mode()
 	crystal_prompt_visible = false
+	room_action_menu.clear()
+	var ground_items: Array = []
+	var loot_enabled: bool = rooms.has(room_coord)
+	if loot_enabled:
+		for ground_item_variant in rooms[room_coord]["ground_items"]:
+			ground_items.append((ground_item_variant as Dictionary).duplicate(true))
 	inventory_session = {
 		"hero_index": hero.hero_index,
 		"room": room_coord,
-		"item_uid": item_uid,
 	}
-	inventory_overlay.configure(hero.hero_name, hero.level, food, level_up_food_cost(hero.level), hero_can_level_up(hero), build_inventory_stat_lines(hero, hero.inventory_items), hero.inventory_canvas_size, hero.base_inventory_origin, hero.base_inventory_size, hero.pack_modules, item_defs, hero.inventory_items, pending_item)
-	if auto_drag_pending:
-		inventory_overlay.begin_pending_drag(screen_position)
+	inventory_overlay.configure(hero.hero_name, hero.level, food, level_up_food_cost(hero.level), hero_can_level_up(hero), build_inventory_stat_lines(hero, hero.inventory_items), hero.inventory_canvas_size, hero.base_inventory_origin, hero.base_inventory_size, hero.pack_modules, item_defs, hero.inventory_items, ground_items, loot_enabled)
 	status_message = "Inventory open for %s." % hero.hero_name
 	mouse_pressed = false
 	mouse_dragging = false
 	touch_points.clear()
 	active_touch_id = -1
-	clear_ground_item_hold()
+	room_action_hold.clear()
 	update_hud()
 
-func clear_inventory_session(commit_pending_item: bool) -> void:
+func clear_inventory_session(_commit_pending_item: bool) -> void:
 	if inventory_session.is_empty():
 		if inventory_overlay != null:
 			inventory_overlay.hide_overlay()
 		return
 	var hero_index: int = int(inventory_session.get("hero_index", -1))
 	var room_coord: Vector2i = inventory_session.get("room", INVALID_ROOM)
-	var item_uid: int = int(inventory_session.get("item_uid", -1))
 	if hero_index >= 0 and hero_index < heroes.size():
 		var hero: Variant = heroes[hero_index]
 		if is_instance_valid(hero) and inventory_overlay != null:
 			hero.inventory_items = inventory_overlay.get_inventory_items()
 			apply_inventory_stats_to_hero(hero)
-	if commit_pending_item and rooms.has(room_coord):
-		var item_index: int = find_ground_item_index(room_coord, item_uid)
-		if item_index >= 0 and inventory_overlay != null and inventory_overlay.pending_consumed():
-			rooms[room_coord]["ground_items"].remove_at(item_index)
+	if rooms.has(room_coord) and inventory_overlay != null:
+		rooms[room_coord]["ground_items"] = prepare_ground_items_for_room(room_coord, inventory_overlay.get_ground_items())
 	if inventory_overlay != null:
 		inventory_overlay.hide_overlay()
 	inventory_session.clear()
@@ -1067,90 +1122,87 @@ func handle_inventory_input(event: InputEvent) -> void:
 	elif event is InputEventMouseMotion:
 		inventory_overlay.pointer_move(event.position)
 
-func clear_ground_item_hold() -> void:
-	ground_item_hold.clear()
-
-func clear_pending_ground_item_pickup(hero_index: int = -1) -> void:
+func clear_pending_room_loot_request(hero_index: int = -1) -> void:
 	if hero_index < 0:
-		pending_ground_item_pickups.clear()
+		pending_room_loot_requests.clear()
 		return
-	pending_ground_item_pickups.erase(hero_index)
+	pending_room_loot_requests.erase(hero_index)
 
-func try_open_pending_ground_item_pickup(hero: Variant) -> bool:
+func try_open_pending_room_loot_request(hero: Variant) -> bool:
 	if hero == null or not is_instance_valid(hero):
 		return false
 	if inventory_overlay != null and inventory_overlay.visible:
 		return false
-	if not pending_ground_item_pickups.has(hero.hero_index):
+	if not pending_room_loot_requests.has(hero.hero_index):
 		return false
 	if hero.pending_room != Hero.INVALID_ROOM or not hero.is_idle() or not hero.move_steps.is_empty():
 		return false
-	var pickup_request: Dictionary = pending_ground_item_pickups[hero.hero_index]
-	var room_coord: Vector2i = pickup_request.get("room", INVALID_ROOM)
-	var item_uid: int = int(pickup_request.get("item_uid", -1))
+	var loot_request: Dictionary = pending_room_loot_requests[hero.hero_index]
+	var room_coord: Vector2i = loot_request.get("room", INVALID_ROOM)
 	if hero.current_room != room_coord:
 		return false
-	if find_ground_item_index(room_coord, item_uid) < 0:
-		clear_pending_ground_item_pickup(hero.hero_index)
-		status_message = "That loot is no longer available."
-		update_hud()
-		return true
-	open_inventory_for_ground_item(hero, room_coord, item_uid, Vector2.ZERO, false)
+	clear_pending_room_loot_request(hero.hero_index)
+	open_room_loot_inventory(hero, room_coord)
 	return true
 
-func begin_ground_item_hold(pointer_kind: String, pointer_id: int, screen_position: Vector2) -> void:
-	var ground_item: Dictionary = ground_item_at_world_position(screen_to_world(screen_position))
-	if ground_item.is_empty():
-		clear_ground_item_hold()
+func clear_room_action_hold() -> void:
+	room_action_hold.clear()
+
+func close_room_action_menu() -> void:
+	room_action_menu.clear()
+	room_action_menu_ignore_release_once = false
+
+func room_action_target_at_screen_position(screen_position: Vector2) -> Vector2i:
+	var world_position: Vector2 = screen_to_world(screen_position)
+	for hero in heroes:
+		if is_instance_valid(hero) and hero.global_position.distance_to(world_position) <= HERO_SELECTION_RADIUS:
+			return INVALID_ROOM
+	if crystal_holder == null and crystal_ground_room != INVALID_ROOM and is_exit_discovered() and crystal_world_position().distance_to(world_position) <= 40.0:
+		return INVALID_ROOM
+	var tapped_room: Vector2i = room_at_world_position(world_position)
+	if tapped_room == INVALID_ROOM or not rooms.has(tapped_room) or not rooms[tapped_room]["opened"]:
+		return INVALID_ROOM
+	return tapped_room
+
+func begin_room_action_hold(pointer_kind: String, pointer_id: int, screen_position: Vector2) -> void:
+	var room_coord: Vector2i = room_action_target_at_screen_position(screen_position)
+	if room_coord == INVALID_ROOM:
+		clear_room_action_hold()
 		return
-	ground_item_hold = {
+	room_action_hold = {
 		"pointer_kind": pointer_kind,
 		"pointer_id": pointer_id,
 		"start_screen": screen_position,
 		"current_screen": screen_position,
 		"elapsed": 0.0,
-		"room": ground_item["room"],
-		"item_uid": int(ground_item["item"]["uid"]),
+		"room": room_coord,
 	}
 
-func advance_ground_item_hold(delta: float) -> void:
-	if ground_item_hold.is_empty() or inventory_overlay != null and inventory_overlay.visible:
+func advance_room_action_hold(delta: float) -> void:
+	if room_action_hold.is_empty() or inventory_overlay != null and inventory_overlay.visible or not room_action_menu.is_empty():
 		return
-	ground_item_hold["elapsed"] = float(ground_item_hold["elapsed"]) + delta
-	if float(ground_item_hold["elapsed"]) < GROUND_ITEM_HOLD_DURATION:
+	room_action_hold["elapsed"] = float(room_action_hold["elapsed"]) + delta
+	if float(room_action_hold["elapsed"]) < ROOM_ACTION_HOLD_DURATION:
 		return
-	var item_uid: int = int(ground_item_hold["item_uid"])
-	var room_coord: Vector2i = ground_item_hold["room"]
-	var screen_position: Vector2 = ground_item_hold["current_screen"]
-	clear_ground_item_hold()
-	var hero: Variant = selected_hero()
-	if hero == null:
-		return
-	var command_room: Vector2i = interrupt_hero_orders(hero)
-	if command_room == room_coord:
-		open_inventory_for_ground_item(hero, room_coord, item_uid, screen_position, true)
-		return
-	var item_index: int = find_ground_item_index(room_coord, item_uid)
-	if item_index < 0:
-		status_message = "That loot is no longer available."
-		update_hud()
-		return
-	var item_position: Vector2 = rooms[room_coord]["ground_items"][item_index]["position"]
-	var path: Array[Vector2i] = find_path(command_room, room_coord, true)
-	if path.size() <= 1:
-		status_message = "No open route to that loot."
-		update_hud()
-		return
-	pending_ground_item_pickups[hero.hero_index] = {
-		"room": room_coord,
-		"item_uid": item_uid,
-	}
-	issue_hero_steps(hero, build_steps_for_path(path, item_position))
-	status_message = "%s moving to pick up loot in %s." % [hero.hero_name, room_title(room_coord)]
+	open_room_action_menu(room_action_hold["room"], room_action_hold["current_screen"])
+	clear_room_action_hold()
 	update_hud()
 
 func handle_screen_touch(event: InputEventScreenTouch) -> void:
 	mark_camera_interaction()
+	if event.pressed and not room_action_menu.is_empty():
+		return
+	if not event.pressed and not room_action_menu.is_empty():
+		touch_points.erase(event.index)
+		if event.index == active_touch_id:
+			active_touch_id = -1
+			touch_dragging = false
+			pinch_active = false
+		if room_action_menu_ignore_release_once:
+			room_action_menu_ignore_release_once = false
+			return
+		handle_room_action_menu_tap(event.position)
+		return
 	if event.pressed:
 		touch_points[event.index] = event.position
 		if touch_points.size() == 1:
@@ -1158,16 +1210,16 @@ func handle_screen_touch(event: InputEventScreenTouch) -> void:
 			touch_start_screen = event.position
 			touch_dragging = false
 			pinch_active = false
-			begin_ground_item_hold("touch", event.index, event.position)
+			begin_room_action_hold("touch", event.index, event.position)
 		elif touch_points.size() >= 2:
 			begin_pinch_gesture()
-			clear_ground_item_hold()
+			clear_room_action_hold()
 		return
 	var released_position: Vector2 = event.position
 	var should_tap: bool = event.index == active_touch_id and not touch_dragging and not pinch_active
 	touch_points.erase(event.index)
-	if not ground_item_hold.is_empty() and ground_item_hold["pointer_kind"] == "touch" and int(ground_item_hold["pointer_id"]) == event.index:
-		clear_ground_item_hold()
+	if not room_action_hold.is_empty() and room_action_hold["pointer_kind"] == "touch" and int(room_action_hold["pointer_id"]) == event.index:
+		clear_room_action_hold()
 	if should_tap:
 		handle_world_tap(screen_to_world(released_position), released_position)
 	if touch_points.size() == 1:
@@ -1182,12 +1234,14 @@ func handle_screen_touch(event: InputEventScreenTouch) -> void:
 		pinch_active = false
 
 func handle_screen_drag(event: InputEventScreenDrag) -> void:
+	if not room_action_menu.is_empty():
+		return
 	touch_points[event.index] = event.position
 	mark_camera_interaction()
-	if not ground_item_hold.is_empty() and ground_item_hold["pointer_kind"] == "touch" and int(ground_item_hold["pointer_id"]) == event.index:
-		ground_item_hold["current_screen"] = event.position
-		if event.position.distance_to(Vector2(ground_item_hold["start_screen"])) > GROUND_ITEM_HOLD_CANCEL_DISTANCE:
-			clear_ground_item_hold()
+	if not room_action_hold.is_empty() and room_action_hold["pointer_kind"] == "touch" and int(room_action_hold["pointer_id"]) == event.index:
+		room_action_hold["current_screen"] = event.position
+		if event.position.distance_to(Vector2(room_action_hold["start_screen"])) > ROOM_ACTION_HOLD_CANCEL_DISTANCE:
+			clear_room_action_hold()
 	if touch_points.size() >= 2:
 		update_pinch_gesture()
 		touch_dragging = true
@@ -1247,27 +1301,41 @@ func handle_mouse_button(event: InputEventMouseButton) -> void:
 		return
 	if event.button_index != MOUSE_BUTTON_LEFT:
 		return
+	if event.pressed and not room_action_menu.is_empty():
+		return
+	if not event.pressed and not room_action_menu.is_empty():
+		if room_action_menu_ignore_release_once:
+			room_action_menu_ignore_release_once = false
+			mouse_pressed = false
+			mouse_dragging = false
+			return
+		handle_room_action_menu_tap(event.position)
+		mouse_pressed = false
+		mouse_dragging = false
+		return
 	if event.pressed:
 		mouse_pressed = true
 		mouse_dragging = false
 		mouse_press_screen = event.position
 		mark_camera_interaction()
-		begin_ground_item_hold("mouse", 0, event.position)
+		begin_room_action_hold("mouse", 0, event.position)
 	else:
 		var should_tap: bool = mouse_pressed and not mouse_dragging
 		mouse_pressed = false
-		if not ground_item_hold.is_empty() and ground_item_hold["pointer_kind"] == "mouse":
-			clear_ground_item_hold()
+		if not room_action_hold.is_empty() and room_action_hold["pointer_kind"] == "mouse":
+			clear_room_action_hold()
 		if should_tap:
 			handle_world_tap(screen_to_world(event.position), event.position)
 
 func handle_mouse_motion(event: InputEventMouseMotion) -> void:
 	if not mouse_pressed or not touch_points.is_empty():
 		return
-	if not ground_item_hold.is_empty() and ground_item_hold["pointer_kind"] == "mouse":
-		ground_item_hold["current_screen"] = event.position
-		if event.position.distance_to(Vector2(ground_item_hold["start_screen"])) > GROUND_ITEM_HOLD_CANCEL_DISTANCE:
-			clear_ground_item_hold()
+	if not room_action_menu.is_empty():
+		return
+	if not room_action_hold.is_empty() and room_action_hold["pointer_kind"] == "mouse":
+		room_action_hold["current_screen"] = event.position
+		if event.position.distance_to(Vector2(room_action_hold["start_screen"])) > ROOM_ACTION_HOLD_CANCEL_DISTANCE:
+			clear_room_action_hold()
 	if not mouse_dragging and event.position.distance_to(mouse_press_screen) > CAMERA_DRAG_THRESHOLD:
 		mouse_dragging = true
 	if mouse_dragging:
@@ -1280,7 +1348,7 @@ func try_select_hero_at_position(world_position: Vector2) -> bool:
 		var hero: Variant = heroes[hero_index]
 		if not is_instance_valid(hero):
 			continue
-		if hero.global_position.distance_to(world_position) <= 28.0:
+		if hero.global_position.distance_to(world_position) <= HERO_SELECTION_RADIUS:
 			select_hero_by_index(hero_index)
 			selected_room = active_hero_room_for_commands(hero)
 			return true
@@ -1318,6 +1386,10 @@ func drop_crystal(room_coord: Vector2i) -> void:
 	crystal_pressure_timer_left = 0.0
 
 func handle_world_tap(world_position: Vector2, screen_position: Vector2) -> void:
+	if not room_action_menu.is_empty():
+		close_room_action_menu()
+		queue_redraw()
+		return
 	var build_target_tap: bool = is_valid_build_target_tap(world_position)
 	if build_menu_open or pending_build_type != "":
 		var tapping_build_menu: bool = build_menu_contains_screen_position(screen_position)
@@ -1388,6 +1460,191 @@ func handle_world_tap(world_position: Vector2, screen_position: Vector2) -> void
 		status_message = "%s moving to %s." % [hero.hero_name, room_title(tapped_room)]
 	update_hud()
 
+func open_room_action_menu(room_coord: Vector2i, screen_position: Vector2) -> void:
+	if room_coord == INVALID_ROOM or not rooms.has(room_coord) or not rooms[room_coord]["opened"]:
+		return
+	selected_room = room_coord
+	build_menu_open = false
+	clear_build_mode()
+	room_action_menu_ignore_release_once = true
+	room_action_menu = {
+		"room": room_coord,
+		"screen_position": screen_position,
+		"mode": "root",
+	}
+	status_message = "Room actions for %s." % room_title(room_coord)
+	queue_redraw()
+
+func room_action_button_layout() -> Array:
+	var mode: String = String(room_action_menu.get("mode", "root"))
+	match mode:
+		"build_kind":
+			return [
+				{"id": "build_minor_menu", "label": "Minor", "angle": -3.08, "fill": Color("9bd8ff")},
+				{"id": "build_major_menu", "label": "Major", "angle": -2.42, "fill": Color("f6c983")},
+				{"id": "submenu_back", "label": "Back", "angle": -1.76, "fill": Color("d7dfeb")},
+			]
+		"build_minor":
+			return [
+				{"id": "build_minor_turret", "label": "Laser", "angle": -3.12, "fill": Color("89f2ff")},
+				{"id": "build_minor_pulse", "label": "Pulse", "angle": -2.62, "fill": Color("ff8ce1")},
+				{"id": "build_minor_cannon", "label": "Cannon", "angle": -2.12, "fill": Color("ffbf73")},
+				{"id": "submenu_back_build", "label": "Back", "angle": -1.60, "fill": Color("d7dfeb")},
+			]
+		"build_major":
+			return [
+				{"id": "build_major_food", "label": "Food", "angle": -3.10, "fill": Color("8ee28a")},
+				{"id": "build_major_science", "label": "Science", "angle": -2.58, "fill": Color("8bc1ff")},
+				{"id": "build_major_industry", "label": "Industry", "angle": -2.06, "fill": Color("f1c26b")},
+				{"id": "submenu_back_build", "label": "Back", "angle": -1.54, "fill": Color("d7dfeb")},
+			]
+		_:
+			return [
+				{"id": "loot", "label": "Loot", "angle": -3.08, "fill": Color("a6efba")},
+				{"id": "build_menu", "label": "Build", "angle": -2.42, "fill": Color("91d1ff")},
+				{"id": "light", "label": "Light", "angle": -1.76, "fill": Color("f3d88f")},
+			]
+
+func room_action_button_screen_center(button_data: Dictionary) -> Vector2:
+	var menu_center: Vector2 = Vector2(room_action_menu.get("screen_position", Vector2.ZERO))
+	var angle: float = float(button_data.get("angle", 0.0))
+	return menu_center + Vector2(cos(angle), sin(angle)) * ROOM_ACTION_MENU_RADIUS
+
+func room_action_button_at_screen_position(screen_position: Vector2) -> String:
+	if room_action_menu.is_empty():
+		return ""
+	for button_data_variant in room_action_button_layout():
+		var button_data: Dictionary = button_data_variant
+		if room_action_button_screen_center(button_data).distance_to(screen_position) <= ROOM_ACTION_BUTTON_RADIUS:
+			return String(button_data.get("id", ""))
+	return ""
+
+func handle_room_action_menu_tap(screen_position: Vector2) -> void:
+	var action_id: String = room_action_button_at_screen_position(screen_position)
+	if action_id == "":
+		close_room_action_menu()
+		queue_redraw()
+		return
+	perform_room_action(room_action_menu.get("room", INVALID_ROOM), action_id)
+
+func perform_room_action(room_coord: Vector2i, action_id: String) -> void:
+	if room_coord == INVALID_ROOM or not rooms.has(room_coord):
+		return
+	if not room_action_enabled(room_coord, action_id):
+		status_message = "That action is unavailable for %s." % room_title(room_coord)
+		update_hud()
+		queue_redraw()
+		return
+	selected_room = room_coord
+	match action_id:
+		"build_menu":
+			room_action_menu["mode"] = "build_kind"
+			status_message = "Choose a build category for %s." % room_title(room_coord)
+			update_hud()
+			queue_redraw()
+		"build_minor_menu":
+			room_action_menu["mode"] = "build_minor"
+			status_message = "Choose a minor module for %s." % room_title(room_coord)
+			update_hud()
+			queue_redraw()
+		"build_major_menu":
+			room_action_menu["mode"] = "build_major"
+			status_message = "Choose a major module for %s." % room_title(room_coord)
+			update_hud()
+			queue_redraw()
+		"submenu_back":
+			room_action_menu["mode"] = "root"
+			status_message = "Room actions for %s." % room_title(room_coord)
+			update_hud()
+			queue_redraw()
+		"submenu_back_build":
+			room_action_menu["mode"] = "build_kind"
+			status_message = "Choose a build category for %s." % room_title(room_coord)
+			update_hud()
+			queue_redraw()
+		"light":
+			close_room_action_menu()
+			toggle_room_light(room_coord)
+		"loot":
+			close_room_action_menu()
+			request_room_loot(room_coord)
+		"build_minor_turret":
+			close_room_action_menu()
+			queue_room_construction(room_coord, MINOR_MODULE_TURRET)
+		"build_minor_pulse":
+			close_room_action_menu()
+			queue_room_construction(room_coord, MINOR_MODULE_PULSE)
+		"build_minor_cannon":
+			close_room_action_menu()
+			queue_room_construction(room_coord, MINOR_MODULE_CANNON)
+		"build_major_food":
+			close_room_action_menu()
+			queue_room_construction(room_coord, MAJOR_MODULE_FOOD)
+		"build_major_science":
+			close_room_action_menu()
+			queue_room_construction(room_coord, MAJOR_MODULE_SCIENCE)
+		"build_major_industry":
+			close_room_action_menu()
+			queue_room_construction(room_coord, MAJOR_MODULE_INDUSTRY)
+
+func request_room_loot(room_coord: Vector2i) -> void:
+	var hero: Variant = selected_hero()
+	if hero == null:
+		return
+	if not rooms.has(room_coord) or not rooms[room_coord]["opened"]:
+		return
+	var command_room: Vector2i = interrupt_hero_orders(hero)
+	if command_room == room_coord:
+		open_room_loot_inventory(hero, room_coord)
+		return
+	var path: Array[Vector2i] = find_path(command_room, room_coord, true)
+	if path.size() <= 1:
+		status_message = "No open route to that room's loot."
+		update_hud()
+		queue_redraw()
+		return
+	pending_room_loot_requests[hero.hero_index] = {
+		"room": room_coord,
+	}
+	issue_hero_steps(hero, build_steps_for_path(path, loot_focus_position(room_coord)))
+	status_message = "%s moving to loot %s." % [hero.hero_name, room_title(room_coord)]
+	update_hud()
+	queue_redraw()
+
+func loot_focus_position(room_coord: Vector2i) -> Vector2:
+	if rooms.has(room_coord) and not rooms[room_coord]["ground_items"].is_empty():
+		return clamp_point_to_room(Vector2(rooms[room_coord]["ground_items"][0]["position"]), room_coord)
+	return room_center(room_coord)
+
+func room_action_enabled(room_coord: Vector2i, action_id: String) -> bool:
+	match action_id:
+		"light":
+			return can_toggle_light(room_coord)
+		"build_menu":
+			return can_open_build_for_room(room_coord)
+		"build_minor_menu":
+			return can_open_build_for_room(room_coord)
+		"build_major_menu":
+			return can_open_build_for_room(room_coord)
+		"build_minor_turret":
+			return can_build_or_repair_turret(room_coord)
+		"build_minor_pulse":
+			return can_build_or_repair_turret(room_coord)
+		"build_minor_cannon":
+			return can_build_or_repair_turret(room_coord)
+		"build_major_food":
+			return can_build_or_repair_major(room_coord, MAJOR_MODULE_FOOD)
+		"build_major_science":
+			return can_build_or_repair_major(room_coord, MAJOR_MODULE_SCIENCE)
+		"build_major_industry":
+			return can_build_or_repair_major(room_coord, MAJOR_MODULE_INDUSTRY)
+		"submenu_back", "submenu_back_build":
+			return true
+		"loot":
+			return rooms.has(room_coord) and rooms[room_coord]["opened"]
+		_:
+			return false
+
 func build_menu_contains_screen_position(screen_position: Vector2) -> bool:
 	return build_menu.visible and build_menu.get_global_rect().has_point(screen_position)
 
@@ -1445,13 +1702,19 @@ func open_room(room_coord: Vector2i) -> void:
 	food += int(door_reward["food"])
 	industry += int(door_reward["industry"])
 	science += int(door_reward["science"])
+	var dust_reward: int = 0
 	if rng.randf() < 0.35:
 		dust += 1
+		dust_reward = 1
 	if room_coord != crystal_room:
 		spawn_ground_loot(room_coord)
+	spawn_door_reward_texts(room_coord, door_reward, dust_reward)
 	refresh_camera_bounds()
+	door_wave_auto_heal_pending = true
 	launch_wave(room_coord)
 	status_message = "Opened %s. +%d food, +%d industry, +%d science." % [room_title(room_coord), int(door_reward["food"]), int(door_reward["industry"]), int(door_reward["science"])]
+	if dust_reward > 0:
+		status_message += " +1 dust."
 	if room_coord == exit_room:
 		status_message += " Exit discovered."
 
@@ -1466,19 +1729,63 @@ func calculate_door_rewards() -> Dictionary:
 			continue
 		match String(room["major_module_type"]):
 			MAJOR_MODULE_FOOD:
-				if float(room["major_health"]) > 0.0:
+				if float(room["major_health"]) > 0.0 and not bool(room.get("major_under_construction", false)):
 					food_reward += DOOR_REWARD_FOOD_MODULE
 			MAJOR_MODULE_SCIENCE:
-				if float(room["major_health"]) > 0.0:
+				if float(room["major_health"]) > 0.0 and not bool(room.get("major_under_construction", false)):
 					science_reward += DOOR_REWARD_SCIENCE_MODULE
 			MAJOR_MODULE_INDUSTRY:
-				if float(room["major_health"]) > 0.0:
+				if float(room["major_health"]) > 0.0 and not bool(room.get("major_under_construction", false)):
 					industry_reward += DOOR_REWARD_INDUSTRY_MODULE
 	return {
 		"food": food_reward,
 		"industry": industry_reward,
 		"science": science_reward,
 	}
+
+func spawn_door_reward_texts(room_coord: Vector2i, door_reward: Dictionary, dust_reward: int) -> void:
+	var popup_entries: Array = [
+		{"text": "+%d Food" % int(door_reward.get("food", 0)), "color": Color("9ee28b"), "offset": Vector2(-84.0, -14.0)},
+		{"text": "+%d Ind" % int(door_reward.get("industry", 0)), "color": Color("f1c26b"), "offset": Vector2(0.0, -30.0)},
+		{"text": "+%d Sci" % int(door_reward.get("science", 0)), "color": Color("8bc1ff"), "offset": Vector2(84.0, -14.0)},
+	]
+	if dust_reward > 0:
+		popup_entries.append({"text": "+%d Dust" % dust_reward, "color": Color("f3d88f"), "offset": Vector2(0.0, 12.0)})
+	var anchor: Vector2 = room_center(room_coord)
+	for popup_entry_variant in popup_entries:
+		var popup_entry: Dictionary = popup_entry_variant
+		add_resource_floating_text(anchor + Vector2(popup_entry.get("offset", Vector2.ZERO)), String(popup_entry.get("text", "")), popup_entry.get("color", Color.WHITE))
+
+func add_resource_floating_text(world_position: Vector2, popup_text: String, popup_color: Color) -> void:
+	floating_resource_texts.append({
+		"position": world_position,
+		"text": popup_text,
+		"color": popup_color,
+		"timer_left": RESOURCE_FLOAT_DURATION,
+	})
+
+func advance_floating_resource_texts(delta: float) -> void:
+	var active_popups: Array = []
+	for popup_variant in floating_resource_texts:
+		var popup: Dictionary = popup_variant
+		popup["timer_left"] = maxf(float(popup.get("timer_left", 0.0)) - delta, 0.0)
+		if float(popup["timer_left"]) > 0.0:
+			active_popups.append(popup)
+	floating_resource_texts = active_popups
+
+func draw_floating_resource_texts() -> void:
+	for popup_variant in floating_resource_texts:
+		var popup: Dictionary = popup_variant
+		var duration: float = maxf(RESOURCE_FLOAT_DURATION, 0.001)
+		var life_ratio: float = clampf(1.0 - (float(popup.get("timer_left", 0.0)) / duration), 0.0, 1.0)
+		var rise_ratio: float = 1.0 - pow(1.0 - life_ratio, 2.0)
+		var fade_ratio: float = clampf(1.0 - maxf(life_ratio - 0.45, 0.0) / 0.55, 0.0, 1.0)
+		var popup_position: Vector2 = Vector2(popup.get("position", Vector2.ZERO)) + Vector2(0.0, -RESOURCE_FLOAT_RISE * rise_ratio)
+		var popup_color: Color = popup.get("color", Color.WHITE)
+		popup_color.a = 0.22 + 0.78 * fade_ratio
+		var shadow_color: Color = Color(0.02, 0.06, 0.08, 0.55 * fade_ratio)
+		draw_string(ThemeDB.fallback_font, popup_position + Vector2(2.0, 2.0), String(popup.get("text", "")), HORIZONTAL_ALIGNMENT_CENTER, 110.0, 20, shadow_color)
+		draw_string(ThemeDB.fallback_font, popup_position, String(popup.get("text", "")), HORIZONTAL_ALIGNMENT_CENTER, 110.0, 20, popup_color)
 
 func launch_wave(entered_room: Vector2i) -> void:
 	var dark_rooms: Array[Vector2i] = []
@@ -1489,6 +1796,8 @@ func launch_wave(entered_room: Vector2i) -> void:
 			continue
 		dark_rooms.append(room_coord)
 	if dark_rooms.is_empty():
+		door_wave_auto_heal_pending = false
+		door_wave_healing_active = true
 		status_message = "Opened a lit frontier. No dark room was available for a wave."
 		update_hud()
 		return
@@ -1627,7 +1936,7 @@ func active_hero_room_for_commands(hero: Variant) -> Vector2i:
 
 func interrupt_hero_orders(hero: Variant) -> Vector2i:
 	var command_room: Vector2i = active_hero_room_for_commands(hero)
-	clear_pending_ground_item_pickup(hero.hero_index)
+	clear_pending_room_loot_request(hero.hero_index)
 	hero.move_steps.clear()
 	hero.pending_open_room = Hero.INVALID_ROOM
 	hero.pending_open_origin_room = Hero.INVALID_ROOM
@@ -1663,7 +1972,7 @@ func advance_hero_movement() -> void:
 	for hero in heroes:
 		if not is_instance_valid(hero):
 			continue
-		if try_open_pending_ground_item_pickup(hero):
+		if try_open_pending_room_loot_request(hero):
 			continue
 		if hero.pending_room != Hero.INVALID_ROOM:
 			if hero.is_idle():
@@ -1794,7 +2103,7 @@ func module_target_position(room_coord: Vector2i, origin: Vector2) -> Vector2:
 		candidates.append(major_slot_position(room_coord))
 	var slot_positions: Array = minor_slot_positions(room_coord)
 	for module_data in room["minor_modules"]:
-		if String(module_data["type"]) != MINOR_MODULE_TURRET or float(module_data["health"]) <= 0.0:
+		if float(module_data["health"]) <= 0.0:
 			continue
 		var slot_index: int = int(module_data.get("slot_index", -1))
 		if slot_index < 0 or slot_index >= slot_positions.size():
@@ -1869,6 +2178,8 @@ func damage_module(room_coord: Vector2i, amount: float) -> bool:
 		if float(room["major_health"]) <= 0.0:
 			status_message = "Saboteurs destroyed the major module in %s." % room_title(room_coord)
 			room["major_module_type"] = ""
+			room["major_under_construction"] = false
+			cancel_pending_major_construction(room_coord)
 		else:
 			status_message = "Saboteurs are damaging the major module in %s." % room_title(room_coord)
 		return true
@@ -1876,6 +2187,7 @@ func damage_module(room_coord: Vector2i, amount: float) -> bool:
 	var module_data: Dictionary = room["minor_modules"][module_index]
 	module_data["health"] = maxf(float(module_data["health"]) - amount, 0.0)
 	if float(module_data["health"]) <= 0.0:
+		cancel_pending_minor_construction(room_coord, int(module_data.get("slot_index", -1)))
 		room["minor_modules"].remove_at(module_index)
 		status_message = "Saboteurs destroyed a turret in %s." % room_title(room_coord)
 	else:
@@ -1885,7 +2197,7 @@ func damage_module(room_coord: Vector2i, amount: float) -> bool:
 func send_hero_back_to_crystal(hero: Variant) -> void:
 	if hero == null or not is_instance_valid(hero):
 		return
-	clear_pending_ground_item_pickup(hero.hero_index)
+	clear_pending_room_loot_request(hero.hero_index)
 	if crystal_holder == hero:
 		drop_crystal(hero.current_room)
 	hero.restore_health()
@@ -1924,7 +2236,7 @@ func process_modules(delta: float) -> void:
 			continue
 		var slot_positions: Array = minor_slot_positions(room_coord)
 		for module_data in room["minor_modules"]:
-			if String(module_data["type"]) != MINOR_MODULE_TURRET or float(module_data["health"]) <= 0.0:
+			if float(module_data["health"]) <= 0.0 or bool(module_data.get("under_construction", false)):
 				continue
 			module_data["cooldown"] = maxf(float(module_data["cooldown"]) - delta, 0.0)
 			if float(module_data["cooldown"]) > 0.0:
@@ -1936,8 +2248,9 @@ func process_modules(delta: float) -> void:
 			var turret_target: Variant = nearest_enemy_in_room(room_coord, slot_position, 620.0)
 			if turret_target == null:
 				continue
-			module_data["cooldown"] = TURRET_SHOT_COOLDOWN
-			spawn_laser_projectile(slot_position, turret_target, TURRET_DAMAGE)
+			var module_type: String = String(module_data.get("type", MINOR_MODULE_TURRET))
+			module_data["cooldown"] = minor_module_cooldown(module_type)
+			spawn_laser_projectile(slot_position, turret_target, minor_module_damage(module_type), minor_module_color(module_type), minor_module_projectile_width(module_type), minor_module_projectile_speed(module_type))
 
 func spawn_laser_projectile(origin: Vector2, target: Variant, damage: float, color: Color = Color("89f2ff"), width: float = 4.0, speed: float = PROJECTILE_SPEED) -> void:
 	projectiles.append({
@@ -2236,8 +2549,42 @@ func minor_slot_at_position(room_coord: Vector2i, world_position: Vector2) -> in
 func major_slot_contains_point(room_coord: Vector2i, world_position: Vector2) -> bool:
 	return major_slot_position(room_coord).distance_to(world_position) <= 28.0
 
+func pending_minor_construction_for_slot(room_coord: Vector2i, slot_index: int) -> Dictionary:
+	for construction_variant in pending_room_constructions:
+		var construction: Dictionary = construction_variant
+		if construction.get("room", INVALID_ROOM) == room_coord and not bool(construction.get("is_major", false)) and int(construction.get("slot_index", -1)) == slot_index:
+			return construction
+	return {}
+
+func pending_major_construction_for_room(room_coord: Vector2i) -> Dictionary:
+	for construction_variant in pending_room_constructions:
+		var construction: Dictionary = construction_variant
+		if construction.get("room", INVALID_ROOM) == room_coord and bool(construction.get("is_major", false)):
+			return construction
+	return {}
+
+func cancel_pending_minor_construction(room_coord: Vector2i, slot_index: int) -> void:
+	if slot_index < 0:
+		return
+	var active_constructions: Array = []
+	for construction_variant in pending_room_constructions:
+		var construction: Dictionary = construction_variant
+		if construction.get("room", INVALID_ROOM) == room_coord and not bool(construction.get("is_major", false)) and int(construction.get("slot_index", -1)) == slot_index:
+			continue
+		active_constructions.append(construction)
+	pending_room_constructions = active_constructions
+
+func cancel_pending_major_construction(room_coord: Vector2i) -> void:
+	var active_constructions: Array = []
+	for construction_variant in pending_room_constructions:
+		var construction: Dictionary = construction_variant
+		if construction.get("room", INVALID_ROOM) == room_coord and bool(construction.get("is_major", false)):
+			continue
+		active_constructions.append(construction)
+	pending_room_constructions = active_constructions
+
 func should_highlight_minor_slot(room_coord: Vector2i, slot_index: int) -> bool:
-	if pending_build_type != MINOR_MODULE_TURRET or not can_manage_modules(room_coord):
+	if not is_minor_module_type(pending_build_type) or not can_manage_modules(room_coord):
 		return false
 	var module_index: int = minor_module_index_for_slot(room_coord, slot_index)
 	if module_index < 0:
@@ -2349,6 +2696,15 @@ func draw_rooms() -> void:
 				var major_ratio: float = float(room["major_health"]) / MAJOR_MODULE_MAX_HEALTH
 				draw_rect(Rect2(major_position + Vector2(-20.0, 22.0), Vector2(40.0, 5.0)), Color("1b1610"), true)
 				draw_rect(Rect2(major_position + Vector2(-20.0, 22.0), Vector2(40.0 * major_ratio, 5.0)), major_color.lightened(0.15), true)
+				if bool(room.get("major_under_construction", false)):
+					draw_string(ThemeDB.fallback_font, major_position + Vector2(-18.0, -20.0), "BUILD", HORIZONTAL_ALIGNMENT_LEFT, 40.0, 12, Color("fff1b7"))
+			var pending_major: Dictionary = pending_major_construction_for_room(room_coord)
+			if not pending_major.is_empty():
+				var pending_ratio: float = 1.0 - (float(pending_major.get("timer_left", 0.0)) / maxf(float(pending_major.get("duration", 1.0)), 0.001))
+				draw_rect(Rect2(major_position - Vector2(12.0, 12.0), Vector2(24.0, 24.0)), Color(1.0, 0.91, 0.69, 0.22), true)
+				draw_arc(major_position, 19.0, -PI * 0.5, -PI * 0.5 + TAU * pending_ratio, 24, Color("ffe39b"), 3.0, true)
+				draw_rect(Rect2(major_position + Vector2(-20.0, 30.0), Vector2(40.0, 5.0)), Color("1b1610"), true)
+				draw_rect(Rect2(major_position + Vector2(-20.0, 30.0), Vector2(40.0 * pending_ratio, 5.0)), Color("ffe39b"), true)
 		var slot_positions: Array = minor_slot_positions(room_coord)
 		for slot_index in range(slot_positions.size()):
 			var slot_position: Vector2 = slot_positions[slot_index]
@@ -2362,29 +2718,39 @@ func draw_rooms() -> void:
 			var module_index: int = minor_module_index_for_slot(room_coord, slot_index)
 			if module_index >= 0:
 				var module_data: Dictionary = room["minor_modules"][module_index]
-				if String(module_data["type"]) == MINOR_MODULE_TURRET and float(module_data["health"]) > 0.0:
-					draw_circle(slot_position, 7.5, Color("89f2ff"))
-					draw_line(slot_position + Vector2(0.0, -10.0), slot_position + Vector2(0.0, -18.0), Color("cffcff"), 2.0)
+				if float(module_data["health"]) > 0.0:
+					var module_type: String = String(module_data.get("type", MINOR_MODULE_TURRET))
+					var module_color: Color = minor_module_color(module_type)
+					match module_type:
+						MINOR_MODULE_PULSE:
+							draw_circle(slot_position, 7.0, module_color)
+							draw_arc(slot_position, 10.0, 0.0, TAU, 20, module_color.lightened(0.2), 2.0, true)
+						MINOR_MODULE_CANNON:
+							draw_rect(Rect2(slot_position - Vector2(7.0, 7.0), Vector2(14.0, 14.0)), module_color, true)
+							draw_line(slot_position + Vector2(0.0, -8.0), slot_position + Vector2(0.0, -18.0), module_color.lightened(0.25), 3.0)
+						_:
+							draw_circle(slot_position, 7.5, module_color)
+							draw_line(slot_position + Vector2(0.0, -10.0), slot_position + Vector2(0.0, -18.0), module_color.lightened(0.25), 2.0)
+					if bool(module_data.get("under_construction", false)) or float(module_data["health"]) < MINOR_MODULE_MAX_HEALTH:
+						var turret_ratio: float = float(module_data["health"]) / MINOR_MODULE_MAX_HEALTH
+						draw_rect(Rect2(slot_position + Vector2(-12.0, 14.0), Vector2(24.0, 4.0)), Color("142026"), true)
+						draw_rect(Rect2(slot_position + Vector2(-12.0, 14.0), Vector2(24.0 * turret_ratio, 4.0)), module_color, true)
+					if bool(module_data.get("under_construction", false)):
+						draw_string(ThemeDB.fallback_font, slot_position + Vector2(-12.0, -15.0), "B", HORIZONTAL_ALIGNMENT_LEFT, 18.0, 12, Color("fff1b7"))
+			var pending_minor: Dictionary = pending_minor_construction_for_slot(room_coord, slot_index)
+			if not pending_minor.is_empty():
+				var pending_ratio_minor: float = 1.0 - (float(pending_minor.get("timer_left", 0.0)) / maxf(float(pending_minor.get("duration", 1.0)), 0.001))
+				draw_circle(slot_position, 8.0, Color("b3efff", 0.18))
+				draw_arc(slot_position, 14.0, -PI * 0.5, -PI * 0.5 + TAU * pending_ratio_minor, 24, Color("8df6ff"), 2.5, true)
 		for ground_item_variant in room["ground_items"]:
 			var ground_item: Dictionary = ground_item_variant
 			var item_rect: Rect2 = ground_item_draw_rect(ground_item)
 			var item_def: Dictionary = item_defs.get(String(ground_item.get("item_id", "")), {})
 			var item_color: Color = item_def.get("color", Color("9ed4ff"))
-			if not ground_item_hold.is_empty() and int(ground_item_hold.get("item_uid", -1)) == int(ground_item.get("uid", -2)):
-				var hold_ratio: float = clampf(float(ground_item_hold.get("elapsed", 0.0)) / GROUND_ITEM_HOLD_DURATION, 0.0, 1.0)
-				var hold_center: Vector2 = item_rect.get_center()
-				var hold_radius: float = maxf(item_rect.size.x, item_rect.size.y) * (0.72 + 0.08 * hold_ratio)
-				var hold_arc_width: float = 3.0 + hold_ratio * 2.0
-				item_color = item_color.lightened(0.18)
-				draw_arc(hold_center, hold_radius, -PI * 0.5, -PI * 0.5 + TAU * hold_ratio, 24, Color("ffe39b"), hold_arc_width, true)
-				draw_arc(hold_center, hold_radius + 6.0, 0.0, TAU, 24, Color(1.0, 0.96, 0.78, 0.18 + hold_ratio * 0.18), 1.8, true)
-				draw_rect(item_rect.grow(4.0 + hold_ratio * 4.0), Color(1.0, 0.93, 0.72, 0.08 + hold_ratio * 0.12), false, 2.0)
 			draw_rect(item_rect, item_color, true)
 			draw_rect(item_rect, Color("f1fbff"), false, 2.0)
 			draw_string(ThemeDB.fallback_font, item_rect.position + Vector2(4.0, item_rect.size.y * 0.65), String(item_def.get("short", "ITM")), HORIZONTAL_ALIGNMENT_LEFT, item_rect.size.x - 4.0, 12, Color("0d171d"))
 			draw_arc(item_rect.get_center(), maxf(item_rect.size.x, item_rect.size.y) * 0.55, 0.0, TAU, 20, Color(1.0, 1.0, 1.0, 0.18), 1.5, true)
-			if not ground_item_hold.is_empty() and int(ground_item_hold.get("item_uid", -1)) == int(ground_item.get("uid", -2)):
-				draw_string(ThemeDB.fallback_font, item_rect.position + Vector2(-6.0, item_rect.size.y + 18.0), "Hold", HORIZONTAL_ALIGNMENT_CENTER, item_rect.size.x + 12.0, 14, Color("fff3c6"))
 		if room_coord == opening_room:
 			var progress_ratio: float = 1.0 - (opening_timer_left / DOOR_OPEN_DURATION)
 			draw_rect(rect, Color(1.0, 1.0, 1.0, 0.08), true)
@@ -2408,6 +2774,46 @@ func draw_rooms() -> void:
 				center + Vector2(0.0, 32.0),
 				center + Vector2(-24.0, 0.0),
 			]), Color("ffe7a1"))
+
+func draw_room_action_hold() -> void:
+	if room_action_hold.is_empty():
+		return
+	var hold_room: Vector2i = room_action_hold.get("room", INVALID_ROOM)
+	if hold_room == INVALID_ROOM or not rooms.has(hold_room):
+		return
+	var hold_elapsed: float = float(room_action_hold.get("elapsed", 0.0))
+	if hold_elapsed < ROOM_ACTION_HOLD_VISUAL_DELAY:
+		return
+	var visible_duration: float = maxf(ROOM_ACTION_HOLD_DURATION - ROOM_ACTION_HOLD_VISUAL_DELAY, 0.001)
+	var hold_ratio: float = clampf((hold_elapsed - ROOM_ACTION_HOLD_VISUAL_DELAY) / visible_duration, 0.0, 1.0)
+	var center: Vector2 = room_center(hold_room)
+	var radius: float = (34.0 + 14.0 * hold_ratio) * camera.zoom.x
+	draw_arc(center, radius, -PI * 0.5, -PI * 0.5 + TAU * hold_ratio, 28, Color("ffe39b"), 5.0 * camera.zoom.x, true)
+	draw_circle(center, 10.0 * camera.zoom.x, Color(1.0, 0.93, 0.68, 0.12 + 0.14 * hold_ratio))
+
+func draw_room_action_menu() -> void:
+	if room_action_menu.is_empty():
+		return
+	var menu_center_screen: Vector2 = Vector2(room_action_menu.get("screen_position", Vector2.ZERO))
+	var menu_center_world: Vector2 = screen_to_world(menu_center_screen)
+	var menu_radius_world: float = ROOM_ACTION_MENU_RADIUS * camera.zoom.x
+	var center_radius_world: float = 32.0 * camera.zoom.x
+	draw_circle(menu_center_world, center_radius_world, Color("132129"))
+	draw_circle(menu_center_world, center_radius_world * 1.35, Color(0.07, 0.14, 0.17, 0.12))
+	draw_arc(menu_center_world, menu_radius_world * 0.74, 0.0, TAU, 52, Color("476775"), 2.6 * camera.zoom.x, true)
+	for button_data_variant in room_action_button_layout():
+		var button_data: Dictionary = button_data_variant
+		var button_center_screen: Vector2 = room_action_button_screen_center(button_data)
+		var button_center_world: Vector2 = screen_to_world(button_center_screen)
+		var button_radius_world: float = ROOM_ACTION_BUTTON_RADIUS * camera.zoom.x
+		var action_id: String = String(button_data.get("id", ""))
+		var enabled: bool = room_action_enabled(room_action_menu.get("room", INVALID_ROOM), action_id)
+		var fill: Color = button_data.get("fill", Color("9ed4ff"))
+		if not enabled:
+			fill = fill.darkened(0.5)
+		draw_circle(button_center_world, button_radius_world, Color(fill, 0.22 if enabled else 0.12))
+		draw_arc(button_center_world, button_radius_world, 0.0, TAU, 28, fill if enabled else Color("5e6d75"), 3.0 * camera.zoom.x, true)
+		draw_string(ThemeDB.fallback_font, button_center_world + Vector2(-36.0, 7.0) * camera.zoom.x, String(button_data.get("label", "")), HORIZONTAL_ALIGNMENT_CENTER, 72.0 * camera.zoom.x, int(round(21.0 * camera.zoom.x)), Color("eef8ff"))
 
 func room_title(room_coord: Vector2i) -> String:
 	return "Room %d-%d" % [room_coord.x + 1, room_coord.y + 1]
@@ -2441,28 +2847,91 @@ func can_toggle_light(room_coord: Vector2i) -> bool:
 func can_manage_modules(room_coord: Vector2i) -> bool:
 	return rooms.has(room_coord) and rooms[room_coord]["opened"] and rooms[room_coord]["lit"] and room_coord != crystal_room and not game_over
 
+func can_open_build_for_room(room_coord: Vector2i) -> bool:
+	return rooms.has(room_coord) and rooms[room_coord]["opened"] and room_coord != crystal_room and not game_over
+
+func can_emergency_heal(hero: Variant) -> bool:
+	return hero != null and is_instance_valid(hero) and not game_over and food >= HEAL_FOOD_COST and hero.current_health < hero.max_health - 0.5
+
+func toggle_room_light(room_coord: Vector2i) -> void:
+	if not can_toggle_light(room_coord):
+		return
+	var room: Dictionary = rooms[room_coord]
+	if room["lit"]:
+		room["lit"] = false
+		dust += 1
+		status_message = "Darkened %s. Dust returned to the pool." % room_title(room_coord)
+	else:
+		if dust <= 0:
+			status_message = "No dust available to light that room."
+			update_hud()
+			queue_redraw()
+			return
+		dust -= 1
+		room["lit"] = true
+		status_message = "Lit %s. It can no longer spawn a wave." % room_title(room_coord)
+	update_hud()
+	queue_redraw()
+
+func ensure_room_lit_for_build(room_coord: Vector2i) -> bool:
+	if not can_open_build_for_room(room_coord):
+		status_message = "That room cannot build modules right now."
+		return false
+	var room: Dictionary = rooms[room_coord]
+	if room["lit"]:
+		return true
+	if dust <= 0:
+		status_message = "%s is dark. Build needs 1 dust to light it first." % room_title(room_coord)
+		return false
+	dust -= 1
+	room["lit"] = true
+	status_message = "Lit %s for building." % room_title(room_coord)
+	return true
+
+func heal_all_heroes() -> void:
+	for hero in heroes:
+		if is_instance_valid(hero):
+			hero.restore_health()
+
+func advance_wave_recovery(delta: float) -> void:
+	if door_wave_auto_heal_pending and pending_enemy_spawns.is_empty() and enemies.is_empty():
+		door_wave_auto_heal_pending = false
+		door_wave_healing_active = true
+		status_message = "The wave is over. Heroes are recovering."
+		update_hud()
+	if not door_wave_healing_active:
+		return
+	var everyone_full: bool = true
+	for hero in heroes:
+		if not is_instance_valid(hero):
+			continue
+		if hero.current_health < hero.max_health - 0.05:
+			hero.heal(POST_WAVE_HEAL_RATE * delta)
+		if hero.current_health < hero.max_health - 0.05:
+			everyone_full = false
+	if everyone_full:
+		door_wave_healing_active = false
+		status_message = "The wave is over. The heroes recovered."
+	update_hud()
+
 func update_hud() -> void:
 	update_selected_hero_flags()
 	var inventory_open: bool = inventory_overlay != null and inventory_overlay.visible
+	var door_income: Dictionary = calculate_door_rewards()
 	dust_label.text = "Dust %d" % dust
-	food_label.text = "Food %d" % food
-	industry_label.text = "Industry %d" % industry
-	science_label.text = "Science %d" % science
+	food_label.text = "Food %d +%d" % [food, int(door_income["food"])]
+	industry_label.text = "Ind %d +%d" % [industry, int(door_income["industry"])]
+	science_label.text = "Sci %d +%d" % [science, int(door_income["science"])]
 	if crystal_holder != null and is_instance_valid(crystal_holder):
 		crystal_label.text = "Crystal %d%%  %s Carrying" % [int(clampf(crystal_health, 0.0, 100.0)), crystal_holder.hero_name]
 	else:
 		crystal_label.text = "Crystal %d%%" % int(clampf(crystal_health, 0.0, 100.0))
 	wave_label.text = "Floor %d  Doors %d  Waves %d  Dark %d" % [floor_index, doors_opened, wave_index, count_dark_open_rooms()]
 	room_label.text = room_summary(selected_room)
-	light_button.disabled = inventory_open or not can_toggle_light(selected_room)
-	if can_toggle_light(selected_room) and rooms[selected_room]["lit"]:
-		light_button.text = "Darken Room"
-	else:
-		light_button.text = "Light Room"
-	build_button.disabled = inventory_open or game_over
 	inventory_button.disabled = inventory_open or selected_hero() == null
 	inventory_button.text = "Inventory"
-	build_button.text = "Hide Build" if build_menu_open else "Build"
+	heal_button.disabled = inventory_open or not can_emergency_heal(selected_hero())
+	heal_button.text = "Heal %d Food" % HEAL_FOOD_COST
 	build_menu.visible = build_menu_open and not inventory_open
 	build_menu_title.text = build_menu_title_text()
 	turret_button.disabled = not any_room_can_build_or_repair_turret()
@@ -2516,12 +2985,10 @@ func can_build_or_repair_turret(room_coord: Vector2i) -> bool:
 	if not rooms.has(room_coord):
 		return false
 	var room: Dictionary = rooms[room_coord]
-	if not room["opened"] or not room["lit"] or room_coord == crystal_room:
+	if not room["opened"] or room_coord == crystal_room:
 		return false
-	if room["minor_modules"].size() < int(room["minor_slots"]):
-		return true
-	for module_data in room["minor_modules"]:
-		if float(module_data["health"]) < MINOR_MODULE_MAX_HEALTH:
+	for slot_index in range(int(room["minor_slots"])):
+		if minor_module_index_for_slot(room_coord, slot_index) < 0 and pending_minor_construction_for_slot(room_coord, slot_index).is_empty():
 			return true
 	return false
 
@@ -2537,12 +3004,9 @@ func turret_button_text(room_coord: Vector2i) -> String:
 		return "Turret"
 	var room: Dictionary = rooms[room_coord]
 	if not room["lit"]:
-		return "Turret Needs Light"
+		return "Turret Auto-Lights"
 	if room["minor_modules"].size() < int(room["minor_slots"]):
 		return "Place Turret (3)"
-	for module_data in room["minor_modules"]:
-		if float(module_data["health"]) < MINOR_MODULE_MAX_HEALTH:
-			return "Repair Turret"
 	return "Turrets Full"
 
 func can_build_or_repair_major(room_coord: Vector2i, module_type: String) -> bool:
@@ -2551,14 +3015,16 @@ func can_build_or_repair_major(room_coord: Vector2i, module_type: String) -> boo
 	var room: Dictionary = rooms[room_coord]
 	if int(room["major_slots"]) <= 0:
 		return false
+	if not pending_major_construction_for_room(room_coord).is_empty():
+		return false
 	if room["major_module_type"] == "":
 		return true
-	return String(room["major_module_type"]) == module_type and float(room["major_health"]) < MAJOR_MODULE_MAX_HEALTH
+	return String(room["major_module_type"]) == module_type and not bool(room.get("major_under_construction", false)) and float(room["major_health"]) < MAJOR_MODULE_MAX_HEALTH
 
 func any_room_can_build_or_repair_major(module_type: String) -> bool:
 	for room_coord_variant in rooms.keys():
 		var room_coord: Vector2i = room_coord_variant
-		if can_manage_modules(room_coord) and can_build_or_repair_major(room_coord, module_type):
+		if can_open_build_for_room(room_coord) and can_build_or_repair_major(room_coord, module_type):
 			return true
 	return false
 
@@ -2580,6 +3046,10 @@ func build_type_label(module_type: String) -> String:
 	match module_type:
 		MINOR_MODULE_TURRET:
 			return "Laser Turret"
+		MINOR_MODULE_PULSE:
+			return "Pulse Turret"
+		MINOR_MODULE_CANNON:
+			return "Cannon Turret"
 		MAJOR_MODULE_FOOD:
 			return "Food Module"
 		MAJOR_MODULE_SCIENCE:
@@ -2589,10 +3059,229 @@ func build_type_label(module_type: String) -> String:
 		_:
 			return "Build"
 
+func is_minor_module_type(module_type: String) -> bool:
+	return module_type == MINOR_MODULE_TURRET or module_type == MINOR_MODULE_PULSE or module_type == MINOR_MODULE_CANNON
+
+func is_major_module_type(module_type: String) -> bool:
+	return module_type == MAJOR_MODULE_FOOD or module_type == MAJOR_MODULE_SCIENCE or module_type == MAJOR_MODULE_INDUSTRY
+
+func minor_module_cost(module_type: String) -> int:
+	match module_type:
+		MINOR_MODULE_PULSE:
+			return 4
+		MINOR_MODULE_CANNON:
+			return 6
+		_:
+			return 3
+
+func minor_module_damage(module_type: String) -> float:
+	match module_type:
+		MINOR_MODULE_PULSE:
+			return 7.0
+		MINOR_MODULE_CANNON:
+			return 24.0
+		_:
+			return 11.0
+
+func minor_module_cooldown(module_type: String) -> float:
+	match module_type:
+		MINOR_MODULE_PULSE:
+			return 0.26
+		MINOR_MODULE_CANNON:
+			return 1.05
+		_:
+			return 0.55
+
+func minor_module_color(module_type: String) -> Color:
+	match module_type:
+		MINOR_MODULE_PULSE:
+			return Color("ff8ce1")
+		MINOR_MODULE_CANNON:
+			return Color("ffbf73")
+		_:
+			return Color("89f2ff")
+
+func minor_module_projectile_width(module_type: String) -> float:
+	match module_type:
+		MINOR_MODULE_PULSE:
+			return 3.6
+		MINOR_MODULE_CANNON:
+			return 6.2
+		_:
+			return 4.0
+
+func minor_module_projectile_speed(module_type: String) -> float:
+	match module_type:
+		MINOR_MODULE_CANNON:
+			return 820.0
+		MINOR_MODULE_PULSE:
+			return 1080.0
+		_:
+			return PROJECTILE_SPEED
+
+func wave_in_progress() -> bool:
+	return not pending_enemy_spawns.is_empty() or not enemies.is_empty()
+
+func room_has_pending_construction(room_coord: Vector2i) -> bool:
+	for construction_variant in pending_room_constructions:
+		var construction: Dictionary = construction_variant
+		if construction.get("room", INVALID_ROOM) == room_coord:
+			return true
+	return false
+
+func preferred_turret_slot(room_coord: Vector2i) -> int:
+	if not rooms.has(room_coord):
+		return -1
+	var room: Dictionary = rooms[room_coord]
+	for slot_index in range(int(room["minor_slots"])):
+		if minor_module_index_for_slot(room_coord, slot_index) < 0 and pending_minor_construction_for_slot(room_coord, slot_index).is_empty():
+			return slot_index
+	return -1
+
+func queue_room_construction(room_coord: Vector2i, module_type: String) -> bool:
+	if not can_open_build_for_room(room_coord):
+		status_message = "%s cannot build modules." % room_title(room_coord)
+		update_hud()
+		queue_redraw()
+		return false
+	if not ensure_room_lit_for_build(room_coord):
+		update_hud()
+		queue_redraw()
+		return false
+	var room: Dictionary = rooms[room_coord]
+	var is_major: bool = is_major_module_type(module_type)
+	var industry_cost: int = 0
+	var repairing: bool = false
+	var slot_index: int = -1
+	if is_major:
+		if int(room["major_slots"]) <= 0:
+			status_message = "%s has no major module slot." % room_title(room_coord)
+			update_hud()
+			queue_redraw()
+			return false
+		if not pending_major_construction_for_room(room_coord).is_empty():
+			status_message = "Major construction is already underway in %s." % room_title(room_coord)
+			update_hud()
+			queue_redraw()
+			return false
+		if room["major_module_type"] == "":
+			industry_cost = MAJOR_MODULE_COST
+		elif String(room["major_module_type"]) == module_type and float(room["major_health"]) < MAJOR_MODULE_MAX_HEALTH:
+			industry_cost = 3
+			repairing = true
+		else:
+			status_message = "That major slot is already occupied."
+			update_hud()
+			queue_redraw()
+			return false
+	else:
+		slot_index = preferred_turret_slot(room_coord)
+		if slot_index < 0:
+			status_message = "No minor slot is available in %s." % room_title(room_coord)
+			update_hud()
+			queue_redraw()
+			return false
+		industry_cost = minor_module_cost(module_type)
+	if industry < industry_cost:
+		status_message = "Not enough industry for %s." % build_type_label(module_type).to_lower()
+		update_hud()
+		queue_redraw()
+		return false
+	industry -= industry_cost
+	var duration: float = BUILD_DURATION_WAVE if wave_in_progress() else BUILD_DURATION_CALM
+	var start_health: float = 1.0
+	var target_health: float = MAJOR_MODULE_MAX_HEALTH if is_major else MINOR_MODULE_MAX_HEALTH
+	if is_major:
+		if repairing:
+			start_health = float(room["major_health"])
+		else:
+			room["major_module_type"] = module_type
+			room["major_health"] = start_health
+		room["major_under_construction"] = true
+	else:
+		room["minor_modules"].append({
+			"type": module_type,
+			"slot_index": slot_index,
+			"health": start_health,
+			"cooldown": 0.2,
+			"under_construction": true,
+		})
+	pending_room_constructions.append({
+		"room": room_coord,
+		"module_type": module_type,
+		"is_major": is_major,
+		"slot_index": slot_index,
+		"repairing": repairing,
+		"start_health": start_health,
+		"target_health": target_health,
+		"duration": duration,
+		"timer_left": duration,
+	})
+	status_message = "%s started in %s." % [("Repair" if repairing else "Build"), room_title(room_coord)]
+	update_hud()
+	queue_redraw()
+	return true
+
+func advance_room_constructions(delta: float) -> void:
+	var active_constructions: Array = []
+	var completed_any: bool = false
+	for construction_variant in pending_room_constructions:
+		var construction: Dictionary = construction_variant
+		construction["timer_left"] = maxf(float(construction.get("timer_left", 0.0)) - delta, 0.0)
+		apply_construction_progress(construction)
+		if float(construction["timer_left"]) <= 0.0:
+			finish_room_construction(construction)
+			completed_any = true
+		else:
+			active_constructions.append(construction)
+	pending_room_constructions = active_constructions
+	if completed_any:
+		update_hud()
+		queue_redraw()
+
+func apply_construction_progress(construction: Dictionary) -> void:
+	var room_coord: Vector2i = construction.get("room", INVALID_ROOM)
+	if not rooms.has(room_coord):
+		return
+	var room: Dictionary = rooms[room_coord]
+	var duration: float = maxf(float(construction.get("duration", 1.0)), 0.001)
+	var timer_left: float = float(construction.get("timer_left", 0.0))
+	var progress: float = 1.0 - (timer_left / duration)
+	var start_health: float = float(construction.get("start_health", 1.0))
+	var target_health: float = float(construction.get("target_health", 1.0))
+	var next_health: float = lerpf(start_health, target_health, progress)
+	if bool(construction.get("is_major", false)):
+		room["major_health"] = next_health
+		return
+	var slot_index: int = int(construction.get("slot_index", -1))
+	var module_index: int = minor_module_index_for_slot(room_coord, slot_index)
+	if module_index >= 0:
+		room["minor_modules"][module_index]["health"] = next_health
+
+func finish_room_construction(construction: Dictionary) -> void:
+	var room_coord: Vector2i = construction.get("room", INVALID_ROOM)
+	if not rooms.has(room_coord):
+		return
+	var room: Dictionary = rooms[room_coord]
+	var module_type: String = String(construction.get("module_type", ""))
+	if bool(construction.get("is_major", false)):
+		room["major_health"] = MAJOR_MODULE_MAX_HEALTH
+		room["major_under_construction"] = false
+		status_message = "%s completed in %s." % [build_type_label(module_type), room_title(room_coord)]
+		return
+	var slot_index: int = int(construction.get("slot_index", -1))
+	if slot_index < 0:
+		return
+	var module_index: int = minor_module_index_for_slot(room_coord, slot_index)
+	if module_index >= 0:
+		room["minor_modules"][module_index]["health"] = MINOR_MODULE_MAX_HEALTH
+		room["minor_modules"][module_index]["under_construction"] = false
+	status_message = "%s completed in %s." % [build_type_label(module_type), room_title(room_coord)]
+
 func build_menu_title_text() -> String:
 	if pending_build_type == "":
 		return "Build Menu"
-	return "%s: tap a slot" % build_type_label(pending_build_type)
+	return "%s: tap a room" % build_type_label(pending_build_type)
 
 func clear_build_mode() -> void:
 	pending_build_type = ""
@@ -2600,82 +3289,35 @@ func clear_build_mode() -> void:
 func select_build_mode(module_type: String) -> void:
 	build_menu_open = true
 	pending_build_type = module_type
-	status_message = "%s selected. Tap a matching slot in the room you want." % build_type_label(module_type)
+	status_message = "%s selected. Tap the room you want to build in." % build_type_label(module_type)
 	update_hud()
 	queue_redraw()
 
 func handle_build_tap(world_position: Vector2) -> bool:
 	var tapped_room: Vector2i = room_at_world_position(world_position)
 	if tapped_room == INVALID_ROOM:
-		status_message = "Tap a room slot to place %s." % build_type_label(pending_build_type).to_lower()
+		status_message = "Tap a room to place %s." % build_type_label(pending_build_type).to_lower()
 		return true
 	selected_room = tapped_room
-	if not can_manage_modules(tapped_room):
-		status_message = "%s must be open and lit before building." % room_title(tapped_room)
-		return true
-	if pending_build_type == MINOR_MODULE_TURRET:
-		var slot_index: int = minor_slot_at_position(tapped_room, world_position)
-		if slot_index < 0:
-			status_message = "Tap a minor slot in %s to place or repair a turret." % room_title(tapped_room)
-			return true
-		build_or_repair_turret_at_slot(tapped_room, slot_index)
-		return true
-	if not major_slot_contains_point(tapped_room, world_position):
-		status_message = "Tap the major slot in %s to place or repair that module." % room_title(tapped_room)
-		return true
-	build_or_repair_major_at_room(tapped_room, pending_build_type)
+	queue_room_construction(tapped_room, pending_build_type)
 	return true
 
 func build_or_repair_turret_at_slot(room_coord: Vector2i, slot_index: int) -> void:
-	var room: Dictionary = rooms[room_coord]
-	var module_index: int = minor_module_index_for_slot(room_coord, slot_index)
-	if module_index >= 0:
-		var module_data: Dictionary = room["minor_modules"][module_index]
-		if float(module_data["health"]) >= MINOR_MODULE_MAX_HEALTH:
-			status_message = "That turret slot is already occupied and healthy."
-			return
-		if industry < 1:
-			status_message = "Not enough industry to repair a turret."
-			return
-		industry -= 1
-		module_data["health"] = MINOR_MODULE_MAX_HEALTH
-		status_message = "Repaired a turret in %s." % room_title(room_coord)
+	if not rooms.has(room_coord):
 		return
-	if industry < MINOR_TURRET_COST:
-		status_message = "Not enough industry for a turret."
+	if slot_index < 0:
 		return
-	industry -= MINOR_TURRET_COST
-	room["minor_modules"].append({
-		"type": MINOR_MODULE_TURRET,
-		"slot_index": slot_index,
-		"health": MINOR_MODULE_MAX_HEALTH,
-		"cooldown": 0.2,
-	})
-	status_message = "Built a laser turret in %s." % room_title(room_coord)
+	if preferred_turret_slot(room_coord) != slot_index:
+		status_message = "That minor slot is unavailable."
+		update_hud()
+		queue_redraw()
+		return
+	queue_room_construction(room_coord, MINOR_MODULE_TURRET)
 
 func build_or_repair_major_at_room(room_coord: Vector2i, module_type: String) -> void:
-	var room: Dictionary = rooms[room_coord]
-	if int(room["major_slots"]) <= 0:
-		status_message = "%s has no major module slot." % room_title(room_coord)
+	if not rooms.has(room_coord) or not is_major_module_type(module_type):
 		return
-	if room["major_module_type"] == "":
-		if industry < MAJOR_MODULE_COST:
-			status_message = "Not enough industry for a %s." % build_type_label(module_type).to_lower()
-			return
-		industry -= MAJOR_MODULE_COST
-		room["major_module_type"] = module_type
-		room["major_health"] = MAJOR_MODULE_MAX_HEALTH
-		status_message = "Built a %s in %s." % [build_type_label(module_type).to_lower(), room_title(room_coord)]
-		return
-	if String(room["major_module_type"]) == module_type and float(room["major_health"]) < MAJOR_MODULE_MAX_HEALTH:
-		if industry < 3:
-			status_message = "Not enough industry to repair that %s." % build_type_label(module_type).to_lower()
-			return
-		industry -= 3
-		room["major_health"] = MAJOR_MODULE_MAX_HEALTH
-		status_message = "Repaired the %s in %s." % [build_type_label(module_type).to_lower(), room_title(room_coord)]
-		return
-	status_message = "That major slot is already occupied."
+	queue_room_construction(room_coord, module_type)
 
 func screen_to_world(screen_position: Vector2) -> Vector2:
 	return get_viewport().get_canvas_transform().affine_inverse() * screen_position
@@ -2738,9 +3380,19 @@ func _on_inventory_button_pressed() -> void:
 	var hero: Variant = selected_hero()
 	if hero == null:
 		return
-	clear_ground_item_hold()
+	clear_room_action_hold()
+	close_room_action_menu()
 	open_hero_inventory(hero)
 	status_message = "Inventory open for %s." % hero.hero_name
+	update_hud()
+
+func _on_heal_button_pressed() -> void:
+	var hero: Variant = selected_hero()
+	if not can_emergency_heal(hero):
+		return
+	food -= HEAL_FOOD_COST
+	hero.restore_health()
+	status_message = "%s recovered to full health." % hero.hero_name
 	update_hud()
 
 func _on_center_button_pressed() -> void:
