@@ -552,11 +552,6 @@ func level_up_button_rect() -> Rect2:
 func rotate_button_rect() -> Rect2:
 	return control_local_rect(rotate_button_node)
 
-func toggle_button_rect() -> Rect2:
-	if toggle_button_node == null:
-		return Rect2()
-	return control_local_rect(toggle_button_node)
-
 func ground_item_dock_rect() -> Rect2:
 	return control_local_rect(loot_guide)
 
@@ -740,10 +735,7 @@ func draw_item_description_panel() -> void:
 	var line_height: float = 15.0
 	var max_lines: int = maxi(1, int(floor((description_rect.size.y - 82.0) / line_height)))
 	for line_index in range(mini(item_lines.size(), max_lines)):
-		var line_color: Color = Color("d4eaf4")
-		if item_lines[line_index].begins_with("Inactive"):
-			line_color = Color("ffb6a8")
-		draw_string(font, Vector2(description_rect.position.x + 14.0, line_y), item_lines[line_index], HORIZONTAL_ALIGNMENT_LEFT, description_rect.size.x - 24.0, 14, line_color)
+		draw_string(font, Vector2(description_rect.position.x + 14.0, line_y), item_lines[line_index], HORIZONTAL_ALIGNMENT_LEFT, description_rect.size.x - 24.0, 14, Color("d4eaf4"))
 		line_y += line_height
 
 func draw_rotate_button() -> void:
@@ -754,18 +746,6 @@ func draw_rotate_button() -> void:
 	var font: Font = ThemeDB.fallback_font
 	draw_string(font, rotate_rect.position + Vector2(5.0, 18.0), "Rotate", HORIZONTAL_ALIGNMENT_LEFT, rotate_rect.size.x - 8.0, 11, Color("eef8ff"))
 	draw_string(font, rotate_rect.position + Vector2(5.0, 33.0), "Hover", HORIZONTAL_ALIGNMENT_LEFT, rotate_rect.size.x - 8.0, 10, Color("d0e6ef"))
-
-func draw_toggle_button() -> void:
-	var toggle_rect: Rect2 = toggle_button_rect()
-	var toggle_index: int = touched_inventory_item_index()
-	var has_item: bool = toggle_index >= 0
-	var enabled: bool = has_item and not bool(items[toggle_index].get("disabled", false))
-	var fill: Color = Color("3c6a4a") if enabled else Color("3b3230")
-	if toggle_hover_latched:
-		fill = fill.lightened(0.14)
-	if not has_item:
-		fill = Color("23353d")
-	draw_rect(toggle_rect, fill, true)
 	draw_rect(toggle_rect, Color("98c2d0"), false, 2.0)
 	var font: Font = ThemeDB.fallback_font
 	var title: String = "Disable" if enabled else "Enable"
