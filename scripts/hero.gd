@@ -41,6 +41,7 @@ var destination: Vector2 = Vector2.ZERO
 var move_steps: Array = []
 var pending_open_room: Vector2i = INVALID_ROOM
 var pending_open_origin_room: Vector2i = INVALID_ROOM
+var player_command_locked: bool = false
 var selected: bool = true
 var carrying_crystal: bool = false
 var attack_effect_left: float = 0.0
@@ -55,8 +56,13 @@ var card_generation_timers: Dictionary = {}
 var passive_combat_timers: Dictionary = {}
 var stamina_regen_rate: float = 0.0
 var stamina_regen_time_left: float = 0.0
+var barrier_amount: float = 0.0
+var barrier_capacity: float = 0.0
+var barrier_time_left: float = 0.0
+var light_cantrip_active: bool = false
 var learned_spells: Array[String] = []
 var slotted_spells: Array[String] = []
+var active_floor_spells: Array[String] = []
 var studying_spell_id: String = ""
 var studying_room: Vector2i = INVALID_ROOM
 var studying_started_at_door: int = -1
@@ -85,7 +91,16 @@ func set_destination(world_position: Vector2) -> void:
 	destination = world_position
 
 func take_damage(amount: float) -> bool:
-	current_health = maxf(current_health - amount, 0.0)
+	var remaining_damage: float = maxf(amount, 0.0)
+	if barrier_amount > 0.0 and remaining_damage > 0.0:
+		var absorbed: float = minf(barrier_amount, remaining_damage)
+		barrier_amount = maxf(barrier_amount - absorbed, 0.0)
+		remaining_damage -= absorbed
+		if barrier_amount <= 0.001:
+			barrier_amount = 0.0
+			barrier_capacity = 0.0
+			barrier_time_left = 0.0
+	current_health = maxf(current_health - remaining_damage, 0.0)
 	queue_redraw()
 	return current_health <= 0.0
 
@@ -125,6 +140,20 @@ func apply_stamina_regen_buff(rate: float, duration: float) -> void:
 func clear_stamina_regen_buff() -> void:
 	stamina_regen_rate = 0.0
 	stamina_regen_time_left = 0.0
+	queue_redraw()
+
+func apply_barrier(amount: float, duration: float) -> void:
+	if amount <= 0.0 or duration <= 0.0:
+		return
+	barrier_amount = maxf(barrier_amount, amount)
+	barrier_capacity = maxf(barrier_capacity, barrier_amount)
+	barrier_time_left = maxf(barrier_time_left, duration)
+	queue_redraw()
+
+func clear_barrier() -> void:
+	barrier_amount = 0.0
+	barrier_capacity = 0.0
+	barrier_time_left = 0.0
 	queue_redraw()
 
 func heal(amount: float) -> bool:
@@ -213,6 +242,7 @@ func clear_orders(stop_movement: bool = true) -> void:
 	move_steps.clear()
 	pending_open_room = INVALID_ROOM
 	pending_open_origin_room = INVALID_ROOM
+	player_command_locked = false
 	if pending_room != INVALID_ROOM and stop_movement:
 		current_room = pending_room
 	pending_room = INVALID_ROOM
@@ -251,6 +281,11 @@ func _draw() -> void:
 	if stamina_regen_time_left > 0.0:
 		draw_rect(Rect2(Vector2(-22.0, -19.0), Vector2(44.0, 2.0)), Color("17323e"), true)
 		draw_rect(Rect2(Vector2(-22.0, -19.0), Vector2(44.0 * clampf(stamina_regen_time_left / 8.0, 0.0, 1.0), 2.0)), Color("a4f3ff"), true)
+	if barrier_time_left > 0.0 and barrier_capacity > 0.0:
+		var barrier_ratio: float = clampf(barrier_amount / maxf(barrier_capacity, 0.001), 0.0, 1.0)
+		draw_rect(Rect2(Vector2(-22.0, -38.0), Vector2(44.0, 3.0)), Color("17323e"), true)
+		draw_rect(Rect2(Vector2(-22.0, -38.0), Vector2(44.0 * barrier_ratio, 3.0)), Color("b7d9ff"), true)
+		draw_arc(Vector2.ZERO, 24.0, 0.0, TAU, 40, Color(0.72, 0.87, 1.0, 0.45 + 0.2 * barrier_ratio), 2.0, true)
 	if carrying_crystal:
 		draw_colored_polygon(PackedVector2Array([
 			Vector2(0.0, -52.0),

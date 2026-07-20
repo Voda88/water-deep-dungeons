@@ -32,6 +32,7 @@ const LEVEL_BUTTON_PROGRESS: Color = Color("87d78f")
 const PENDING_BG: Color = Color("1c3038")
 const PACK_SNAP_DURATION: float = 0.18
 const LEVEL_HOLD_DURATION: float = 0.7
+const SPELLBOOK_ACTION_HOLD_DURATION: float = 0.5
 const ITEM_SNAP_DURATION: float = 0.16
 const PACK_SNAP_SEARCH_RADIUS: int = 2
 const SWIPE_CLOSE_START_THRESHOLD: float = 20.0
@@ -78,6 +79,9 @@ var next_item_snap_animation_id: int = 1
 var level_hold_active: bool = false
 var level_hold_completed: bool = false
 var level_hold_progress: float = 0.0
+var spellbook_action_hold_active: bool = false
+var spellbook_action_hold_completed: bool = false
+var spellbook_action_hold_progress: float = 0.0
 var swipe_close_tracking: bool = false
 var swipe_close_active: bool = false
 var swipe_close_start_local: Vector2 = Vector2.ZERO
@@ -89,7 +93,12 @@ var spellbook_enabled: bool = false
 var spellbook_known: Array[String] = []
 var spellbook_slotted: Array[String] = []
 var spellbook_slot_capacity: int = 0
+var spellbook_editable: bool = false
+var spellbook_title: String = "Spellbook"
+var spellbook_prep_note: String = ""
+var spellbook_focus_item_id: String = "spellbook"
 var selected_spellbook_spell_id: String = ""
+var spellbook_overlay_open: bool = false
 var synergy_shine_time: float = 0.0
 
 @onready var layout_root: Control = $LayoutRoot
@@ -100,11 +109,15 @@ var synergy_shine_time: float = 0.0
 @onready var loot_guide: Control = $LayoutRoot/MainPanelGuide/LootGuide
 @onready var rotate_button_node: Button = $LayoutRoot/MainPanelGuide/RotateButton
 @onready var toggle_button_node: Button = $LayoutRoot/MainPanelGuide/ToggleButton
+@onready var spellbook_overlay_node: SpellbookOverlay = $SpellbookOverlay
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	prepare_runtime_guides()
+	if spellbook_overlay_node != null:
+		spellbook_overlay_node.close_requested.connect(_on_spellbook_overlay_close_requested)
+		spellbook_overlay_node.slots_changed.connect(_on_spellbook_overlay_slots_changed)
 	update_layout_nodes()
 	visible = false
 
@@ -137,6 +150,16 @@ func _process(delta: float) -> void:
 				level_hold_completed = true
 				level_hold_active = false
 				level_up_requested.emit()
+			needs_redraw = true
+	if spellbook_action_hold_active:
+		if not spell_focus_selected_item():
+			reset_spellbook_action_hold()
+		else:
+			spellbook_action_hold_progress = minf(spellbook_action_hold_progress + delta / SPELLBOOK_ACTION_HOLD_DURATION, 1.0)
+			if spellbook_action_hold_progress >= 1.0 and not spellbook_action_hold_completed:
+				spellbook_action_hold_completed = true
+				spellbook_action_hold_active = false
+				toggle_spellbook_overlay()
 			needs_redraw = true
 	if not swipe_close_active and not swipe_close_tracking and absf(swipe_close_offset_y) > 0.01:
 		swipe_close_offset_y = lerpf(swipe_close_offset_y, 0.0, minf(delta * 18.0, 1.0))
@@ -171,6 +194,7 @@ func update_action_button_nodes() -> void:
 	if rotate_button_node != null:
 		rotate_button_node.text = "Rotate"
 		rotate_button_node.modulate = ROTATE_HIGHLIGHT if rotate_hover_latched else Color.WHITE
+		rotate_button_node.visible = not spellbook_overlay_open
 	if toggle_button_node != null:
 		toggle_button_node.visible = false
 
@@ -223,6 +247,8 @@ func configure(next_hero_name: String, next_hero_level: int, next_food_value: in
 	reset_swipe_close_state()
 	swipe_close_offset_y = 0.0
 	reset_level_hold()
+	reset_spellbook_action_hold()
+	close_spellbook_overlay()
 	if not items.is_empty():
 		last_touched_item = (items[0] as Dictionary).duplicate(true)
 	elif not ground_items.is_empty():
@@ -253,8 +279,10 @@ func hide_overlay() -> void:
 	reset_swipe_close_state()
 	swipe_close_offset_y = 0.0
 	reset_level_hold()
+	reset_spellbook_action_hold()
 	inventory_nudge_timer = -1.0
 	last_touched_item.clear()
+	close_spellbook_overlay()
 	queue_redraw()
 
 func refresh_state(next_stats_lines: Array, next_ability_sections: Array, next_level_up_reward_lines: Array, next_food_value: int, next_level_up_cost: int, next_can_level_up: bool, next_hero_level: int, next_pack_modules: Array, next_spellbook_data: Dictionary = {}) -> void:
@@ -278,11 +306,16 @@ func refresh_state(next_stats_lines: Array, next_ability_sections: Array, next_l
 	reset_swipe_close_state()
 	swipe_close_offset_y = 0.0
 	reset_level_hold()
+	reset_spellbook_action_hold()
 	update_layout_nodes()
 	queue_redraw()
 
 func apply_spellbook_data(next_spellbook_data: Dictionary) -> void:
 	spellbook_enabled = bool(next_spellbook_data.get("enabled", false))
+	spellbook_editable = bool(next_spellbook_data.get("editable", false))
+	spellbook_title = String(next_spellbook_data.get("title", "Spellbook"))
+	spellbook_prep_note = String(next_spellbook_data.get("prep_note", ""))
+	spellbook_focus_item_id = String(next_spellbook_data.get("focus_item_id", "spellbook"))
 	spellbook_known.clear()
 	for spell_variant in Array(next_spellbook_data.get("known", [])):
 		spellbook_known.append(String(spell_variant))
@@ -292,21 +325,56 @@ func apply_spellbook_data(next_spellbook_data: Dictionary) -> void:
 	spellbook_slot_capacity = maxi(0, int(next_spellbook_data.get("capacity", 0)))
 	if selected_spellbook_spell_id != "" and not spellbook_known.has(selected_spellbook_spell_id):
 		selected_spellbook_spell_id = ""
+	if spellbook_overlay_node != null:
+		spellbook_overlay_node.configure_overlay(next_spellbook_data)
+	if not spellbook_enabled:
+		close_spellbook_overlay()
+
+func spell_focus_selected_item() -> bool:
+	return spellbook_enabled and String(last_touched_item.get("item_id", "")) == spellbook_focus_item_id
+
+func toggle_spellbook_overlay() -> void:
+	if not spell_focus_selected_item():
+		return
+	reset_spellbook_action_hold()
+	spellbook_overlay_open = not spellbook_overlay_open
+	if not spellbook_overlay_open:
+		selected_spellbook_spell_id = ""
+	if spellbook_overlay_node != null:
+		if spellbook_overlay_open:
+			spellbook_overlay_node.open_overlay()
+		else:
+			spellbook_overlay_node.hide_overlay()
+	queue_redraw()
+
+func close_spellbook_overlay() -> void:
+	reset_spellbook_action_hold()
+	spellbook_overlay_open = false
+	if spellbook_overlay_node != null:
+		spellbook_overlay_node.hide_overlay()
+	if not visible:
+		return
+	spellbook_overlay_open = false
+	selected_spellbook_spell_id = ""
+	queue_redraw()
 
 func pointer_press(screen_position: Vector2) -> void:
 	if not visible:
 		return
 	cancel_inventory_nudge_hint()
 	var local_position: Vector2 = screen_to_local(screen_position)
-	if level_hold_active or level_hold_completed:
+	if level_hold_active or level_hold_completed or spellbook_action_hold_active or spellbook_action_hold_completed:
+		return
+	if spellbook_overlay_open and spellbook_overlay_node != null:
+		spellbook_overlay_node.pointer_press(screen_position)
 		return
 	if level_up_button_rect().has_point(local_position) and can_level_up:
 		begin_level_hold()
 		return
-	if handle_spellbook_pointer_press(local_position):
+	if spell_focus_selected_item() and spellbook_action_touch_rect().has_point(local_position):
+		begin_spellbook_action_hold()
 		return
-	if spellbook_active_for_selected_item() and spellbook_panel_rect().has_point(local_position):
-		queue_redraw()
+	if handle_spellbook_pointer_press(local_position):
 		return
 	if rotate_button_rect().has_point(local_position):
 		return
@@ -366,6 +434,17 @@ func pointer_move(screen_position: Vector2) -> void:
 		return
 	if level_hold_completed:
 		return
+	if spellbook_overlay_open and spellbook_overlay_node != null:
+		spellbook_overlay_node.pointer_move(screen_position)
+		return
+	if spellbook_action_hold_active:
+		if not spell_focus_selected_item() or not spellbook_action_touch_rect().has_point(drag_pointer_local):
+			reset_spellbook_action_hold()
+		else:
+			queue_redraw()
+		return
+	if spellbook_action_hold_completed:
+		return
 	if not dragging_item.is_empty():
 		var drag_item_rect: Rect2 = dragging_item_rect()
 		var item_on_rotate: bool = drag_item_rect.intersects(rotate_button_rect())
@@ -405,6 +484,12 @@ func pointer_release(screen_position: Vector2) -> void:
 		return
 	if level_hold_active or level_hold_completed:
 		reset_level_hold()
+		return
+	if spellbook_action_hold_active or spellbook_action_hold_completed:
+		reset_spellbook_action_hold()
+		return
+	if spellbook_overlay_open and spellbook_overlay_node != null:
+		spellbook_overlay_node.pointer_release(screen_position)
 		return
 	if not dragging_pack.is_empty():
 		finish_pack_drag()
@@ -454,6 +539,18 @@ func reset_level_hold() -> void:
 	level_hold_active = false
 	level_hold_completed = false
 	level_hold_progress = 0.0
+	queue_redraw()
+
+func begin_spellbook_action_hold() -> void:
+	spellbook_action_hold_active = true
+	spellbook_action_hold_completed = false
+	spellbook_action_hold_progress = 0.0
+	queue_redraw()
+
+func reset_spellbook_action_hold() -> void:
+	spellbook_action_hold_active = false
+	spellbook_action_hold_completed = false
+	spellbook_action_hold_progress = 0.0
 	queue_redraw()
 
 func begin_swipe_close(local_position: Vector2) -> void:
@@ -764,51 +861,82 @@ func draw_item_description_panel() -> void:
 	var line_y: float = description_rect.position.y + 74.0
 	var line_height: float = 15.0
 	var max_description_bottom: float = description_rect.position.y + description_rect.size.y - 8.0
-	if spellbook_active_for_selected_item():
-		max_description_bottom = spellbook_panel_rect().position.y - 10.0
+	if spell_focus_selected_item():
+		max_description_bottom = spellbook_action_button_rect().position.y - 10.0
 	var max_lines: int = maxi(1, int(floor((max_description_bottom - line_y) / line_height)))
 	for line_index in range(mini(item_lines.size(), max_lines)):
 		draw_string(font, Vector2(description_rect.position.x + 14.0, line_y), item_lines[line_index], HORIZONTAL_ALIGNMENT_LEFT, description_rect.size.x - 24.0, 14, Color("d4eaf4"))
 		line_y += line_height
-	if spellbook_active_for_selected_item():
-		draw_spellbook_panel(font)
+	if spell_focus_selected_item():
+		draw_spellbook_action_button(font)
+		
+func draw_spellbook_action_button(font: Font) -> void:
+	var action_rect: Rect2 = spellbook_action_button_rect()
+	if action_rect.size.x <= 8.0 or action_rect.size.y <= 8.0:
+		return
+	draw_rect(action_rect, Color("2a3f4c"), true)
+	if spellbook_action_hold_progress > 0.0:
+		var progress_fill_rect: Rect2 = Rect2(action_rect.position + Vector2(3.0, 3.0), Vector2((action_rect.size.x - 6.0) * spellbook_action_hold_progress, action_rect.size.y - 6.0))
+		draw_rect(progress_fill_rect, Color(LEVEL_BUTTON_PROGRESS, 0.32), true)
+	draw_rect(action_rect, Color("9fb8c8"), false, 1.5)
+	var label: String = "Prepare Spells" if spellbook_editable else "View Prepared"
+	draw_string(font, action_rect.position + Vector2(12.0, 22.0), label, HORIZONTAL_ALIGNMENT_LEFT, action_rect.size.x - 24.0, 16, Color("eef8ff"))
+	var hold_text: String = "Hold to open %s" % spellbook_title.to_lower()
+	if spellbook_action_hold_active:
+		hold_text = "Keep holding %d%%" % int(spellbook_action_hold_progress * 100.0)
+	elif spellbook_action_hold_completed:
+		hold_text = "Opening..."
+	draw_string(font, action_rect.position + Vector2(12.0, 39.0), hold_text, HORIZONTAL_ALIGNMENT_LEFT, action_rect.size.x - 24.0, 12, Color("c8dde8"))
 
 func draw_spellbook_panel(font: Font) -> void:
 	var panel: Rect2 = spellbook_panel_rect()
 	if panel.size.x <= 12.0 or panel.size.y <= 12.0:
 		return
-	draw_rect(panel, Color(0.08, 0.13, 0.17, 0.76), true)
-	draw_rect(panel, Color("7d8fb8"), false, 1.5)
-	draw_string(font, panel.position + Vector2(10.0, 18.0), "Spellbook", HORIZONTAL_ALIGNMENT_LEFT, panel.size.x * 0.5, 15, Color("e8dcff"))
-	draw_string(font, panel.position + Vector2(panel.size.x - 92.0, 18.0), "%d/%d slots" % [spellbook_slotted.size(), spellbook_slot_capacity], HORIZONTAL_ALIGNMENT_LEFT, 84.0, 13, Color("cdd9ff"))
-	draw_string(font, panel.position + Vector2(10.0, 34.0), "Tap a spell, then tap a slot.", HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 20.0, 11, Color("a8bfd6"))
+	draw_rect(Rect2(Vector2.ZERO, size), BACKDROP_COLOR, true)
+	draw_rect(panel, Color("0b1419"), true)
+	draw_rect(panel, Color("7d8fb8"), false, 2.0)
+	draw_string(font, panel.position + Vector2(18.0, 28.0), spellbook_title, HORIZONTAL_ALIGNMENT_LEFT, panel.size.x * 0.52, 24, Color("e8dcff"))
+	draw_string(font, panel.position + Vector2(panel.size.x - 150.0, 28.0), "%d/%d slots" % [spellbook_slotted.size(), spellbook_slot_capacity], HORIZONTAL_ALIGNMENT_LEFT, 100.0, 18, Color("cdd9ff"))
+	var instruction_text: String = "Tap a spell, then tap a slot." if spellbook_editable else "Prepared spells are locked after the first door."
+	draw_string(font, panel.position + Vector2(18.0, 54.0), instruction_text, HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 180.0, 14, Color("a8bfd6"))
+	if spellbook_prep_note != "":
+		draw_string(font, panel.position + Vector2(18.0, 72.0), spellbook_prep_note, HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 180.0, 13, Color("fff1b8"))
+	var close_rect: Rect2 = spellbook_close_button_rect()
+	draw_rect(close_rect, Color("2a3f4c"), true)
+	draw_rect(close_rect, Color("9fb8c8"), false, 1.5)
+	draw_string(font, close_rect.position + Vector2(16.0, 23.0), "Close", HORIZONTAL_ALIGNMENT_LEFT, close_rect.size.x - 22.0, 16, Color("eef8ff"))
 	var known_rect: Rect2 = spellbook_known_column_rect()
 	var slots_rect: Rect2 = spellbook_slot_column_rect()
-	draw_string(font, known_rect.position + Vector2(0.0, 0.0), "Known", HORIZONTAL_ALIGNMENT_LEFT, known_rect.size.x, 13, Color("fff1b8"))
-	draw_string(font, slots_rect.position + Vector2(0.0, 0.0), "Prepared", HORIZONTAL_ALIGNMENT_LEFT, slots_rect.size.x, 13, Color("fff1b8"))
+	draw_string(font, known_rect.position + Vector2(0.0, 0.0), "Known", HORIZONTAL_ALIGNMENT_LEFT, known_rect.size.x, 18, Color("fff1b8"))
+	draw_string(font, slots_rect.position + Vector2(0.0, 0.0), "Prepared", HORIZONTAL_ALIGNMENT_LEFT, slots_rect.size.x, 18, Color("fff1b8"))
 	if spellbook_known.is_empty():
-		draw_string(font, known_rect.position + Vector2(0.0, 20.0), "No learned spells.", HORIZONTAL_ALIGNMENT_LEFT, known_rect.size.x, 12, Color("9fb8c2"))
+		draw_string(font, known_rect.position + Vector2(0.0, 28.0), "No learned spells.", HORIZONTAL_ALIGNMENT_LEFT, known_rect.size.x, 16, Color("9fb8c2"))
 	else:
 		for spell_index in range(spellbook_known.size()):
 			var row_rect: Rect2 = spellbook_known_row_rect(spell_index)
 			var spell_id: String = spellbook_known[spell_index]
 			var selected: bool = spell_id == selected_spellbook_spell_id
 			var prepared: bool = spellbook_slotted.has(spell_id)
-			draw_rect(row_rect, Color("394b66") if selected else Color("243841"), true)
-			draw_rect(row_rect, Color("b99fff") if selected else Color("6a88a3"), false, 1.0)
-			draw_string(font, row_rect.position + Vector2(8.0, 18.0), spell_display_name_local(spell_id), HORIZONTAL_ALIGNMENT_LEFT, row_rect.size.x - 16.0, 12, Color("edf5ff"))
+			var row_fill: Color = Color("394b66") if selected else Color("243841")
+			var row_outline: Color = Color("b99fff") if selected else Color("6a88a3")
+			if not spellbook_editable:
+				row_fill = row_fill.darkened(0.18)
+				row_outline = row_outline.darkened(0.2)
+			draw_rect(row_rect, row_fill, true)
+			draw_rect(row_rect, row_outline, false, 1.0)
+			draw_string(font, row_rect.position + Vector2(10.0, 22.0), spell_display_name_local(spell_id), HORIZONTAL_ALIGNMENT_LEFT, row_rect.size.x - 20.0, 15, Color("edf5ff"))
 			if prepared:
-				draw_string(font, row_rect.position + Vector2(row_rect.size.x - 40.0, 18.0), "SET", HORIZONTAL_ALIGNMENT_LEFT, 34.0, 10, Color("ffe28a"))
+				draw_string(font, row_rect.position + Vector2(row_rect.size.x - 46.0, 22.0), "SET", HORIZONTAL_ALIGNMENT_LEFT, 36.0, 12, Color("ffe28a"))
 	for slot_index in range(spellbook_slot_capacity):
 		var slot_rect: Rect2 = spellbook_slot_rect(slot_index)
 		var slotted_spell_id: String = spellbook_slotted[slot_index] if slot_index < spellbook_slotted.size() else ""
 		draw_rect(slot_rect, Color("243841"), true)
 		draw_rect(slot_rect, Color("6a88a3"), false, 1.0)
 		var slot_label: String = "Slot %d" % [slot_index + 1]
-		draw_string(font, slot_rect.position + Vector2(8.0, 16.0), slot_label, HORIZONTAL_ALIGNMENT_LEFT, slot_rect.size.x - 16.0, 11, Color("b9d8e4"))
+		draw_string(font, slot_rect.position + Vector2(10.0, 18.0), slot_label, HORIZONTAL_ALIGNMENT_LEFT, slot_rect.size.x - 20.0, 13, Color("b9d8e4"))
 		var slot_spell_name: String = spell_display_name_local(slotted_spell_id) if slotted_spell_id != "" else "Empty"
 		var slot_color: Color = Color("edf5ff") if slotted_spell_id != "" else Color("8ea5b4")
-		draw_string(font, slot_rect.position + Vector2(8.0, 31.0), slot_spell_name, HORIZONTAL_ALIGNMENT_LEFT, slot_rect.size.x - 16.0, 12, slot_color)
+		draw_string(font, slot_rect.position + Vector2(10.0, 38.0), slot_spell_name, HORIZONTAL_ALIGNMENT_LEFT, slot_rect.size.x - 20.0, 15, slot_color)
 
 func draw_rotate_button() -> void:
 	var rotate_rect: Rect2 = rotate_button_rect()
@@ -886,8 +1014,22 @@ func remember_touched_item(item: Dictionary, should_redraw: bool = true) -> void
 	if item.is_empty():
 		return
 	last_touched_item = item.duplicate(true)
+	if spellbook_overlay_open and not spell_focus_selected_item():
+		close_spellbook_overlay()
 	if should_redraw:
 		queue_redraw()
+
+func _on_spellbook_overlay_close_requested() -> void:
+	close_spellbook_overlay()
+
+func _on_spellbook_overlay_slots_changed(slotted_spells: Array) -> void:
+	spellbook_slotted.clear()
+	for spell_variant in slotted_spells:
+		var spell_id: String = String(spell_variant)
+		if spell_id != "":
+			spellbook_slotted.append(spell_id)
+	spellbook_slots_changed.emit(spellbook_slotted.duplicate())
+	queue_redraw()
 
 func item_description_lines(item: Dictionary) -> Array[String]:
 	var lines: Array[String] = []
@@ -932,7 +1074,7 @@ func item_description_lines(item: Dictionary) -> Array[String]:
 				lines.append("Adds %s every %d doors" % [generator_label, int(generator.get("door_interval", 1))])
 		var max_stored_cards: int = int(generator.get("max_stored_cards", 1))
 		if max_stored_cards > 0:
-			lines.append("Stores at most %d ready %s card%s" % [max_stored_cards, generator_label, "" if max_stored_cards == 1 else "s"])
+			lines.append("Stores at most %d ready %s card%s from this source" % [max_stored_cards, generator_label, "" if max_stored_cards == 1 else "s"])
 		var exhaust_cards: int = int(generator.get("exhaust_cards", 0))
 		if exhaust_cards > 0:
 			lines.append("Exhausts after %d generated cards" % exhaust_cards)
@@ -1204,40 +1346,47 @@ func draw_item_synergy_sockets(item: Dictionary) -> void:
 			draw_colored_polygon(star_points(socket_center, star_radius), star_fill)
 		draw_polyline(star_points(socket_center, star_radius, star_radius * 0.46), star_outline, 2.0 if socket_matched else 1.6, true)
 
-func spellbook_active_for_selected_item() -> bool:
-	return spellbook_enabled and String(last_touched_item.get("item_id", "")) == "spellbook"
-
-func spellbook_panel_rect() -> Rect2:
-	if not spellbook_active_for_selected_item():
+func spellbook_action_button_rect() -> Rect2:
+	if not spell_focus_selected_item():
 		return Rect2()
 	var description_rect: Rect2 = item_description_rect()
-	var item_lines: Array[String] = item_description_lines(last_touched_item)
-	var desired_top: float = description_rect.position.y + 92.0 + float(mini(item_lines.size(), 4)) * 15.0
-	var minimum_top: float = description_rect.position.y + 148.0
-	var maximum_top: float = description_rect.end.y - 148.0
-	var panel_top: float = clampf(desired_top, minimum_top, maximum_top)
-	return Rect2(Vector2(description_rect.position.x + 14.0, panel_top), Vector2(description_rect.size.x - 28.0, description_rect.end.y - panel_top - 12.0))
+	return Rect2(Vector2(description_rect.position.x + 14.0, description_rect.end.y - 60.0), Vector2(description_rect.size.x - 28.0, 46.0))
+
+func spellbook_action_touch_rect() -> Rect2:
+	var action_rect: Rect2 = spellbook_action_button_rect()
+	if action_rect.size == Vector2.ZERO:
+		return action_rect
+	return action_rect.grow_individual(8.0, 10.0, 8.0, 12.0)
+
+func spellbook_panel_rect() -> Rect2:
+	if not spellbook_overlay_open:
+		return Rect2()
+	return Rect2(Vector2(12.0, 12.0), size - Vector2(24.0, 24.0))
+
+func spellbook_close_button_rect() -> Rect2:
+	var panel: Rect2 = spellbook_panel_rect()
+	return Rect2(Vector2(panel.end.x - 112.0, panel.position.y + 14.0), Vector2(96.0, 32.0))
 
 func spellbook_known_column_rect() -> Rect2:
 	var panel: Rect2 = spellbook_panel_rect()
-	var column_top: float = panel.position.y + 42.0
-	return Rect2(panel.position + Vector2(10.0, 42.0), Vector2(panel.size.x * 0.58 - 14.0, panel.end.y - column_top - 10.0))
+	var column_top: float = panel.position.y + 92.0
+	return Rect2(panel.position + Vector2(18.0, 92.0), Vector2(panel.size.x * 0.62 - 26.0, panel.end.y - column_top - 18.0))
 
 func spellbook_slot_column_rect() -> Rect2:
 	var panel: Rect2 = spellbook_panel_rect()
-	var column_top: float = panel.position.y + 42.0
-	var left_width: float = panel.size.x * 0.58
-	return Rect2(panel.position + Vector2(left_width + 8.0, 42.0), Vector2(panel.size.x - left_width - 18.0, panel.end.y - column_top - 10.0))
+	var column_top: float = panel.position.y + 92.0
+	var left_width: float = panel.size.x * 0.62
+	return Rect2(panel.position + Vector2(left_width + 10.0, 92.0), Vector2(panel.size.x - left_width - 28.0, panel.end.y - column_top - 18.0))
 
 func spellbook_known_row_rect(spell_index: int) -> Rect2:
 	var known_rect: Rect2 = spellbook_known_column_rect()
-	var row_height: float = 28.0
-	return Rect2(known_rect.position + Vector2(0.0, 18.0 + float(spell_index) * (row_height + 4.0)), Vector2(known_rect.size.x, row_height))
+	var row_height: float = 32.0
+	return Rect2(known_rect.position + Vector2(0.0, 24.0 + float(spell_index) * (row_height + 6.0)), Vector2(known_rect.size.x, row_height))
 
 func spellbook_slot_rect(slot_index: int) -> Rect2:
 	var slots_rect: Rect2 = spellbook_slot_column_rect()
-	var row_height: float = 42.0
-	return Rect2(slots_rect.position + Vector2(0.0, 18.0 + float(slot_index) * (row_height + 6.0)), Vector2(slots_rect.size.x, row_height))
+	var row_height: float = 52.0
+	return Rect2(slots_rect.position + Vector2(0.0, 24.0 + float(slot_index) * (row_height + 8.0)), Vector2(slots_rect.size.x, row_height))
 
 func spell_display_name_local(spell_id: String) -> String:
 	if spell_id == "":
@@ -1245,8 +1394,16 @@ func spell_display_name_local(spell_id: String) -> String:
 	return spell_id.replace("_card", "").replace("_", " ").capitalize()
 
 func handle_spellbook_pointer_press(local_position: Vector2) -> bool:
-	if not spellbook_active_for_selected_item():
+	if not spellbook_overlay_open:
 		return false
+	if not spellbook_panel_rect().has_point(local_position):
+		close_spellbook_overlay()
+		return true
+	if spellbook_close_button_rect().has_point(local_position):
+		close_spellbook_overlay()
+		return true
+	if not spellbook_editable:
+		return true
 	for spell_index in range(spellbook_known.size()):
 		if not spellbook_known_row_rect(spell_index).has_point(local_position):
 			continue

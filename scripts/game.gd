@@ -539,10 +539,19 @@ func build_item_defs() -> Dictionary:
 		"spellbook": {
 			"name": "Spellbook",
 			"short": "SPB",
-			"size": Vector2i(2, 2),
+			"size": Vector2i(1, 2),
 			"color": Color("caa8ff"),
 			"description_lines": ["Wizard focus", "Slots learned spells for one cast each floor"],
 			"tags": ["arcane", "book", "support"],
+			"stats": {"hand_size": 1},
+		},
+		"holy_symbol": {
+			"name": "Holy Symbol",
+			"short": "HLY",
+			"size": Vector2i(1, 1),
+			"color": Color("d8e8a8"),
+			"description_lines": ["Cleric focus", "Prepares prayers for one cast each floor"],
+			"tags": ["divine", "focus", "support"],
 			"stats": {"hand_size": 1},
 		},
 		"scroll_fireball": {
@@ -571,6 +580,24 @@ func build_item_defs() -> Dictionary:
 			"description_lines": ["Single-use spell scroll", "Cast once or study in calm as a wizard"],
 			"tags": ["arcane", "scroll"],
 			"hand_card": {"card_id": "misty_step_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Misty Step Scroll", "description_lines_override": ["Teleport once to a seen room", "Wizard can study it in calm mode"]},
+		},
+		"scroll_shield": {
+			"name": "Scroll of Shield",
+			"short": "SSH",
+			"size": Vector2i(1, 2),
+			"color": Color("9fc8ff"),
+			"description_lines": ["Single-use spell scroll", "Cast once or study in calm as a wizard"],
+			"tags": ["arcane", "scroll"],
+			"hand_card": {"card_id": "shield_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Shield Scroll", "description_lines_override": ["Gain a temporary arcane barrier", "Wizard can study it in calm mode"]},
+		},
+		"scroll_lightning_bolt": {
+			"name": "Scroll of Lightning Bolt",
+			"short": "SLB",
+			"size": Vector2i(1, 2),
+			"color": Color("8bd9ff"),
+			"description_lines": ["Single-use spell scroll", "Cast once or study in calm as a wizard"],
+			"tags": ["arcane", "scroll"],
+			"hand_card": {"card_id": "lightning_bolt_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Lightning Bolt Scroll", "description_lines_override": ["Fire a piercing line through a doorway", "Wizard can study it in calm mode"]},
 		},
 	}
 
@@ -649,27 +676,161 @@ func default_inventory_items_for_class(class_id: String) -> Array:
 	match class_id:
 		HERO_CLASS_WIZARD:
 			items.append(make_inventory_item("spellbook", INVENTORY_BASE_ORIGIN))
+		HERO_CLASS_CLERIC:
+			items.append(make_inventory_item("holy_symbol", INVENTORY_BASE_ORIGIN))
 	return items
 
 func default_learned_spells_for_class(class_id: String) -> Array[String]:
 	match class_id:
 		HERO_CLASS_WIZARD:
-			return ["fireball_card"]
+			return ["magic_missile_card", "shield_card"]
+		HERO_CLASS_CLERIC:
+			return ["cure_light_wounds_card", "sanctuary_card"]
 		_:
 			return []
 
 func default_slotted_spells_for_class(class_id: String) -> Array[String]:
 	match class_id:
 		HERO_CLASS_WIZARD:
-			return ["fireball_card"]
+			return ["magic_missile_card"]
+		HERO_CLASS_CLERIC:
+			return ["cure_light_wounds_card"]
 		_:
 			return []
 
 func spell_display_name(spell_id: String) -> String:
 	return String(card_definition(spell_id).get("name", spell_id.replace("_card", "").replace("_", " ").capitalize()))
 
-func spell_slot_capacity_for_level(level_value: int) -> int:
-	return clampi(1 + int(floor(float(maxi(level_value - 1, 0)) / 3.0)), 1, 5)
+func spell_display_names_joined(spell_ids: Array) -> String:
+	var names: Array[String] = []
+	for spell_variant in spell_ids:
+		var spell_id: String = String(spell_variant)
+		if spell_id == "":
+			continue
+		names.append(spell_display_name(spell_id))
+	return ", ".join(PackedStringArray(names))
+
+func spell_overlay_entry(spell_id: String) -> Dictionary:
+	var card_def: Dictionary = card_definition(spell_id)
+	return {
+		"id": spell_id,
+		"name": String(card_def.get("name", spell_id.replace("_card", "").replace("_", " ").capitalize())),
+		"level": spell_level(spell_id),
+		"description_lines": Array(card_def.get("description_lines", [])).duplicate(),
+	}
+
+func spell_overlay_entries(spell_ids: Array) -> Array:
+	var entries: Array = []
+	for spell_variant in spell_ids:
+		var spell_id: String = String(spell_variant)
+		if spell_id == "":
+			continue
+		entries.append(spell_overlay_entry(spell_id))
+	return entries
+
+func spell_focus_item_id_for_class(class_id: String) -> String:
+	match class_id:
+		HERO_CLASS_WIZARD:
+			return "spellbook"
+		HERO_CLASS_CLERIC:
+			return "holy_symbol"
+		_:
+			return ""
+
+func spell_panel_title_for_class(class_id: String) -> String:
+	match class_id:
+		HERO_CLASS_CLERIC:
+			return "Prayer Book"
+		_:
+			return "Spellbook"
+
+func wizard_spell_slots_for_level(level_value: int) -> Array[int]:
+	var table: Array = [
+		[1, 0, 0, 0, 0, 0, 0, 0, 0],
+		[2, 0, 0, 0, 0, 0, 0, 0, 0],
+		[2, 1, 0, 0, 0, 0, 0, 0, 0],
+		[3, 2, 0, 0, 0, 0, 0, 0, 0],
+		[4, 2, 1, 0, 0, 0, 0, 0, 0],
+		[4, 2, 2, 0, 0, 0, 0, 0, 0],
+		[4, 3, 2, 1, 0, 0, 0, 0, 0],
+		[4, 3, 3, 2, 0, 0, 0, 0, 0],
+		[4, 4, 3, 2, 1, 0, 0, 0, 0],
+		[4, 4, 4, 3, 2, 0, 0, 0, 0],
+		[4, 4, 4, 4, 3, 1, 0, 0, 0],
+		[4, 4, 4, 4, 4, 2, 0, 0, 0],
+		[5, 5, 5, 4, 4, 2, 1, 0, 0],
+		[5, 5, 5, 5, 4, 3, 2, 0, 0],
+		[5, 5, 5, 5, 5, 4, 2, 1, 0],
+		[5, 5, 5, 5, 5, 4, 3, 2, 0],
+		[5, 5, 5, 5, 5, 5, 4, 3, 1],
+		[5, 5, 5, 5, 5, 5, 4, 4, 2],
+		[6, 5, 5, 5, 5, 5, 5, 4, 2],
+		[6, 5, 5, 5, 5, 5, 5, 5, 3],
+	]
+	var index: int = clampi(level_value, 1, table.size()) - 1
+	var row: Array = table[index]
+	var slots: Array[int] = []
+	for value in row:
+		slots.append(int(value))
+	return slots
+
+func priest_spell_slots_for_level(level_value: int) -> Array[int]:
+	var table: Array = [
+		[1, 0, 0, 0, 0, 0, 0],
+		[2, 0, 0, 0, 0, 0, 0],
+		[2, 1, 0, 0, 0, 0, 0],
+		[3, 2, 0, 0, 0, 0, 0],
+		[3, 3, 1, 0, 0, 0, 0],
+		[3, 3, 2, 0, 0, 0, 0],
+		[3, 3, 2, 1, 0, 0, 0],
+		[3, 3, 3, 2, 0, 0, 0],
+		[4, 4, 3, 2, 1, 0, 0],
+		[4, 4, 3, 2, 2, 0, 0],
+		[5, 4, 3, 2, 2, 1, 0],
+		[6, 5, 3, 2, 2, 2, 0],
+		[6, 6, 4, 2, 2, 2, 1],
+		[6, 6, 5, 3, 2, 2, 1],
+		[7, 6, 5, 3, 2, 2, 1],
+		[7, 7, 6, 4, 2, 2, 1],
+		[8, 7, 6, 4, 3, 2, 1],
+		[8, 8, 6, 5, 3, 3, 1],
+		[9, 8, 6, 5, 3, 3, 2],
+		[9, 9, 7, 5, 4, 3, 2],
+	]
+	var index: int = clampi(level_value, 1, table.size()) - 1
+	var row: Array = table[index]
+	var slots: Array[int] = []
+	for value in row:
+		slots.append(int(value))
+	return slots
+
+func spell_level(spell_id: String) -> int:
+	return maxi(0, int(card_definition(spell_id).get("spell_level", 0)))
+
+func spell_class_id(spell_id: String) -> String:
+	return String(card_definition(spell_id).get("spell_class", ""))
+
+func spell_slot_counts_for_class_level(class_id: String, level_value: int) -> Array[int]:
+	match class_id:
+		HERO_CLASS_WIZARD:
+			return wizard_spell_slots_for_level(level_value)
+		HERO_CLASS_CLERIC:
+			return priest_spell_slots_for_level(level_value)
+		_:
+			return []
+
+func hero_max_spell_level_for_class_level(class_id: String, level_value: int) -> int:
+	var slot_counts: Array[int] = spell_slot_counts_for_class_level(class_id, level_value)
+	for slot_index in range(slot_counts.size() - 1, -1, -1):
+		if slot_counts[slot_index] > 0:
+			return slot_index + 1
+	return 0
+
+func spell_slot_capacity_for_class_level(class_id: String, level_value: int) -> int:
+	var total: int = 0
+	for slot_count in spell_slot_counts_for_class_level(class_id, level_value):
+		total += int(slot_count)
+	return total
 
 func default_hero_class_for_slot(hero_index: int) -> String:
 	return String(HERO_CLASS_ORDER[hero_index % HERO_CLASS_ORDER.size()])
@@ -704,6 +865,7 @@ func set_hero_profile_class(hero_index: int, class_id: String, apply_to_spawned_
 				hero.inventory_items = Array(hero_profiles[hero_index].get("inventory_items", [])).duplicate(true)
 				hero.learned_spells = Array(hero_profiles[hero_index].get("learned_spells", [])).duplicate()
 				hero.slotted_spells = Array(hero_profiles[hero_index].get("slotted_spells", [])).duplicate()
+				hero.active_floor_spells = hero.slotted_spells.duplicate()
 				sanitize_hero_spellbook(hero)
 			apply_inventory_stats_to_hero(hero)
 			hero.restore_health()
@@ -1485,6 +1647,7 @@ func build_dungeon(reset_resources: bool = true) -> void:
 	crystal["lit"] = true
 	crystal["permanent_light"] = true
 	crystal["temporary_light_turns"] = 0
+	crystal["wave_torch_until_wave"] = -1
 	crystal["crystal"] = true
 	crystal["minor_slots"] = 0
 	crystal["major_slots"] = 0
@@ -1510,6 +1673,7 @@ func build_dungeon(reset_resources: bool = true) -> void:
 		create_room(room_coord, template_id, blueprint["door_dirs"], candidate_center)
 		connect_rooms(origin, room_coord)
 	assign_exit_room()
+	refresh_room_lighting_states()
 	refresh_camera_bounds()
 
 func clear_floor_actors() -> void:
@@ -1549,29 +1713,133 @@ func ensure_hero_profiles() -> void:
 			"slotted_spells": default_slotted_spells_for_class(class_id),
 		})
 
-func hero_has_spellbook_item(hero: Variant) -> bool:
+func hero_supports_spell_repertoire(hero: Variant) -> bool:
+	return hero != null and is_instance_valid(hero) and spell_focus_item_id_for_class(String(hero.hero_class_id)) != ""
+
+func hero_has_spell_focus_item(hero: Variant) -> bool:
 	if hero == null or not is_instance_valid(hero):
 		return false
+	var focus_item_id: String = spell_focus_item_id_for_class(String(hero.hero_class_id))
+	if focus_item_id == "":
+		return false
 	for item_variant in hero.inventory_items:
-		if String((item_variant as Dictionary).get("item_id", "")) == "spellbook":
+		if String((item_variant as Dictionary).get("item_id", "")) == focus_item_id:
 			return true
 	return false
 
-func spellbook_item_uid_for_hero(hero: Variant) -> int:
+func spell_focus_item_uid_for_hero(hero: Variant) -> int:
 	if hero == null or not is_instance_valid(hero):
+		return -1
+	var focus_item_id: String = spell_focus_item_id_for_class(String(hero.hero_class_id))
+	if focus_item_id == "":
 		return -1
 	for item_variant in hero.inventory_items:
 		var item: Dictionary = item_variant
-		if String(item.get("item_id", "")) == "spellbook":
+		if String(item.get("item_id", "")) == focus_item_id:
 			return int(item.get("uid", -1))
 	return -1
+
+func hero_can_prepare_spell(hero: Variant, spell_id: String) -> bool:
+	if hero == null or not is_instance_valid(hero):
+		return false
+	if spell_id == "" or spell_class_id(spell_id) != String(hero.hero_class_id):
+		return false
+	var required_level: int = spell_level(spell_id)
+	if required_level <= 0:
+		return false
+	return required_level <= hero_max_spell_level_for_class_level(String(hero.hero_class_id), int(hero.level))
+
+func hero_spell_repertoire_editable(hero: Variant) -> bool:
+	return hero != null and is_instance_valid(hero) and hero_supports_spell_repertoire(hero)
+
+func prepared_spell_max_copies(hero: Variant, spell_id: String, slot_counts: Array[int] = []) -> int:
+	if hero == null or not is_instance_valid(hero) or spell_id == "":
+		return 0
+	var card_def: Dictionary = card_definition(spell_id)
+	var explicit_limit: int = int(card_def.get("max_prepared_copies", 0))
+	if explicit_limit > 0:
+		return explicit_limit
+	if bool(card_def.get("reusable", false)):
+		return 1
+	var resolved_slot_counts: Array[int] = slot_counts if not slot_counts.is_empty() else spell_slot_counts_for_class_level(String(hero.hero_class_id), int(hero.level))
+	var level_index: int = spell_level(spell_id) - 1
+	if level_index < 0 or level_index >= resolved_slot_counts.size():
+		return 0
+	return int(resolved_slot_counts[level_index])
+
+func default_prepared_spell_list(hero: Variant, slot_counts: Array[int]) -> Array[String]:
+	var prepared: Array[String] = []
+	if hero == null or not is_instance_valid(hero):
+		return prepared
+	var copy_counts: Dictionary = {}
+	for level_index in range(slot_counts.size()):
+		var slots_remaining: int = int(slot_counts[level_index])
+		if slots_remaining <= 0:
+			continue
+		var level_spells: Array[String] = []
+		for learned_spell_variant in hero.learned_spells:
+			var learned_spell_id: String = String(learned_spell_variant)
+			if spell_level(learned_spell_id) == level_index + 1 and hero_can_prepare_spell(hero, learned_spell_id):
+				level_spells.append(learned_spell_id)
+		if level_spells.is_empty():
+			continue
+		var made_progress: bool = true
+		while slots_remaining > 0 and made_progress:
+			made_progress = false
+			for level_spell_id in level_spells:
+				var used_copies: int = int(copy_counts.get(level_spell_id, 0))
+				if used_copies >= prepared_spell_max_copies(hero, level_spell_id, slot_counts):
+					continue
+				copy_counts[level_spell_id] = used_copies + 1
+				prepared.append(level_spell_id)
+				slots_remaining -= 1
+				made_progress = true
+				if slots_remaining <= 0:
+					break
+	return prepared
+
+func cleaned_prepared_spell_list(hero: Variant, source_spells: Array) -> Array[String]:
+	var cleaned_slots: Array[String] = []
+	if hero == null or not is_instance_valid(hero):
+		return cleaned_slots
+	var slot_counts: Array[int] = spell_slot_counts_for_class_level(String(hero.hero_class_id), int(hero.level))
+	var used_slots_by_level: Array[int] = []
+	used_slots_by_level.resize(slot_counts.size())
+	for slot_index in range(used_slots_by_level.size()):
+		used_slots_by_level[slot_index] = 0
+	var used_spell_copies: Dictionary = {}
+	for spell_variant in source_spells:
+		var spell_id: String = String(spell_variant)
+		if spell_id == "" or not hero.learned_spells.has(spell_id) or not hero_can_prepare_spell(hero, spell_id):
+			continue
+		var level_index: int = spell_level(spell_id) - 1
+		if level_index < 0 or level_index >= slot_counts.size() or used_slots_by_level[level_index] >= slot_counts[level_index]:
+			continue
+		var used_copies: int = int(used_spell_copies.get(spell_id, 0))
+		if used_copies >= prepared_spell_max_copies(hero, spell_id, slot_counts):
+			continue
+		cleaned_slots.append(spell_id)
+		used_slots_by_level[level_index] += 1
+		used_spell_copies[spell_id] = used_copies + 1
+	if cleaned_slots.is_empty() and not hero.learned_spells.is_empty():
+		cleaned_slots = default_prepared_spell_list(hero, slot_counts)
+	return cleaned_slots
+
+func refresh_active_floor_spells(hero: Variant, force_saved_repertoire: bool = false) -> void:
+	if hero == null or not is_instance_valid(hero):
+		return
+	if force_saved_repertoire or hero.active_floor_spells.is_empty() or doors_opened == 0:
+		hero.active_floor_spells = cleaned_prepared_spell_list(hero, hero.slotted_spells)
+	else:
+		hero.active_floor_spells = cleaned_prepared_spell_list(hero, hero.active_floor_spells)
 
 func sanitize_hero_spellbook(hero: Variant) -> void:
 	if hero == null or not is_instance_valid(hero):
 		return
-	if hero.hero_class_id != HERO_CLASS_WIZARD or not hero_has_spellbook_item(hero):
+	if not hero_supports_spell_repertoire(hero) or not hero_has_spell_focus_item(hero):
 		hero.learned_spells.clear()
 		hero.slotted_spells.clear()
+		hero.active_floor_spells.clear()
 		hero.studying_spell_id = ""
 		hero.studying_room = INVALID_ROOM
 		hero.studying_started_at_door = -1
@@ -1580,27 +1848,15 @@ func sanitize_hero_spellbook(hero: Variant) -> void:
 	var cleaned_known: Array[String] = []
 	for spell_variant in hero.learned_spells:
 		var spell_id: String = String(spell_variant)
-		if spell_id == "" or known_map.has(spell_id):
+		if spell_id == "" or known_map.has(spell_id) or spell_class_id(spell_id) != String(hero.hero_class_id):
 			continue
 		known_map[spell_id] = true
 		cleaned_known.append(spell_id)
 	if cleaned_known.is_empty():
 		cleaned_known = default_learned_spells_for_class(hero.hero_class_id).duplicate()
 	hero.learned_spells = cleaned_known
-	var slot_capacity: int = spell_slot_capacity_for_level(hero.level)
-	var used_slots: Dictionary = {}
-	var cleaned_slots: Array[String] = []
-	for spell_variant in hero.slotted_spells:
-		var spell_id: String = String(spell_variant)
-		if spell_id == "" or used_slots.has(spell_id) or not hero.learned_spells.has(spell_id):
-			continue
-		used_slots[spell_id] = true
-		cleaned_slots.append(spell_id)
-		if cleaned_slots.size() >= slot_capacity:
-			break
-	if cleaned_slots.is_empty() and not hero.learned_spells.is_empty():
-		cleaned_slots.append(String(hero.learned_spells[0]))
-	hero.slotted_spells = cleaned_slots
+	hero.slotted_spells = cleaned_prepared_spell_list(hero, hero.slotted_spells)
+	refresh_active_floor_spells(hero)
 
 func save_hero_profiles_from_nodes() -> void:
 	ensure_hero_profiles()
@@ -1657,6 +1913,7 @@ func create_room(room_coord: Vector2i, template_id: String, door_dirs: Array, wo
 		"lit": false,
 		"permanent_light": false,
 		"temporary_light_turns": 0,
+		"wave_torch_until_wave": -1,
 		"crystal": false,
 		"exit": false,
 		"profile": template_id,
@@ -1828,6 +2085,7 @@ func spawn_heroes() -> void:
 		hero.inventory_items = Array(hero_profiles[hero_index].get("inventory_items", [])).duplicate(true)
 		hero.learned_spells = Array(hero_profiles[hero_index].get("learned_spells", default_learned_spells_for_class(hero_class_id))).duplicate()
 		hero.slotted_spells = Array(hero_profiles[hero_index].get("slotted_spells", default_slotted_spells_for_class(hero_class_id))).duplicate()
+		hero.active_floor_spells = hero.slotted_spells.duplicate()
 		sanitize_hero_spellbook(hero)
 		hero.set_calm_movement_multiplier(selected_calm_speed_multiplier())
 		hero.set_room(crystal_room, hero_idle_position(crystal_room, hero_index, HERO_COUNT))
@@ -1835,17 +2093,6 @@ func spawn_heroes() -> void:
 		heroes.append(hero)
 	if selected_hero_index >= heroes.size():
 		selected_hero_index = 0
-	for hero_variant in heroes:
-		var spawned_hero: Variant = hero_variant
-		if spawned_hero == null or not is_instance_valid(spawned_hero):
-			continue
-		sync_hero_builtin_card_sources(spawned_hero)
-		for timer_key_variant in spawned_hero.card_generation_timers.keys():
-			var timer_key: String = String(timer_key_variant)
-			var state: Dictionary = Dictionary(spawned_hero.card_generation_timers.get(timer_key, {})).duplicate(true)
-			state["queued_cards"] = maxi(int(state.get("queued_cards", 0)), 1)
-			spawned_hero.card_generation_timers[timer_key] = state
-		fill_queued_hero_builtin_cards(spawned_hero)
 	rebuild_hero_bar()
 	update_selected_hero_flags()
 
@@ -1892,6 +2139,8 @@ func roll_ground_item_id() -> String:
 		"scroll_fireball",
 		"scroll_magic_missile",
 		"scroll_misty_step",
+		"scroll_shield",
+		"scroll_lightning_bolt",
 	]
 	if weighted_item_ids.is_empty():
 		return ""
@@ -2051,9 +2300,14 @@ func hero_level_stat_bonuses(level_value: int) -> Dictionary:
 	}
 
 func hero_spell_slot_capacity(hero: Variant) -> int:
-	if hero == null or not is_instance_valid(hero) or hero.hero_class_id != HERO_CLASS_WIZARD:
+	if hero == null or not is_instance_valid(hero) or not hero_supports_spell_repertoire(hero):
 		return 0
-	return spell_slot_capacity_for_level(hero.level)
+	return spell_slot_capacity_for_class_level(String(hero.hero_class_id), int(hero.level))
+
+func hero_spell_slot_counts(hero: Variant) -> Array[int]:
+	if hero == null or not is_instance_valid(hero) or not hero_supports_spell_repertoire(hero):
+		return []
+	return spell_slot_counts_for_class_level(String(hero.hero_class_id), int(hero.level))
 
 func hero_spellbook_overlay_data(hero: Variant) -> Dictionary:
 	if hero == null or not is_instance_valid(hero):
@@ -2063,17 +2317,24 @@ func hero_spellbook_overlay_data(hero: Variant) -> Dictionary:
 			"slotted": [],
 			"capacity": 0,
 		}
+	var focus_item_id: String = spell_focus_item_id_for_class(String(hero.hero_class_id))
 	return {
-		"enabled": hero.hero_class_id == HERO_CLASS_WIZARD and hero_has_spellbook_item(hero),
+		"enabled": hero_supports_spell_repertoire(hero) and hero_has_spell_focus_item(hero),
+		"focus_item_id": focus_item_id,
+		"title": spell_panel_title_for_class(String(hero.hero_class_id)),
 		"known": hero.learned_spells.duplicate(),
+		"spells": spell_overlay_entries(hero.learned_spells),
 		"slotted": hero.slotted_spells.duplicate(),
 		"capacity": hero_spell_slot_capacity(hero),
+		"slots_by_level": hero_spell_slot_counts(hero),
+		"editable": hero_spell_repertoire_editable(hero),
+		"prep_note": "Level %d spells. In the first room, slot edits immediately refresh generated spell cards, but no cards can be played until the first door opens. After that, edits save for next floor only, and existing generated cards stay until played." % hero_max_spell_level_for_class_level(String(hero.hero_class_id), int(hero.level)),
 	}
 
 func hero_can_study_spell(hero: Variant, spell_id: String) -> bool:
 	if hero == null or not is_instance_valid(hero):
 		return false
-	if hero.hero_class_id != HERO_CLASS_WIZARD or not hero_has_spellbook_item(hero):
+	if hero.hero_class_id != HERO_CLASS_WIZARD or not hero_has_spell_focus_item(hero):
 		return false
 	if spell_id == "" or hero.learned_spells.has(spell_id):
 		return false
@@ -2104,7 +2365,13 @@ func resolve_spell_scroll_studies() -> void:
 			continue
 		if not hero.learned_spells.has(studied_spell_id):
 			hero.learned_spells.append(studied_spell_id)
-		if hero.slotted_spells.size() < hero_spell_slot_capacity(hero) and not hero.slotted_spells.has(studied_spell_id):
+		var prepared_level_index: int = spell_level(studied_spell_id) - 1
+		var slot_counts: Array[int] = hero_spell_slot_counts(hero)
+		var prepared_count_for_level: int = 0
+		for slotted_spell_variant in hero.slotted_spells:
+			if spell_level(String(slotted_spell_variant)) == prepared_level_index + 1:
+				prepared_count_for_level += 1
+		if prepared_level_index >= 0 and prepared_level_index < slot_counts.size() and prepared_count_for_level < int(slot_counts[prepared_level_index]) and not hero.slotted_spells.has(studied_spell_id):
 			hero.slotted_spells.append(studied_spell_id)
 		sanitize_hero_spellbook(hero)
 		apply_inventory_stats_to_hero(hero)
@@ -2266,6 +2533,8 @@ func card_definition(card_id: String) -> Dictionary:
 			return {
 				"id": "fireball_card",
 				"name": "Fireball",
+				"spell_class": HERO_CLASS_WIZARD,
+				"spell_level": 3,
 				"target_scope": "opened_room",
 				"requires_line_of_effect": true,
 				"phase": "combat",
@@ -2282,6 +2551,8 @@ func card_definition(card_id: String) -> Dictionary:
 			return {
 				"id": "magic_missile_card",
 				"name": "Magic Missile",
+				"spell_class": HERO_CLASS_WIZARD,
+				"spell_level": 1,
 				"target_scope": "opened_room",
 				"requires_line_of_effect": true,
 				"phase": "combat",
@@ -2292,10 +2563,25 @@ func card_definition(card_id: String) -> Dictionary:
 				"cast_adjacent_hops": 1,
 				"color": Color("9cd7ff"),
 			}
+		"light_cantrip_card":
+			return {
+				"id": "light_cantrip_card",
+				"name": "Light",
+				"spell_class": HERO_CLASS_WIZARD,
+				"spell_level": 1,
+				"target_scope": "same_room",
+				"phase": "out_of_combat",
+				"description_lines": ["Wizard cantrip", "Lights the wizard's current room", "Light follows the wizard until recast or the floor ends"],
+				"stamina_cost": 0.0,
+				"color": Color("fff1a8"),
+				"reusable": true,
+			}
 		"misty_step_card":
 			return {
 				"id": "misty_step_card",
 				"name": "Misty Step",
+				"spell_class": HERO_CLASS_WIZARD,
+				"spell_level": 2,
 				"target_scope": "opened_room",
 				"requires_line_of_effect": true,
 				"phase": "any",
@@ -2303,6 +2589,36 @@ func card_definition(card_id: String) -> Dictionary:
 				"stamina_cost": 0.0,
 				"cast_adjacent_hops": 1,
 				"color": Color("b89cff"),
+			}
+		"shield_card":
+			return {
+				"id": "shield_card",
+				"name": "Shield",
+				"spell_class": HERO_CLASS_WIZARD,
+				"spell_level": 1,
+				"target_scope": "same_hero",
+				"phase": "combat",
+				"description_lines": ["Gain a temporary arcane barrier", "Generated once per floor from a slotted spell"],
+				"stamina_cost": 1.0,
+				"shield_amount": 34.0,
+				"shield_duration": 10.0,
+				"color": Color("9fc8ff"),
+			}
+		"lightning_bolt_card":
+			return {
+				"id": "lightning_bolt_card",
+				"name": "Lightning Bolt",
+				"spell_class": HERO_CLASS_WIZARD,
+				"spell_level": 3,
+				"target_scope": "opened_room",
+				"requires_line_of_effect": true,
+				"phase": "combat",
+				"description_lines": ["Strike a line through one room or doorway", "Generated once per floor from a slotted spell"],
+				"stamina_cost": 2.0,
+				"base_damage": 30.0,
+				"impact_radius": 18.0,
+				"cast_adjacent_hops": 1,
+				"color": Color("8bd9ff"),
 			}
 		"lantern_torch_card":
 			return {
@@ -2320,9 +2636,35 @@ func card_definition(card_id: String) -> Dictionary:
 				"name": "Torch",
 				"target_scope": "opened_room",
 				"phase": "out_of_combat",
-				"description_lines": ["Light one opened dark room", "Temporary: 1 dungeon turn"],
+				"description_lines": ["Light one opened room", "Lasts through the next combat wave"],
 				"door_interval": 2,
 				"color": Color("ffe38a"),
+			}
+		"cure_light_wounds_card":
+			return {
+				"id": "cure_light_wounds_card",
+				"name": "Cure Light Wounds",
+				"spell_class": HERO_CLASS_CLERIC,
+				"spell_level": 1,
+				"target_scope": "hero",
+				"phase": "combat",
+				"description_lines": ["Restore 36 health to one hero", "Generated once per floor from a prepared prayer"],
+				"heal_amount": 36.0,
+				"color": Color("c3ffb3"),
+			}
+		"sanctuary_card":
+			return {
+				"id": "sanctuary_card",
+				"name": "Sanctuary",
+				"spell_class": HERO_CLASS_CLERIC,
+				"spell_level": 1,
+				"target_scope": "same_hero",
+				"phase": "combat",
+				"description_lines": ["Gain a brief divine ward", "Generated once per floor from a prepared prayer"],
+				"stamina_cost": 1.0,
+				"shield_amount": 24.0,
+				"shield_duration": 8.0,
+				"color": Color("e3ff9f"),
 			}
 		"mend_card":
 			return {
@@ -2412,7 +2754,7 @@ func card_target_scope_label(target_scope: String) -> String:
 func hero_builtin_card_generators(hero: Variant) -> Array:
 	if hero == null or not is_instance_valid(hero):
 		return []
-	return [{
+	var generators: Array = [{
 		"card_id": "emergency_snack_card",
 		"door_interval": 1,
 		"generation_mode": "door_interval",
@@ -2421,25 +2763,38 @@ func hero_builtin_card_generators(hero: Variant) -> Array:
 		"hero_index": hero.hero_index,
 		"generator_key": "hero:%d:emergency_snack_card" % hero.hero_index,
 	}]
+	if hero.hero_class_id == HERO_CLASS_WIZARD:
+		generators.append({
+			"card_id": "light_cantrip_card",
+			"generation_mode": "single",
+			"max_stored_cards": 1,
+			"source_type": "hero_builtin",
+			"hero_index": hero.hero_index,
+			"generator_key": "hero:%d:light_cantrip_card" % hero.hero_index,
+			"persistent_card": true,
+		})
+	return generators
 
 func spellbook_card_generators(hero: Variant, effect_summary: Dictionary) -> Array:
 	var generators: Array = []
-	if hero == null or not is_instance_valid(hero) or hero.hero_class_id != HERO_CLASS_WIZARD:
+	if hero == null or not is_instance_valid(hero) or not hero_supports_spell_repertoire(hero):
 		return generators
-	var spellbook_uid: int = spellbook_item_uid_for_hero(hero)
-	if spellbook_uid < 0:
+	var focus_item_uid: int = spell_focus_item_uid_for_hero(hero)
+	var focus_item_id: String = spell_focus_item_id_for_class(String(hero.hero_class_id))
+	if focus_item_uid < 0 or focus_item_id == "":
 		return generators
-	for spell_id_variant in hero.slotted_spells:
-		var spell_id: String = String(spell_id_variant)
-		if spell_id == "":
+	for spell_index in range(hero.active_floor_spells.size()):
+		var spell_id: String = String(hero.active_floor_spells[spell_index])
+		if spell_id == "" or not hero_can_prepare_spell(hero, spell_id):
 			continue
 		generators.append({
 			"card_id": spell_id,
-			"item_uid": spellbook_uid,
-			"item_id": "spellbook",
-			"item_bonus": Dictionary(effect_summary.get("item_bonus_by_uid", {}).get(spellbook_uid, empty_inventory_effect_summary())).duplicate(true),
+			"item_uid": focus_item_uid,
+			"item_id": focus_item_id,
+			"item_bonus": Dictionary(effect_summary.get("item_bonus_by_uid", {}).get(focus_item_uid, empty_inventory_effect_summary())).duplicate(true),
 			"generation_mode": "floor_once",
 			"max_stored_cards": 1,
+			"generator_key": "spellbook:%d:%d:%s" % [hero.hero_index, spell_index, spell_id],
 		})
 	return generators
 
@@ -2714,7 +3069,7 @@ func hero_has_hand_card_for_generator_key(generator_key: String) -> bool:
 			continue
 		for hand_card_variant in hero.hand_cards:
 			var hand_card: Dictionary = hand_card_variant
-			var hand_key: String = card_generator_key(int(hand_card.get("item_uid", -1)), String(hand_card.get("card_id", "")))
+			var hand_key: String = String(hand_card.get("generator_key", card_generator_key(int(hand_card.get("item_uid", -1)), String(hand_card.get("card_id", "")))))
 			if hand_key == generator_key:
 				return true
 	return false
@@ -2725,7 +3080,7 @@ func hero_hand_card_count_for_generator_key(hero: Variant, generator_key: String
 	var count: int = 0
 	for hand_card_variant in hero.hand_cards:
 		var hand_card: Dictionary = hand_card_variant
-		var hand_key: String = card_generator_key(int(hand_card.get("item_uid", -1)), String(hand_card.get("card_id", "")))
+		var hand_key: String = String(hand_card.get("generator_key", card_generator_key(int(hand_card.get("item_uid", -1)), String(hand_card.get("card_id", "")))))
 		if hand_key == generator_key:
 			count += 1
 	return count
@@ -2822,12 +3177,45 @@ func consume_item_charges_by_uid(item_uid: int, amount: int, orphan_generated_ca
 			return true
 	return false
 
+func hero_emits_room_light(hero: Variant) -> bool:
+	return hero != null and is_instance_valid(hero) and hero.current_health > 0.0 and bool(hero.light_cantrip_active)
+
+func room_has_wave_torch_light(room: Dictionary) -> bool:
+	var expiry_wave: int = int(room.get("wave_torch_until_wave", -1))
+	if expiry_wave < 0:
+		return false
+	if wave_index < expiry_wave:
+		return true
+	return wave_index == expiry_wave and wave_in_progress()
+
+func refresh_room_lighting_states() -> void:
+	for room_coord_variant in rooms.keys():
+		var room_coord: Vector2i = room_coord_variant
+		var room: Dictionary = rooms[room_coord]
+		var lit: bool = bool(room.get("crystal", false)) or bool(room.get("permanent_light", false)) or int(room.get("temporary_light_turns", 0)) > 0 or room_has_wave_torch_light(room)
+		if not lit:
+			for hero in heroes:
+				if not hero_emits_room_light(hero):
+					continue
+				if hero.current_room == room_coord and room_rect(room_coord).has_point(hero.global_position):
+					lit = true
+					break
+		room["lit"] = lit
+
 func apply_temporary_light_to_room(room_coord: Vector2i, turn_count: int) -> bool:
 	if turn_count <= 0 or not rooms.has(room_coord):
 		return false
 	var room: Dictionary = rooms[room_coord]
-	room["lit"] = true
 	room["temporary_light_turns"] = maxi(int(room.get("temporary_light_turns", 0)), turn_count)
+	refresh_room_lighting_states()
+	return true
+
+func apply_wave_torch_light_to_room(room_coord: Vector2i) -> bool:
+	if not rooms.has(room_coord):
+		return false
+	var room: Dictionary = rooms[room_coord]
+	room["wave_torch_until_wave"] = maxi(int(room.get("wave_torch_until_wave", -1)), wave_index + 1)
+	refresh_room_lighting_states()
 	return true
 
 func apply_portable_item_effects_on_door_open() -> void:
@@ -2842,6 +3230,18 @@ func resolve_card_generator_mode(generator: Dictionary, card_def: Dictionary = {
 		return generation_mode
 	var base_interval: int = int(resolved_card_def.get("door_interval", int(generator.get("door_interval", 0))))
 	return "door_interval" if base_interval > 0 else "single"
+
+func generator_max_stored_cards(generator: Dictionary, card_def: Dictionary = {}) -> int:
+	var resolved_card_def: Dictionary = card_def
+	if resolved_card_def.is_empty():
+		resolved_card_def = card_definition(String(generator.get("card_id", "")))
+	return int(generator.get("max_stored_cards", resolved_card_def.get("max_stored_cards", 1)))
+
+func resolve_generator_key(generator: Dictionary, card_def: Dictionary = {}) -> String:
+	var resolved_card_def: Dictionary = card_def
+	if resolved_card_def.is_empty():
+		resolved_card_def = card_definition(String(generator.get("card_id", "")))
+	return String(generator.get("generator_key", card_generator_key(int(generator.get("item_uid", -1)), String(resolved_card_def.get("id", "")))))
 
 func build_hand_card_from_generator(hero: Variant, generator: Dictionary, effect_summary: Dictionary) -> Dictionary:
 	var card_def: Dictionary = card_definition(String(generator.get("card_id", "")))
@@ -2875,6 +3275,8 @@ func build_hand_card_from_generator(hero: Variant, generator: Dictionary, effect
 		"lifetime": float(card_def.get("lifetime", 1.5)),
 		"radius": float(card_def.get("radius", 12.0)),
 		"impact_radius": float(card_def.get("impact_radius", card_def.get("radius", 12.0))),
+		"shield_amount": float(card_def.get("shield_amount", 0.0)),
+		"shield_duration": float(card_def.get("shield_duration", 0.0)),
 		"cast_adjacent_hops": int(card_def.get("cast_adjacent_hops", 0)),
 		"color": card_def.get("color", Color("d7efff")),
 		"backstab_multiplier": float(card_def.get("backstab_multiplier", 1.0)) + float(item_bonus.get("dagger_backstab_bonus", 0.0)),
@@ -2888,7 +3290,9 @@ func build_hand_card_from_generator(hero: Variant, generator: Dictionary, effect
 		"food_cost": int(card_def.get("food_cost", 0)),
 		"expires_on_doors_opened": doors_opened + expires_after_turns if expires_after_turns > 0 else -1,
 		"hero_index": hero.hero_index,
-		"max_stored_cards": int(generator.get("max_stored_cards", card_def.get("max_stored_cards", 1))),
+		"max_stored_cards": generator_max_stored_cards(generator, card_def),
+		"reusable": bool(card_def.get("reusable", false)),
+		"generator_key": resolve_generator_key(generator, card_def),
 		"consume_item_on_play": bool(generator.get("consume_item_on_play", false)),
 		"consume_item_charges_on_play": int(generator.get("consume_item_charges_on_play", 0)),
 		"learnable_spell_scroll": bool(generator.get("learnable_spell_scroll", false)),
@@ -2926,12 +3330,15 @@ func sync_hero_builtin_card_sources(hero: Variant) -> void:
 		valid_keys[generator_key] = true
 		var card_def: Dictionary = card_definition(String(generator.get("card_id", "")))
 		var effective_interval: int = maxi(1, int(card_def.get("door_interval", int(generator.get("door_interval", 1)))))
+		var persistent_card: bool = bool(generator.get("persistent_card", false))
+		var max_stored_cards: int = generator_max_stored_cards(generator, card_def)
+		var current_stored_cards: int = hero_hand_card_count_for_generator_key(hero, generator_key)
 		if not hero.card_generation_timers.has(generator_key):
 			hero.card_generation_timers[generator_key] = {
 				"generator": generator,
 				"interval": effective_interval,
 				"remaining_doors": effective_interval,
-				"queued_cards": 0,
+				"queued_cards": 1 if persistent_card and (max_stored_cards <= 0 or current_stored_cards < max_stored_cards) else 0,
 			}
 			continue
 		var state: Dictionary = Dictionary(hero.card_generation_timers.get(generator_key, {})).duplicate(true)
@@ -2958,6 +3365,10 @@ func fill_queued_hero_builtin_cards(hero: Variant) -> void:
 		var state: Dictionary = Dictionary(hero.card_generation_timers.get(timer_key, {})).duplicate(true)
 		var queued_cards: int = int(state.get("queued_cards", 0))
 		var generator: Dictionary = Dictionary(state.get("generator", {})).duplicate(true)
+		var max_stored_cards: int = generator_max_stored_cards(generator)
+		var current_stored_cards: int = hero_hand_card_count_for_generator_key(hero, timer_key) + queued_cards
+		if bool(generator.get("persistent_card", false)) and (max_stored_cards <= 0 or current_stored_cards < max_stored_cards):
+			queued_cards = 1
 		while queued_cards > 0 and hero.hand_cards.size() < hero.max_hand_size:
 			hero.hand_cards.append(build_hand_card_from_generator(hero, generator, empty_inventory_effect_summary()))
 			queued_cards -= 1
@@ -2974,11 +3385,14 @@ func advance_hero_builtin_door_card_generators(door_count: int = 1) -> void:
 		for timer_key_variant in hero.card_generation_timers.keys():
 			var timer_key: String = String(timer_key_variant)
 			var state: Dictionary = Dictionary(hero.card_generation_timers.get(timer_key, {})).duplicate(true)
+			var generator: Dictionary = Dictionary(state.get("generator", {})).duplicate(true)
+			if String(generator.get("generation_mode", resolve_card_generator_mode(generator))) != "door_interval":
+				hero.card_generation_timers[timer_key] = state
+				continue
 			var remaining_doors: int = int(state.get("remaining_doors", 1)) - door_count
 			var interval: int = maxi(1, int(state.get("interval", 1)))
 			var queued_cards: int = int(state.get("queued_cards", 0))
-			var generator: Dictionary = Dictionary(state.get("generator", {})).duplicate(true)
-			var max_stored_cards: int = int(generator.get("max_stored_cards", 1))
+			var max_stored_cards: int = generator_max_stored_cards(generator)
 			while remaining_doors <= 0:
 				var current_stored_cards: int = queued_cards + hero_hand_card_count_for_generator_key(hero, timer_key)
 				if max_stored_cards <= 0 or current_stored_cards < max_stored_cards:
@@ -3012,7 +3426,7 @@ func sync_hero_card_sources(hero: Variant, effect_summary: Dictionary = {}) -> v
 	var initially_exhausted_item_uids: Dictionary = {}
 	for generator_variant in resolved_generators:
 		var generator: Dictionary = generator_variant
-		var key: String = card_generator_key(int(generator.get("item_uid", -1)), String(generator.get("card_id", "")))
+		var key: String = resolve_generator_key(generator)
 		var item_bonus: Dictionary = Dictionary(generator.get("item_bonus", {}))
 		var card_def: Dictionary = card_definition(String(generator.get("card_id", "")))
 		var generation_mode: String = resolve_card_generator_mode(generator, card_def)
@@ -3056,7 +3470,7 @@ func sync_hero_card_sources(hero: Variant, effect_summary: Dictionary = {}) -> v
 		valid_item_uids[item_uid] = true
 	for generator_variant in resolved_generators:
 		var generator: Dictionary = generator_variant
-		var generator_key: String = card_generator_key(int(generator.get("item_uid", -1)), String(generator.get("card_id", "")))
+		var generator_key: String = resolve_generator_key(generator)
 		valid_generator_keys[generator_key] = true
 	var filtered_hand: Array = []
 	for hand_card_variant in hero.hand_cards:
@@ -3066,7 +3480,7 @@ func sync_hero_card_sources(hero: Variant, effect_summary: Dictionary = {}) -> v
 				filtered_hand.append(hand_card)
 			continue
 		var hand_item_uid: int = int(hand_card.get("item_uid", -1))
-		var hand_key: String = card_generator_key(hand_item_uid, String(hand_card.get("card_id", "")))
+		var hand_key: String = String(hand_card.get("generator_key", card_generator_key(hand_item_uid, String(hand_card.get("card_id", "")))))
 		if valid_item_uids.has(hand_item_uid):
 			if not valid_generator_keys.has(hand_key):
 				continue
@@ -3125,7 +3539,7 @@ func fill_queued_hand_cards(hero: Variant, effect_summary: Dictionary = {}, prec
 	var generators_by_key: Dictionary = {}
 	for generator_variant in resolved_generators:
 		var generator: Dictionary = generator_variant
-		var generators_key: String = card_generator_key(int(generator.get("item_uid", -1)), String(generator.get("card_id", "")))
+		var generators_key: String = resolve_generator_key(generator)
 		generators_by_key[generators_key] = generator
 	for timer_key_variant in global_item_card_states.keys():
 		if hero.hand_cards.size() >= hero.max_hand_size:
@@ -3156,7 +3570,7 @@ func advance_item_door_card_generators(door_count: int = 1) -> void:
 		var exhausted_item_uids: Dictionary = {}
 		for generator_variant in resolved_generators:
 			var generator: Dictionary = generator_variant
-			var key: String = card_generator_key(int(generator.get("item_uid", -1)), String(generator.get("card_id", "")))
+			var key: String = resolve_generator_key(generator)
 			var state: Dictionary = Dictionary(global_item_card_states.get(key, {})).duplicate(true)
 			if state.is_empty():
 				continue
@@ -3166,7 +3580,7 @@ func advance_item_door_card_generators(door_count: int = 1) -> void:
 			var interval: int = maxi(1, int(state.get("interval", 1)))
 			var queued_cards: int = int(state.get("queued_cards", 0))
 			var remaining_generations: int = int(state.get("remaining_generations", -1))
-			var max_stored_cards: int = int(generator.get("max_stored_cards", 1))
+			var max_stored_cards: int = generator_max_stored_cards(generator)
 			while remaining_doors <= 0:
 				if remaining_generations == 0:
 					break
@@ -3265,6 +3679,8 @@ func commit_spell_slots(hero_index: int, slotted_spells: Array) -> void:
 		return
 	hero.slotted_spells = Array(slotted_spells).duplicate()
 	sanitize_hero_spellbook(hero)
+	if doors_opened == 0:
+		refresh_active_floor_spells(hero, true)
 	apply_inventory_stats_to_hero(hero)
 
 func center_camera() -> void:
@@ -3451,6 +3867,7 @@ func try_open_pending_room_loot_request(hero: Variant) -> bool:
 	if hero.current_room != room_coord:
 		return false
 	clear_pending_room_loot_request(hero.hero_index)
+	hero.player_command_locked = false
 	open_room_loot_inventory(hero, room_coord)
 	return true
 
@@ -3473,12 +3890,15 @@ func try_execute_pending_room_action_request(hero: Variant) -> bool:
 	var room_coord: Vector2i = action_room
 	match String(action_request.get("kind", "")):
 		"light":
+			hero.player_command_locked = false
 			toggle_room_light(room_coord)
 			return true
 		"build":
+			hero.player_command_locked = false
 			queue_room_construction(room_coord, String(action_request.get("module_type", "")))
 			return true
 		"card":
+			hero.player_command_locked = false
 			return play_card_for_hero(hero.hero_index, int(action_request.get("card_uid", -1)), Vector2(action_request.get("target_world_position", room_center(room_coord))))
 		_:
 			return false
@@ -4412,8 +4832,7 @@ func advance_temporary_room_lights(turn_count: int = 1) -> void:
 			continue
 		var remaining_turns: int = max(0, int(room.get("temporary_light_turns", 0)) - turn_count)
 		room["temporary_light_turns"] = remaining_turns
-		if remaining_turns <= 0 and not bool(room.get("permanent_light", false)):
-			room["lit"] = false
+	refresh_room_lighting_states()
 
 func open_room(room_coord: Vector2i) -> void:
 	if rooms[room_coord]["opened"]:
@@ -4655,6 +5074,7 @@ func roll_enemy_role(enemy_index: int, count: int) -> String:
 
 func issue_hero_steps(hero: Variant, steps: Array) -> void:
 	hero.move_steps.clear()
+	hero.player_command_locked = not steps.is_empty()
 	for step in steps:
 		hero.move_steps.append(step)
 
@@ -4672,6 +5092,7 @@ func interrupt_hero_orders(hero: Variant) -> Vector2i:
 	clear_pending_room_loot_request(hero.hero_index)
 	clear_pending_room_action_request(hero.hero_index)
 	hero.move_steps.clear()
+	hero.player_command_locked = false
 	opening_heroes.erase(hero)
 	if opening_hero == hero:
 		opening_hero = opening_heroes[0] if not opening_heroes.is_empty() else null
@@ -4686,6 +5107,38 @@ func interrupt_hero_orders(hero: Variant) -> Vector2i:
 	hero.current_room = command_room
 	hero.set_destination(hero.global_position)
 	return command_room
+
+func hero_has_locked_player_command(hero: Variant) -> bool:
+	if hero == null or not is_instance_valid(hero):
+		return false
+	if bool(hero.player_command_locked):
+		return true
+	if pending_room_action_requests.has(hero.hero_index) or pending_room_loot_requests.has(hero.hero_index):
+		return true
+	if hero.pending_room != Hero.INVALID_ROOM or hero.pending_open_room != Hero.INVALID_ROOM or not hero.move_steps.is_empty():
+		return true
+	return opening_hero == hero or opening_heroes.has(hero)
+
+func release_finished_player_command(hero: Variant) -> void:
+	if hero == null or not is_instance_valid(hero) or not bool(hero.player_command_locked):
+		return
+	if pending_room_action_requests.has(hero.hero_index) or pending_room_loot_requests.has(hero.hero_index):
+		return
+	if hero.pending_room != Hero.INVALID_ROOM or hero.pending_open_room != Hero.INVALID_ROOM or not hero.move_steps.is_empty():
+		return
+	if opening_hero == hero or opening_heroes.has(hero):
+		return
+	if not hero.is_idle():
+		return
+	hero.player_command_locked = false
+
+func pause_autonomous_heroes_for_hand_drag() -> void:
+	for hero in heroes:
+		if hero == null or not is_instance_valid(hero):
+			continue
+		if hero_has_locked_player_command(hero):
+			continue
+		hero.set_destination(hero.global_position)
 
 func make_hero_step(room_coord: Vector2i, world_position: Vector2) -> Dictionary:
 	return {
@@ -4749,6 +5202,10 @@ func advance_hero_movement() -> void:
 		if next_room != hero.current_room:
 			hero.pending_room = next_room
 		hero.set_destination(next_position)
+	for hero in heroes:
+		if is_instance_valid(hero):
+			release_finished_player_command(hero)
+	refresh_room_lighting_states()
 
 func advance_enemy_routes(delta: float) -> void:
 	for enemy in enemies:
@@ -5015,6 +5472,10 @@ func advance_hero_stamina_effects(delta: float) -> void:
 				hero.restore_stamina(hero.stamina_regen_rate * delta)
 			if hero.stamina_regen_time_left <= 0.0:
 				hero.clear_stamina_regen_buff()
+		if hero.barrier_time_left > 0.0:
+			hero.barrier_time_left = maxf(hero.barrier_time_left - delta, 0.0)
+			if hero.barrier_time_left <= 0.0:
+				hero.clear_barrier()
 
 func hero_hand_card_index(hero: Variant, card_uid: int) -> int:
 	if hero == null or not is_instance_valid(hero):
@@ -5229,7 +5690,10 @@ func hand_card_starts_spell_study(hero: Variant, hand_card: Dictionary, target_d
 	if not hero_can_study_spell(hero, spell_id):
 		return false
 	var target_room: Vector2i = target_data.get("room", INVALID_ROOM)
-	return target_room != INVALID_ROOM and target_room == hero.current_room and hero_ready_for_room_action(hero, target_room)
+	if target_room != INVALID_ROOM:
+		return target_room == hero.current_room and hero_ready_for_room_action(hero, target_room)
+	var target_hero: Variant = target_data.get("hero", null)
+	return target_hero == hero and hero_ready_for_room_action(hero, hero.current_room)
 
 func hand_card_phase_allows_play(hand_card: Dictionary) -> bool:
 	var phase: String = String(hand_card.get("phase", "combat"))
@@ -5262,12 +5726,49 @@ func apply_hand_card_effect(hero: Variant, hand_card: Dictionary, target_data: D
 			cast_magic_missile_spell(hero, target_world_position, missile_room, hand_card)
 			status_message = "%s cast Magic Missile." % hero.hero_name
 			return true
+		"light_cantrip_card":
+			hero.light_cantrip_active = true
+			refresh_room_lighting_states()
+			hero.trigger_attack(hero.global_position + Vector2(0.0, -18.0), "laser")
+			status_message = "%s invoked Light." % hero.hero_name
+			return true
 		"misty_step_card":
 			var teleport_room: Vector2i = target_data.get("room", INVALID_ROOM)
 			if teleport_room == INVALID_ROOM or not rooms.has(teleport_room):
 				return false
 			cast_misty_step_spell(hero, target_world_position, teleport_room, hand_card)
 			status_message = "%s cast Misty Step." % hero.hero_name
+			return true
+		"shield_card":
+			cast_shield_spell(hero, hand_card)
+			status_message = "%s cast Shield." % hero.hero_name
+			return true
+		"cure_light_wounds_card":
+			var cleric_target: Variant = target_data.get("hero", hero)
+			if cleric_target == null or not is_instance_valid(cleric_target):
+				return false
+			var previous_cleric_health: float = cleric_target.current_health
+			cleric_target.heal(float(hand_card.get("heal_amount", 36.0)))
+			hero.trigger_attack(cleric_target.global_position, "laser")
+			if cleric_target.current_health <= previous_cleric_health + 0.001:
+				status_message = "%s does not need healing." % cleric_target.hero_name
+				return false
+			status_message = "%s cast Cure Light Wounds." % hero.hero_name
+			return true
+		"sanctuary_card":
+			cast_shield_spell(hero, {
+				"shield_amount": float(hand_card.get("shield_amount", 24.0)),
+				"shield_duration": float(hand_card.get("shield_duration", 8.0)),
+				"color": hand_card.get("color", Color("e3ff9f")),
+			})
+			status_message = "%s invoked Sanctuary." % hero.hero_name
+			return true
+		"lightning_bolt_card":
+			var bolt_room: Vector2i = target_data.get("room", INVALID_ROOM)
+			if bolt_room == INVALID_ROOM or not rooms.has(bolt_room):
+				return false
+			cast_lightning_bolt_spell(hero, target_world_position, bolt_room, hand_card)
+			status_message = "%s cast Lightning Bolt." % hero.hero_name
 			return true
 		"lantern_torch_card":
 			var target_hero: Variant = target_data.get("hero", null)
@@ -5284,12 +5785,13 @@ func apply_hand_card_effect(hero: Variant, hand_card: Dictionary, target_data: D
 			var room_coord: Vector2i = target_data.get("room", INVALID_ROOM)
 			if room_coord == INVALID_ROOM or not rooms.has(room_coord):
 				return false
-			if bool(rooms[room_coord]["lit"]):
-				status_message = "%s is already lit." % room_title(room_coord)
+			var target_room_data: Dictionary = rooms[room_coord]
+			if bool(target_room_data.get("permanent_light", false)) or room_has_wave_torch_light(target_room_data):
+				status_message = "%s is already secured by light." % room_title(room_coord)
 				return false
-			apply_temporary_light_to_room(room_coord, 1)
+			apply_wave_torch_light_to_room(room_coord)
 			hero.trigger_attack(room_center(room_coord), "laser")
-			status_message = "%s lit %s for 1 dungeon turn." % [hero.hero_name, room_title(room_coord)]
+			status_message = "%s lit %s through the next wave." % [hero.hero_name, room_title(room_coord)]
 			return true
 		"mend_card":
 			var target_hero: Variant = target_data.get("hero", null)
@@ -5367,6 +5869,10 @@ func play_card_for_hero(hero_index: int, card_uid: int, target_world_position: V
 	var hero: Variant = heroes[hero_index]
 	if hero == null or not is_instance_valid(hero) or hero.current_health <= 0.0 or hero.carrying_crystal:
 		return false
+	if doors_opened == 0:
+		status_message = "Cards cannot be played until the first door opens."
+		update_hud()
+		return false
 	var hand_index: int = hero_hand_card_index(hero, card_uid)
 	if hand_index < 0:
 		return false
@@ -5393,8 +5899,9 @@ func play_card_for_hero(hero_index: int, card_uid: int, target_world_position: V
 		return false
 	if not apply_hand_card_effect(hero, hand_card, target_data):
 		return false
-	hero.hand_cards.remove_at(hand_index)
-	finalize_played_hand_card_source(hand_card)
+	if not bool(hand_card.get("reusable", false)):
+		hero.hand_cards.remove_at(hand_index)
+		finalize_played_hand_card_source(hand_card)
 	fill_queued_hand_cards(hero)
 	cleanup_global_item_card_states()
 	update_hud()
@@ -5465,6 +5972,51 @@ func cast_misty_step_spell(hero: Variant, target_world_position: Vector2, target
 		"width": 4.0,
 	})
 	add_resource_floating_text(landing_position, "Step", Color(hand_card.get("color", Color("b89cff"))))
+
+func cast_shield_spell(hero: Variant, hand_card: Dictionary) -> void:
+	hero.apply_barrier(float(hand_card.get("shield_amount", 34.0)), float(hand_card.get("shield_duration", 10.0)))
+	hero.trigger_attack(hero.global_position + Vector2.UP * 8.0, "laser")
+	projectiles.append({
+		"kind": "shield_flash",
+		"position": hero.global_position,
+		"previous": hero.global_position,
+		"target_position": hero.global_position,
+		"color": hand_card.get("color", Color("9fc8ff")),
+		"radius": 34.0,
+		"impact_radius": 34.0,
+		"lifetime_left": 0.22,
+		"blast_duration": 0.22,
+		"width": 3.0,
+	})
+
+func cast_lightning_bolt_spell(hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
+	var bolt_origin: Vector2 = hero.global_position
+	var bolt_target: Vector2 = clamp_point_to_room(target_world_position, target_room)
+	var bolt_radius: float = maxf(float(hand_card.get("impact_radius", 18.0)), 8.0)
+	var bolt_damage: float = float(hand_card.get("damage", hand_card.get("base_damage", 30.0)))
+	for enemy in enemies:
+		if enemy == null or not is_instance_valid(enemy):
+			continue
+		if enemy.current_room != hero.current_room and enemy.current_room != target_room:
+			continue
+		if point_distance_to_segment(enemy.global_position, bolt_origin, bolt_target) > bolt_radius:
+			continue
+		enemy.take_damage(bolt_damage)
+	hero.trigger_attack(bolt_target, "laser")
+	projectiles.append({
+		"kind": "lightning_bolt",
+		"position": bolt_target,
+		"previous": bolt_origin,
+		"target_position": bolt_target,
+		"color": hand_card.get("color", Color("8bd9ff")),
+		"radius": bolt_radius,
+		"impact_radius": bolt_radius,
+		"lifetime_left": 0.18,
+		"blast_duration": 0.18,
+		"width": 7.0,
+		"room": target_room,
+	})
+	add_resource_floating_text(bolt_target, "Bolt", Color(hand_card.get("color", Color("8bd9ff"))))
 
 func explode_fireball_projectile(projectile: Dictionary) -> void:
 	var room_coord: Vector2i = projectile.get("room", INVALID_ROOM)
@@ -5614,6 +6166,8 @@ func process_combat(_delta: float) -> void:
 			var melee_offset: Vector2 = melee_target.global_position - hero.global_position
 			var melee_distance: float = melee_offset.length()
 			if melee_distance > hero.attack_range:
+				if not active_hand_drag.is_empty() or hero_has_locked_player_command(hero):
+					continue
 				hero.move_steps.clear()
 				var engage_direction: Vector2 = melee_offset.normalized() if melee_distance > 0.001 else Vector2.RIGHT
 				var desired_position: Vector2 = clamp_point_to_room(melee_target.global_position - engage_direction * minf(hero.attack_range * 0.35, 18.0), hero.current_room)
@@ -5706,7 +6260,7 @@ func advance_projectiles(delta: float) -> void:
 				projectile["rotation_angle"] = velocity.angle()
 			active_projectiles.append(projectile)
 			continue
-		if projectile_kind == "fireball_blast":
+		if projectile_kind == "fireball_blast" or projectile_kind == "shield_flash" or projectile_kind == "lightning_bolt":
 			projectile["lifetime_left"] = maxf(float(projectile.get("lifetime_left", 0.0)) - delta, 0.0)
 			if float(projectile["lifetime_left"]) <= 0.0:
 				continue
@@ -5765,6 +6319,21 @@ func draw_projectiles() -> void:
 			draw_arc(current_position, blast_radius, 0.0, TAU, 44, color.lightened(0.18), maxf(width * (1.0 - life_ratio * 0.35), 2.0), true)
 			draw_circle(current_position, blast_radius * 0.42, Color(1.0, 0.95, 0.78, 0.18 * (1.0 - life_ratio)))
 			continue
+		if projectile_kind == "shield_flash":
+			var shield_duration: float = maxf(float(projectile.get("blast_duration", 0.22)), 0.001)
+			var shield_ratio: float = 1.0 - clampf(float(projectile.get("lifetime_left", 0.0)) / shield_duration, 0.0, 1.0)
+			var shield_radius: float = lerpf(16.0, float(projectile.get("radius", 34.0)), shield_ratio)
+			draw_arc(current_position, shield_radius, 0.0, TAU, 40, Color(color.r, color.g, color.b, 0.75 - shield_ratio * 0.55), maxf(width * (1.0 - shield_ratio * 0.35), 1.5), true)
+			draw_circle(current_position, shield_radius * 0.55, Color(color.r, color.g, color.b, 0.10))
+			continue
+		if projectile_kind == "lightning_bolt":
+			var bolt_duration: float = maxf(float(projectile.get("blast_duration", 0.18)), 0.001)
+			var bolt_ratio: float = clampf(float(projectile.get("lifetime_left", 0.0)) / bolt_duration, 0.0, 1.0)
+			var origin: Vector2 = projectile.get("previous", current_position)
+			draw_line(origin, current_position, Color(1.0, 0.98, 0.86, 0.95 * bolt_ratio), width + 3.0, true)
+			draw_line(origin, current_position, Color(color.r, color.g, color.b, 0.9 * bolt_ratio), width, true)
+			draw_circle(current_position, 6.0 + 6.0 * bolt_ratio, Color(color.r, color.g, color.b, 0.38))
+			continue
 		draw_line(previous, current_position, color, width, true)
 		draw_circle(current_position, 3.0, color)
 
@@ -5822,12 +6391,16 @@ func build_network_snapshot() -> Dictionary:
 			"pending_room": hero.pending_room,
 			"pending_open_room": hero.pending_open_room,
 			"pending_open_origin_room": hero.pending_open_origin_room,
+			"player_command_locked": hero.player_command_locked,
 			"current_health": hero.current_health,
 			"max_health": hero.max_health,
 			"stamina": hero.stamina,
 			"max_stamina": hero.max_stamina,
 			"stamina_regen_rate": hero.stamina_regen_rate,
 			"stamina_regen_time_left": hero.stamina_regen_time_left,
+			"barrier_amount": hero.barrier_amount,
+			"barrier_capacity": hero.barrier_capacity,
+			"barrier_time_left": hero.barrier_time_left,
 			"max_hand_size": hero.max_hand_size,
 			"combo_points": hero.combo_points,
 			"hand_cards": hero.hand_cards.duplicate(true),
@@ -5844,8 +6417,10 @@ func build_network_snapshot() -> Dictionary:
 			"calm_multiplier": hero.calm_move_speed_multiplier,
 			"combat_multiplier": hero.combat_move_speed_multiplier,
 			"combat_mode": hero.combat_movement_mode,
+			"light_cantrip_active": hero.light_cantrip_active,
 			"learned_spells": hero.learned_spells.duplicate(),
 			"slotted_spells": hero.slotted_spells.duplicate(),
+			"active_floor_spells": hero.active_floor_spells.duplicate(),
 			"studying_spell_id": hero.studying_spell_id,
 			"studying_room": hero.studying_room,
 			"studying_started_at_door": hero.studying_started_at_door,
@@ -6020,6 +6595,7 @@ func apply_hero_snapshots(hero_states: Array) -> void:
 		hero.inventory_items = Array(hero_state.get("inventory_items", hero.inventory_items)).duplicate(true)
 		hero.learned_spells = Array(hero_state.get("learned_spells", hero.learned_spells)).duplicate()
 		hero.slotted_spells = Array(hero_state.get("slotted_spells", hero.slotted_spells)).duplicate()
+		hero.active_floor_spells = Array(hero_state.get("active_floor_spells", hero.active_floor_spells)).duplicate()
 		hero.studying_spell_id = String(hero_state.get("studying_spell_id", hero.studying_spell_id))
 		hero.studying_room = hero_state.get("studying_room", hero.studying_room)
 		hero.studying_started_at_door = int(hero_state.get("studying_started_at_door", hero.studying_started_at_door))
@@ -6030,6 +6606,9 @@ func apply_hero_snapshots(hero_states: Array) -> void:
 		hero.max_stamina = float(hero_state.get("max_stamina", hero.max_stamina))
 		hero.stamina_regen_rate = float(hero_state.get("stamina_regen_rate", hero.stamina_regen_rate))
 		hero.stamina_regen_time_left = float(hero_state.get("stamina_regen_time_left", hero.stamina_regen_time_left))
+		hero.barrier_amount = float(hero_state.get("barrier_amount", hero.barrier_amount))
+		hero.barrier_capacity = float(hero_state.get("barrier_capacity", hero.barrier_capacity))
+		hero.barrier_time_left = float(hero_state.get("barrier_time_left", hero.barrier_time_left))
 		hero.max_hand_size = int(hero_state.get("max_hand_size", hero.max_hand_size))
 		hero.combo_points = int(hero_state.get("combo_points", hero.combo_points))
 		hero.hand_cards = Array(hero_state.get("hand_cards", hero.hand_cards)).duplicate(true)
@@ -6044,6 +6623,7 @@ func apply_hero_snapshots(hero_states: Array) -> void:
 		hero.pending_room = hero_state.get("pending_room", hero.pending_room)
 		hero.pending_open_room = hero_state.get("pending_open_room", hero.pending_open_room)
 		hero.pending_open_origin_room = hero_state.get("pending_open_origin_room", hero.pending_open_origin_room)
+		hero.player_command_locked = bool(hero_state.get("player_command_locked", hero.player_command_locked))
 		hero.carrying_crystal = bool(hero_state.get("carrying_crystal", false))
 		hero.attack_effect_left = float(hero_state.get("attack_effect_left", 0.0))
 		hero.attack_direction = Vector2(hero_state.get("attack_direction", Vector2.RIGHT))
@@ -6052,6 +6632,7 @@ func apply_hero_snapshots(hero_states: Array) -> void:
 		hero.combat_move_speed_multiplier = float(hero_state.get("combat_multiplier", hero.combat_move_speed_multiplier))
 		hero.set_calm_movement_multiplier(float(hero_state.get("calm_multiplier", hero.calm_move_speed_multiplier)))
 		hero.set_combat_movement_mode(bool(hero_state.get("combat_mode", false)))
+		hero.light_cantrip_active = bool(hero_state.get("light_cantrip_active", hero.light_cantrip_active))
 		hero.global_position = Vector2(hero_state.get("position", hero.global_position))
 		hero.destination = Vector2(hero_state.get("destination", hero.destination))
 		hero.move_steps.clear()
@@ -7007,9 +7588,9 @@ func toggle_room_light(room_coord: Vector2i) -> void:
 	var room: Dictionary = rooms[room_coord]
 	if room["lit"]:
 		var was_permanent: bool = bool(room.get("permanent_light", false))
-		room["lit"] = false
 		room["permanent_light"] = false
 		room["temporary_light_turns"] = 0
+		room["wave_torch_until_wave"] = -1
 		if was_permanent:
 			dust += 1
 			status_message = "Darkened %s. Dust returned to the pool." % room_title(room_coord)
@@ -7022,10 +7603,11 @@ func toggle_room_light(room_coord: Vector2i) -> void:
 			queue_redraw()
 			return
 		dust -= 1
-		room["lit"] = true
 		room["permanent_light"] = true
 		room["temporary_light_turns"] = 0
+		room["wave_torch_until_wave"] = -1
 		status_message = "Lit %s. It can no longer spawn a wave." % room_title(room_coord)
+	refresh_room_lighting_states()
 	update_hud()
 	queue_redraw()
 
@@ -7040,10 +7622,11 @@ func ensure_room_lit_for_build(room_coord: Vector2i) -> bool:
 		status_message = "%s is dark. Build needs 1 dust to light it first." % room_title(room_coord)
 		return false
 	dust -= 1
-	room["lit"] = true
 	room["permanent_light"] = true
 	room["temporary_light_turns"] = 0
+	room["wave_torch_until_wave"] = -1
 	status_message = "Lit %s for building." % room_title(room_coord)
+	refresh_room_lighting_states()
 	return true
 
 func heal_all_heroes() -> void:
@@ -7061,6 +7644,7 @@ func advance_wave_recovery(delta: float) -> void:
 				hero.combo_points = 0
 				hero.clear_stamina_regen_buff()
 		status_message = "The wave is over. Heroes are recovering."
+		refresh_room_lighting_states()
 		update_hud()
 	if not door_wave_healing_active:
 		return
@@ -7658,6 +8242,7 @@ func begin_hand_card_drag(pointer_kind: String, pointer_id: int, screen_position
 		"start_screen": screen_position,
 		"current_screen": screen_position,
 	}
+	pause_autonomous_heroes_for_hand_drag()
 	clear_room_action_hold()
 	close_room_action_menu()
 	return true
