@@ -1,0 +1,106 @@
+[gd_scene format=3 uid="uid://ccg88m7wioiiy"]
+
+[ext_resource type="Script" uid="uid://drtcle4ys7edj" path="res://scripts/inventory_overlay.gd" id="1"]
+
+[node name="InventoryOverlay" type="Control" unique_id=2111616624]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1")
+
+[node name="LayoutRoot" type="Control" parent="." unique_id=2131642297]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="MainPanelGuide" type="Panel" parent="LayoutRoot" unique_id=1049041303]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 28.0
+offset_top = 24.0
+offset_right = -28.0
+offset_bottom = -24.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="TitleLabel" type="Label" parent="LayoutRoot/MainPanelGuide" unique_id=1737684076]
+layout_mode = 0
+offset_left = 28.0
+offset_top = 14.0
+offset_right = 420.0
+offset_bottom = 44.0
+theme_override_font_sizes/font_size = 24
+text = "Inventory"
+
+[node name="StatsGuide" type="Panel" parent="LayoutRoot/MainPanelGuide" unique_id=522480242]
+layout_mode = 0
+offset_left = 22.0
+offset_top = 72.0
+offset_right = 293.0
+offset_bottom = 415.0
+mouse_filter = 2
+
+[node name="DescriptionGuide" type="Panel" parent="LayoutRoot/MainPanelGuide" unique_id=1522987484]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -769.0
+offset_top = 72.0
+offset_right = -524.0
+offset_bottom = 413.0
+grow_horizontal = 0
+mouse_filter = 2
+
+[node name="LootGuide" type="Panel" parent="LayoutRoot/MainPanelGuide" unique_id=1457618694]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 22.0
+offset_top = -170.0
+offset_right = -22.0
+offset_bottom = -16.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+
+[node name="RotateButton" type="Button" parent="LayoutRoot/MainPanelGuide" unique_id=2070570411]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -138.0
+offset_top = 147.0
+offset_right = -84.0
+offset_bottom = 191.0
+grow_horizontal = 0
+mouse_filter = 2
+theme_override_font_sizes/font_size = 13
+text = "Rotate"
+
+[node name="ToggleButton" type="Button" parent="LayoutRoot/MainPanelGuide" unique_id=110068534]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -140.0
+offset_top = 295.0
+offset_right = -86.0
+offset_bottom = 339.0
+grow_horizontal = 0
+mouse_filter = 2
+theme_override_font_sizes/font_size = 12
+text = "Enable"

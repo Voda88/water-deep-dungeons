@@ -12,6 +12,7 @@ const ROLE_SABOTEUR: String = "saboteur"
 
 var current_health: float = 0.0
 var attack_cooldown_left: float = 0.0
+var enemy_uid: int = -1
 var current_room: Vector2i = Vector2i.ZERO
 var previous_room: Vector2i = Vector2i.ZERO
 var next_room: Vector2i = Vector2i.ZERO
