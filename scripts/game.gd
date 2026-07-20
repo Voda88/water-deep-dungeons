@@ -289,6 +289,7 @@ func _physics_process(delta: float) -> void:
 	update_hero_combat_movement_mode()
 	advance_room_opening(delta)
 	advance_hero_movement()
+	advance_spell_scroll_studies()
 	advance_pending_enemy_spawns(delta)
 	advance_crystal_pressure(delta)
 	advance_enemy_routes(delta)
@@ -456,7 +457,7 @@ func build_item_defs() -> Dictionary:
 			"tags": ["food", "support"],
 			"stats": {"health": 12.0, "hand_size": 1},
 			"hand_cards": [
-				{"card_id": "ration_meal_card", "door_interval": 2, "generation_mode": "door_interval"},
+				{"card_id": "ration_meal_card", "door_interval": 2, "generation_mode": "door_interval", "max_stored_cards": 1},
 			],
 			"synergy_sockets": [
 				{"offset": Vector2i(0, -1), "tag": "support", "bonuses": {"hand_size": 1}},
@@ -540,12 +541,36 @@ func build_item_defs() -> Dictionary:
 			"short": "SPB",
 			"size": Vector2i(2, 2),
 			"color": Color("caa8ff"),
-			"description_lines": ["Wizard focus", "Grants one Fireball card each floor"],
+			"description_lines": ["Wizard focus", "Slots learned spells for one cast each floor"],
 			"tags": ["arcane", "book", "support"],
 			"stats": {"hand_size": 1},
-			"hand_cards": [
-				{"card_id": "fireball_card", "generation_mode": "floor_once"},
-			],
+		},
+		"scroll_fireball": {
+			"name": "Scroll of Fireball",
+			"short": "SFB",
+			"size": Vector2i(1, 2),
+			"color": Color("ff9a5e"),
+			"description_lines": ["Single-use spell scroll", "Cast once or study in calm as a wizard"],
+			"tags": ["arcane", "scroll"],
+			"hand_card": {"card_id": "fireball_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Fireball Scroll", "description_lines_override": ["Cast Fireball once", "Wizard can study it in calm mode"]},
+		},
+		"scroll_magic_missile": {
+			"name": "Scroll of Magic Missile",
+			"short": "SMM",
+			"size": Vector2i(1, 2),
+			"color": Color("9cd7ff"),
+			"description_lines": ["Single-use spell scroll", "Cast once or study in calm as a wizard"],
+			"tags": ["arcane", "scroll"],
+			"hand_card": {"card_id": "magic_missile_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Magic Missile Scroll", "description_lines_override": ["Launch seeking missiles once", "Wizard can study it in calm mode"]},
+		},
+		"scroll_misty_step": {
+			"name": "Scroll of Misty Step",
+			"short": "SMS",
+			"size": Vector2i(1, 2),
+			"color": Color("b89cff"),
+			"description_lines": ["Single-use spell scroll", "Cast once or study in calm as a wizard"],
+			"tags": ["arcane", "scroll"],
+			"hand_card": {"card_id": "misty_step_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Misty Step Scroll", "description_lines_override": ["Teleport once to a seen room", "Wizard can study it in calm mode"]},
 		},
 	}
 
@@ -626,6 +651,26 @@ func default_inventory_items_for_class(class_id: String) -> Array:
 			items.append(make_inventory_item("spellbook", INVENTORY_BASE_ORIGIN))
 	return items
 
+func default_learned_spells_for_class(class_id: String) -> Array[String]:
+	match class_id:
+		HERO_CLASS_WIZARD:
+			return ["fireball_card"]
+		_:
+			return []
+
+func default_slotted_spells_for_class(class_id: String) -> Array[String]:
+	match class_id:
+		HERO_CLASS_WIZARD:
+			return ["fireball_card"]
+		_:
+			return []
+
+func spell_display_name(spell_id: String) -> String:
+	return String(card_definition(spell_id).get("name", spell_id.replace("_card", "").replace("_", " ").capitalize()))
+
+func spell_slot_capacity_for_level(level_value: int) -> int:
+	return clampi(1 + int(floor(float(maxi(level_value - 1, 0)) / 3.0)), 1, 5)
+
 func default_hero_class_for_slot(hero_index: int) -> String:
 	return String(HERO_CLASS_ORDER[hero_index % HERO_CLASS_ORDER.size()])
 
@@ -649,12 +694,17 @@ func set_hero_profile_class(hero_index: int, class_id: String, apply_to_spawned_
 	hero_profiles[hero_index]["name"] = hero_display_name(hero_index, resolved_class_id)
 	if not hero_class_selection_locked():
 		hero_profiles[hero_index]["inventory_items"] = default_inventory_items_for_class(resolved_class_id)
+		hero_profiles[hero_index]["learned_spells"] = default_learned_spells_for_class(resolved_class_id)
+		hero_profiles[hero_index]["slotted_spells"] = default_slotted_spells_for_class(resolved_class_id)
 	if apply_to_spawned_hero and hero_index < heroes.size():
 		var hero: Variant = heroes[hero_index]
 		if hero != null and is_instance_valid(hero):
 			apply_hero_class_to_node(hero, resolved_class_id, hero_profiles[hero_index]["name"])
 			if not hero_class_selection_locked():
 				hero.inventory_items = Array(hero_profiles[hero_index].get("inventory_items", [])).duplicate(true)
+				hero.learned_spells = Array(hero_profiles[hero_index].get("learned_spells", [])).duplicate()
+				hero.slotted_spells = Array(hero_profiles[hero_index].get("slotted_spells", [])).duplicate()
+				sanitize_hero_spellbook(hero)
 			apply_inventory_stats_to_hero(hero)
 			hero.restore_health()
 
@@ -1206,6 +1256,7 @@ func ensure_runtime_ui() -> void:
 		inventory_overlay.pack_layout_changed.connect(_on_inventory_pack_layout_changed)
 		inventory_overlay.level_up_requested.connect(_on_inventory_level_up_requested)
 		inventory_overlay.item_dropped.connect(_on_inventory_item_dropped)
+		inventory_overlay.spellbook_slots_changed.connect(_on_inventory_spellbook_slots_changed)
 	if hero_select_overlay == null:
 		hero_select_overlay = ColorRect.new()
 		hero_select_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -1481,6 +1532,10 @@ func ensure_hero_profiles() -> void:
 			if not hero_profiles[hero_index].has("class_id"):
 				hero_profiles[hero_index]["class_id"] = default_hero_class_for_slot(hero_index)
 			hero_profiles[hero_index]["name"] = hero_display_name(hero_index, String(hero_profiles[hero_index].get("class_id", default_hero_class_for_slot(hero_index))))
+			if not hero_profiles[hero_index].has("learned_spells"):
+				hero_profiles[hero_index]["learned_spells"] = default_learned_spells_for_class(String(hero_profiles[hero_index]["class_id"]))
+			if not hero_profiles[hero_index].has("slotted_spells"):
+				hero_profiles[hero_index]["slotted_spells"] = default_slotted_spells_for_class(String(hero_profiles[hero_index]["class_id"]))
 		return
 	for hero_index in range(hero_profiles.size(), HERO_COUNT):
 		var class_id: String = default_hero_class_for_slot(hero_index)
@@ -1490,7 +1545,62 @@ func ensure_hero_profiles() -> void:
 			"level": 1,
 			"pack_modules": [],
 			"inventory_items": default_inventory_items_for_class(class_id),
+			"learned_spells": default_learned_spells_for_class(class_id),
+			"slotted_spells": default_slotted_spells_for_class(class_id),
 		})
+
+func hero_has_spellbook_item(hero: Variant) -> bool:
+	if hero == null or not is_instance_valid(hero):
+		return false
+	for item_variant in hero.inventory_items:
+		if String((item_variant as Dictionary).get("item_id", "")) == "spellbook":
+			return true
+	return false
+
+func spellbook_item_uid_for_hero(hero: Variant) -> int:
+	if hero == null or not is_instance_valid(hero):
+		return -1
+	for item_variant in hero.inventory_items:
+		var item: Dictionary = item_variant
+		if String(item.get("item_id", "")) == "spellbook":
+			return int(item.get("uid", -1))
+	return -1
+
+func sanitize_hero_spellbook(hero: Variant) -> void:
+	if hero == null or not is_instance_valid(hero):
+		return
+	if hero.hero_class_id != HERO_CLASS_WIZARD or not hero_has_spellbook_item(hero):
+		hero.learned_spells.clear()
+		hero.slotted_spells.clear()
+		hero.studying_spell_id = ""
+		hero.studying_room = INVALID_ROOM
+		hero.studying_started_at_door = -1
+		return
+	var known_map: Dictionary = {}
+	var cleaned_known: Array[String] = []
+	for spell_variant in hero.learned_spells:
+		var spell_id: String = String(spell_variant)
+		if spell_id == "" or known_map.has(spell_id):
+			continue
+		known_map[spell_id] = true
+		cleaned_known.append(spell_id)
+	if cleaned_known.is_empty():
+		cleaned_known = default_learned_spells_for_class(hero.hero_class_id).duplicate()
+	hero.learned_spells = cleaned_known
+	var slot_capacity: int = spell_slot_capacity_for_level(hero.level)
+	var used_slots: Dictionary = {}
+	var cleaned_slots: Array[String] = []
+	for spell_variant in hero.slotted_spells:
+		var spell_id: String = String(spell_variant)
+		if spell_id == "" or used_slots.has(spell_id) or not hero.learned_spells.has(spell_id):
+			continue
+		used_slots[spell_id] = true
+		cleaned_slots.append(spell_id)
+		if cleaned_slots.size() >= slot_capacity:
+			break
+	if cleaned_slots.is_empty() and not hero.learned_spells.is_empty():
+		cleaned_slots.append(String(hero.learned_spells[0]))
+	hero.slotted_spells = cleaned_slots
 
 func save_hero_profiles_from_nodes() -> void:
 	ensure_hero_profiles()
@@ -1502,6 +1612,8 @@ func save_hero_profiles_from_nodes() -> void:
 		hero_profiles[hero.hero_index]["level"] = hero.level
 		hero_profiles[hero.hero_index]["pack_modules"] = hero.pack_modules.duplicate(true)
 		hero_profiles[hero.hero_index]["inventory_items"] = hero.inventory_items.duplicate(true)
+		hero_profiles[hero.hero_index]["learned_spells"] = hero.learned_spells.duplicate()
+		hero_profiles[hero.hero_index]["slotted_spells"] = hero.slotted_spells.duplicate()
 
 func roll_room_template() -> String:
 	var roll: float = rng.randf()
@@ -1714,6 +1826,9 @@ func spawn_heroes() -> void:
 		hero.base_inventory_size = INVENTORY_BASE_SIZE
 		hero.pack_modules = Array(hero_profiles[hero_index].get("pack_modules", [])).duplicate(true)
 		hero.inventory_items = Array(hero_profiles[hero_index].get("inventory_items", [])).duplicate(true)
+		hero.learned_spells = Array(hero_profiles[hero_index].get("learned_spells", default_learned_spells_for_class(hero_class_id))).duplicate()
+		hero.slotted_spells = Array(hero_profiles[hero_index].get("slotted_spells", default_slotted_spells_for_class(hero_class_id))).duplicate()
+		sanitize_hero_spellbook(hero)
 		hero.set_calm_movement_multiplier(selected_calm_speed_multiplier())
 		hero.set_room(crystal_room, hero_idle_position(crystal_room, hero_index, HERO_COUNT))
 		apply_inventory_stats_to_hero(hero)
@@ -1762,10 +1877,25 @@ func make_ground_item(item_id: String, world_position: Vector2) -> Dictionary:
 	return ground_item
 
 func roll_ground_item_id() -> String:
-	var item_keys: Array = item_defs.keys()
-	if item_keys.is_empty():
+	var weighted_item_ids: Array[String] = [
+		"ration", "ration",
+		"boots", "boots",
+		"blade", "blade",
+		"buckler",
+		"whetstone", "whetstone",
+		"banner",
+		"lantern",
+		"medkit",
+		"torch",
+		"axe",
+		"daggers",
+		"scroll_fireball",
+		"scroll_magic_missile",
+		"scroll_misty_step",
+	]
+	if weighted_item_ids.is_empty():
 		return ""
-	return String(item_keys[rng.randi_range(0, item_keys.size() - 1)])
+	return String(weighted_item_ids[rng.randi_range(0, weighted_item_ids.size() - 1)])
 
 func spawn_ground_loot(room_coord: Vector2i) -> void:
 	if not rooms.has(room_coord):
@@ -1919,6 +2049,78 @@ func hero_level_stat_bonuses(level_value: int) -> Dictionary:
 		"speed": float(earned_levels) * 10.0,
 		"stamina": float(earned_levels) * 0.5,
 	}
+
+func hero_spell_slot_capacity(hero: Variant) -> int:
+	if hero == null or not is_instance_valid(hero) or hero.hero_class_id != HERO_CLASS_WIZARD:
+		return 0
+	return spell_slot_capacity_for_level(hero.level)
+
+func hero_spellbook_overlay_data(hero: Variant) -> Dictionary:
+	if hero == null or not is_instance_valid(hero):
+		return {
+			"enabled": false,
+			"known": [],
+			"slotted": [],
+			"capacity": 0,
+		}
+	return {
+		"enabled": hero.hero_class_id == HERO_CLASS_WIZARD and hero_has_spellbook_item(hero),
+		"known": hero.learned_spells.duplicate(),
+		"slotted": hero.slotted_spells.duplicate(),
+		"capacity": hero_spell_slot_capacity(hero),
+	}
+
+func hero_can_study_spell(hero: Variant, spell_id: String) -> bool:
+	if hero == null or not is_instance_valid(hero):
+		return false
+	if hero.hero_class_id != HERO_CLASS_WIZARD or not hero_has_spellbook_item(hero):
+		return false
+	if spell_id == "" or hero.learned_spells.has(spell_id):
+		return false
+	return not wave_in_progress()
+
+func begin_spell_scroll_study(hero: Variant, spell_id: String) -> bool:
+	if not hero_can_study_spell(hero, spell_id):
+		return false
+	hero.studying_spell_id = spell_id
+	hero.studying_room = active_hero_room_for_commands(hero)
+	hero.studying_started_at_door = doors_opened
+	status_message = "%s began studying %s. Stay in the room until the next door opens." % [hero.hero_name, spell_display_name(spell_id)]
+	return true
+
+func resolve_spell_scroll_studies() -> void:
+	for hero in heroes:
+		if hero == null or not is_instance_valid(hero) or hero.studying_spell_id == "":
+			continue
+		if doors_opened <= hero.studying_started_at_door:
+			continue
+		var studied_spell_id: String = hero.studying_spell_id
+		var study_succeeded: bool = hero.current_room == hero.studying_room and hero.pending_room == INVALID_ROOM and hero.pending_open_room == INVALID_ROOM
+		hero.studying_spell_id = ""
+		hero.studying_room = INVALID_ROOM
+		hero.studying_started_at_door = -1
+		if not study_succeeded:
+			status_message = "%s lost focus and failed to learn %s." % [hero.hero_name, spell_display_name(studied_spell_id)]
+			continue
+		if not hero.learned_spells.has(studied_spell_id):
+			hero.learned_spells.append(studied_spell_id)
+		if hero.slotted_spells.size() < hero_spell_slot_capacity(hero) and not hero.slotted_spells.has(studied_spell_id):
+			hero.slotted_spells.append(studied_spell_id)
+		sanitize_hero_spellbook(hero)
+		apply_inventory_stats_to_hero(hero)
+		status_message = "%s learned %s." % [hero.hero_name, spell_display_name(studied_spell_id)]
+
+func advance_spell_scroll_studies() -> void:
+	for hero in heroes:
+		if hero == null or not is_instance_valid(hero) or hero.studying_spell_id == "":
+			continue
+		if hero.current_room == hero.studying_room and hero.pending_room == INVALID_ROOM and hero.pending_open_room == INVALID_ROOM:
+			continue
+		var studied_spell_id: String = hero.studying_spell_id
+		hero.studying_spell_id = ""
+		hero.studying_room = INVALID_ROOM
+		hero.studying_started_at_door = -1
+		status_message = "%s interrupted study of %s." % [hero.hero_name, spell_display_name(studied_spell_id)]
 
 func hero_next_level_unlock_names(hero: Variant) -> Array[String]:
 	var unlock_names: Array[String] = []
@@ -2076,6 +2278,32 @@ func card_definition(card_id: String) -> Dictionary:
 				"cast_adjacent_hops": 1,
 				"color": Color("ff9a5e"),
 			}
+		"magic_missile_card":
+			return {
+				"id": "magic_missile_card",
+				"name": "Magic Missile",
+				"target_scope": "opened_room",
+				"requires_line_of_effect": true,
+				"phase": "combat",
+				"description_lines": ["Target one opened room", "Launches three seeking missiles", "Generated once per floor from a slotted spell"],
+				"stamina_cost": 1.0,
+				"base_damage": 14.0,
+				"projectile_count": 3,
+				"cast_adjacent_hops": 1,
+				"color": Color("9cd7ff"),
+			}
+		"misty_step_card":
+			return {
+				"id": "misty_step_card",
+				"name": "Misty Step",
+				"target_scope": "opened_room",
+				"requires_line_of_effect": true,
+				"phase": "any",
+				"description_lines": ["Teleport to a seen point", "Can hop into an adjacent room through a doorway", "Generated once per floor from a slotted spell"],
+				"stamina_cost": 0.0,
+				"cast_adjacent_hops": 1,
+				"color": Color("b89cff"),
+			}
 		"lantern_torch_card":
 			return {
 				"id": "lantern_torch_card",
@@ -2188,10 +2416,32 @@ func hero_builtin_card_generators(hero: Variant) -> Array:
 		"card_id": "emergency_snack_card",
 		"door_interval": 1,
 		"generation_mode": "door_interval",
+		"max_stored_cards": 1,
 		"source_type": "hero_builtin",
 		"hero_index": hero.hero_index,
 		"generator_key": "hero:%d:emergency_snack_card" % hero.hero_index,
 	}]
+
+func spellbook_card_generators(hero: Variant, effect_summary: Dictionary) -> Array:
+	var generators: Array = []
+	if hero == null or not is_instance_valid(hero) or hero.hero_class_id != HERO_CLASS_WIZARD:
+		return generators
+	var spellbook_uid: int = spellbook_item_uid_for_hero(hero)
+	if spellbook_uid < 0:
+		return generators
+	for spell_id_variant in hero.slotted_spells:
+		var spell_id: String = String(spell_id_variant)
+		if spell_id == "":
+			continue
+		generators.append({
+			"card_id": spell_id,
+			"item_uid": spellbook_uid,
+			"item_id": "spellbook",
+			"item_bonus": Dictionary(effect_summary.get("item_bonus_by_uid", {}).get(spellbook_uid, empty_inventory_effect_summary())).duplicate(true),
+			"generation_mode": "floor_once",
+			"max_stored_cards": 1,
+		})
+	return generators
 
 func empty_inventory_effect_summary() -> Dictionary:
 	return {
@@ -2419,6 +2669,7 @@ func apply_inventory_stats_to_hero(hero: Variant) -> void:
 	for item_variant in hero.inventory_items:
 		normalized_items.append(normalize_item_instance(item_variant))
 	hero.inventory_items = normalized_items
+	sanitize_hero_spellbook(hero)
 	var bonuses: Dictionary = inventory_effect_summary(hero.inventory_items)
 	var level_bonuses: Dictionary = hero_level_stat_bonuses(hero.level)
 	hero.apply_inventory_stats(
@@ -2435,6 +2686,8 @@ func apply_inventory_stats_to_hero(hero: Variant) -> void:
 		hero_profiles[hero.hero_index]["level"] = hero.level
 		hero_profiles[hero.hero_index]["pack_modules"] = hero.pack_modules.duplicate(true)
 		hero_profiles[hero.hero_index]["inventory_items"] = hero.inventory_items.duplicate(true)
+		hero_profiles[hero.hero_index]["learned_spells"] = hero.learned_spells.duplicate()
+		hero_profiles[hero.hero_index]["slotted_spells"] = hero.slotted_spells.duplicate()
 
 func card_generator_key(item_uid: int, card_id: String) -> String:
 	return "%d:%s" % [item_uid, card_id]
@@ -2593,14 +2846,15 @@ func resolve_card_generator_mode(generator: Dictionary, card_def: Dictionary = {
 func build_hand_card_from_generator(hero: Variant, generator: Dictionary, effect_summary: Dictionary) -> Dictionary:
 	var card_def: Dictionary = card_definition(String(generator.get("card_id", "")))
 	var item_bonus: Dictionary = Dictionary(generator.get("item_bonus", empty_inventory_effect_summary()))
-	var phase: String = String(card_def.get("phase", "combat"))
-	var target_scope: String = String(card_def.get("target_scope", "same_room"))
+	var phase: String = String(generator.get("phase_override", card_def.get("phase", "combat")))
+	var target_scope: String = String(generator.get("target_scope_override", card_def.get("target_scope", "same_room")))
 	var expires_after_turns: int = int(card_def.get("expires_after_turns", int(generator.get("expires_after_turns", 0))))
 	var base_stamina_cost: float = float(card_def.get("stamina_cost", 0.0))
+	var description_lines: Array = Array(generator.get("description_lines_override", card_def.get("description_lines", [])))
 	var hand_card: Dictionary = {
 		"uid": next_card_uid,
 		"card_id": String(card_def.get("id", "")),
-		"name": String(card_def.get("name", "Card")),
+		"name": String(generator.get("name_override", card_def.get("name", "Card"))),
 		"item_uid": int(generator.get("item_uid", -1)),
 		"item_id": String(generator.get("item_id", "")),
 		"source_type": String(generator.get("source_type", "item")),
@@ -2608,7 +2862,7 @@ func build_hand_card_from_generator(hero: Variant, generator: Dictionary, effect
 		"phase": phase,
 		"target_scope": target_scope,
 		"target_scope_label": card_target_scope_label(target_scope),
-		"description_lines": Array(card_def.get("description_lines", [])),
+		"description_lines": description_lines,
 		"door_interval": int(card_def.get("door_interval", int(generator.get("door_interval", 0)))),
 		"generation_mode": resolve_card_generator_mode(generator, card_def),
 		"stamina_cost": maxf(base_stamina_cost * float(effect_summary.get("stamina_cost_mult", 1.0)), 0.0),
@@ -2634,9 +2888,11 @@ func build_hand_card_from_generator(hero: Variant, generator: Dictionary, effect
 		"food_cost": int(card_def.get("food_cost", 0)),
 		"expires_on_doors_opened": doors_opened + expires_after_turns if expires_after_turns > 0 else -1,
 		"hero_index": hero.hero_index,
-		"max_stored_cards": int(generator.get("max_stored_cards", card_def.get("max_stored_cards", 0))),
+		"max_stored_cards": int(generator.get("max_stored_cards", card_def.get("max_stored_cards", 1))),
 		"consume_item_on_play": bool(generator.get("consume_item_on_play", false)),
 		"consume_item_charges_on_play": int(generator.get("consume_item_charges_on_play", 0)),
+		"learnable_spell_scroll": bool(generator.get("learnable_spell_scroll", false)),
+		"learn_spell_id": String(generator.get("learn_spell_id", card_def.get("id", ""))),
 	}
 	next_card_uid += 1
 	return hand_card
@@ -2721,8 +2977,12 @@ func advance_hero_builtin_door_card_generators(door_count: int = 1) -> void:
 			var remaining_doors: int = int(state.get("remaining_doors", 1)) - door_count
 			var interval: int = maxi(1, int(state.get("interval", 1)))
 			var queued_cards: int = int(state.get("queued_cards", 0))
+			var generator: Dictionary = Dictionary(state.get("generator", {})).duplicate(true)
+			var max_stored_cards: int = int(generator.get("max_stored_cards", 1))
 			while remaining_doors <= 0:
-				queued_cards += 1
+				var current_stored_cards: int = queued_cards + hero_hand_card_count_for_generator_key(hero, timer_key)
+				if max_stored_cards <= 0 or current_stored_cards < max_stored_cards:
+					queued_cards += 1
 				remaining_doors += interval
 			state["remaining_doors"] = remaining_doors
 			state["queued_cards"] = queued_cards
@@ -2746,8 +3006,11 @@ func sync_hero_card_sources(hero: Variant, effect_summary: Dictionary = {}) -> v
 	if hero == null or not is_instance_valid(hero):
 		return
 	var resolved_summary: Dictionary = effect_summary if not effect_summary.is_empty() else inventory_effect_summary(hero.inventory_items)
+	var resolved_generators: Array = Array(resolved_summary.get("card_generators", [])).duplicate(true)
+	for spell_generator_variant in spellbook_card_generators(hero, resolved_summary):
+		resolved_generators.append((spell_generator_variant as Dictionary).duplicate(true))
 	var initially_exhausted_item_uids: Dictionary = {}
-	for generator_variant in Array(resolved_summary.get("card_generators", [])):
+	for generator_variant in resolved_generators:
 		var generator: Dictionary = generator_variant
 		var key: String = card_generator_key(int(generator.get("item_uid", -1)), String(generator.get("card_id", "")))
 		var item_bonus: Dictionary = Dictionary(generator.get("item_bonus", {}))
@@ -2791,7 +3054,7 @@ func sync_hero_card_sources(hero: Variant, effect_summary: Dictionary = {}) -> v
 		var inventory_item: Dictionary = item_variant as Dictionary
 		var item_uid: int = int(inventory_item.get("uid", -1))
 		valid_item_uids[item_uid] = true
-	for generator_variant in Array(resolved_summary.get("card_generators", [])):
+	for generator_variant in resolved_generators:
 		var generator: Dictionary = generator_variant
 		var generator_key: String = card_generator_key(int(generator.get("item_uid", -1)), String(generator.get("card_id", "")))
 		valid_generator_keys[generator_key] = true
@@ -2819,7 +3082,7 @@ func sync_hero_card_sources(hero: Variant, effect_summary: Dictionary = {}) -> v
 	hero.hand_cards = filtered_hand
 	while hero.hand_cards.size() > hero.max_hand_size:
 		hero.hand_cards.pop_back()
-	fill_queued_hand_cards(hero, resolved_summary)
+	fill_queued_hand_cards(hero, resolved_summary, resolved_generators)
 
 func sync_hero_passive_combat_sources(hero: Variant, effect_summary: Dictionary = {}) -> void:
 	if hero == null or not is_instance_valid(hero):
@@ -2851,12 +3114,16 @@ func sync_hero_passive_combat_sources(hero: Variant, effect_summary: Dictionary 
 	for stale_key_variant in stale_keys:
 		global_item_passive_timers.erase(String(stale_key_variant))
 
-func fill_queued_hand_cards(hero: Variant, effect_summary: Dictionary = {}) -> void:
+func fill_queued_hand_cards(hero: Variant, effect_summary: Dictionary = {}, precomputed_generators: Array = []) -> void:
 	if hero == null or not is_instance_valid(hero) or hero.hand_cards.size() >= hero.max_hand_size:
 		return
 	var resolved_summary: Dictionary = effect_summary if not effect_summary.is_empty() else inventory_effect_summary(hero.inventory_items)
+	var resolved_generators: Array = precomputed_generators.duplicate(true) if not precomputed_generators.is_empty() else Array(resolved_summary.get("card_generators", [])).duplicate(true)
+	if precomputed_generators.is_empty():
+		for spell_generator_variant in spellbook_card_generators(hero, resolved_summary):
+			resolved_generators.append((spell_generator_variant as Dictionary).duplicate(true))
 	var generators_by_key: Dictionary = {}
-	for generator_variant in Array(resolved_summary.get("card_generators", [])):
+	for generator_variant in resolved_generators:
 		var generator: Dictionary = generator_variant
 		var generators_key: String = card_generator_key(int(generator.get("item_uid", -1)), String(generator.get("card_id", "")))
 		generators_by_key[generators_key] = generator
@@ -2882,9 +3149,12 @@ func advance_item_door_card_generators(door_count: int = 1) -> void:
 		if hero == null or not is_instance_valid(hero):
 			continue
 		var effect_summary: Dictionary = inventory_effect_summary(hero.inventory_items)
+		var resolved_generators: Array = Array(effect_summary.get("card_generators", [])).duplicate(true)
+		for spell_generator_variant in spellbook_card_generators(hero, effect_summary):
+			resolved_generators.append((spell_generator_variant as Dictionary).duplicate(true))
 		sync_hero_card_sources(hero, effect_summary)
 		var exhausted_item_uids: Dictionary = {}
-		for generator_variant in Array(effect_summary.get("card_generators", [])):
+		for generator_variant in resolved_generators:
 			var generator: Dictionary = generator_variant
 			var key: String = card_generator_key(int(generator.get("item_uid", -1)), String(generator.get("card_id", "")))
 			var state: Dictionary = Dictionary(global_item_card_states.get(key, {})).duplicate(true)
@@ -2896,7 +3166,7 @@ func advance_item_door_card_generators(door_count: int = 1) -> void:
 			var interval: int = maxi(1, int(state.get("interval", 1)))
 			var queued_cards: int = int(state.get("queued_cards", 0))
 			var remaining_generations: int = int(state.get("remaining_generations", -1))
-			var max_stored_cards: int = int(generator.get("max_stored_cards", 0))
+			var max_stored_cards: int = int(generator.get("max_stored_cards", 1))
 			while remaining_doors <= 0:
 				if remaining_generations == 0:
 					break
@@ -2915,7 +3185,7 @@ func advance_item_door_card_generators(door_count: int = 1) -> void:
 			global_item_card_states[key] = state
 		for exhausted_uid_variant in exhausted_item_uids.keys():
 			remove_item_by_uid_from_world(int(exhausted_uid_variant))
-		fill_queued_hand_cards(hero, effect_summary)
+		fill_queued_hand_cards(hero, effect_summary, resolved_generators)
 	cleanup_global_item_card_states()
 
 func open_room_loot_inventory(hero: Variant, room_coord: Vector2i) -> void:
@@ -2940,7 +3210,7 @@ func open_hero_inventory(hero: Variant, room_coord: Vector2i = INVALID_ROOM) -> 
 		"hero_index": hero.hero_index,
 		"room": room_coord,
 	}
-	inventory_overlay.configure(hero.hero_name, hero.level, food, level_up_food_cost(hero.level), hero_can_level_up(hero), build_inventory_stat_lines(hero, hero.inventory_items), build_inventory_ability_sections(hero), build_level_up_reward_lines(hero), hero.inventory_canvas_size, hero.base_inventory_origin, hero.base_inventory_size, hero.pack_modules, item_defs, hero.inventory_items, ground_items, loot_enabled)
+	inventory_overlay.configure(hero.hero_name, hero.level, food, level_up_food_cost(hero.level), hero_can_level_up(hero), build_inventory_stat_lines(hero, hero.inventory_items), build_inventory_ability_sections(hero), build_level_up_reward_lines(hero), hero.inventory_canvas_size, hero.base_inventory_origin, hero.base_inventory_size, hero.pack_modules, item_defs, hero.inventory_items, ground_items, loot_enabled, hero_spellbook_overlay_data(hero))
 	status_message = "Inventory open for %s." % hero.hero_name
 	mouse_pressed = false
 	mouse_dragging = false
@@ -2985,6 +3255,16 @@ func commit_pack_layout(hero_index: int, pack_modules: Array) -> void:
 	if hero == null or not is_instance_valid(hero):
 		return
 	hero.pack_modules = pack_modules.duplicate(true)
+	apply_inventory_stats_to_hero(hero)
+
+func commit_spell_slots(hero_index: int, slotted_spells: Array) -> void:
+	if hero_index < 0 or hero_index >= heroes.size():
+		return
+	var hero: Variant = heroes[hero_index]
+	if hero == null or not is_instance_valid(hero):
+		return
+	hero.slotted_spells = Array(slotted_spells).duplicate()
+	sanitize_hero_spellbook(hero)
 	apply_inventory_stats_to_hero(hero)
 
 func center_camera() -> void:
@@ -4143,6 +4423,7 @@ func open_room(room_coord: Vector2i) -> void:
 	room["opened"] = true
 	opened_rooms += 1
 	doors_opened += 1
+	resolve_spell_scroll_studies()
 	expire_door_turn_hand_cards()
 	advance_item_door_card_generators(1)
 	advance_hero_builtin_door_card_generators(1)
@@ -4939,6 +5220,17 @@ func best_card_cast_room(from_room: Vector2i, target_room: Vector2i, hand_card: 
 func card_target_is_valid(hero: Variant, hand_card: Dictionary, target_world_position: Vector2) -> bool:
 	return not resolve_card_target(hero, hand_card, target_world_position).is_empty()
 
+func hand_card_starts_spell_study(hero: Variant, hand_card: Dictionary, target_data: Dictionary) -> bool:
+	if hero == null or not is_instance_valid(hero) or wave_in_progress():
+		return false
+	if not bool(hand_card.get("learnable_spell_scroll", false)):
+		return false
+	var spell_id: String = String(hand_card.get("learn_spell_id", ""))
+	if not hero_can_study_spell(hero, spell_id):
+		return false
+	var target_room: Vector2i = target_data.get("room", INVALID_ROOM)
+	return target_room != INVALID_ROOM and target_room == hero.current_room and hero_ready_for_room_action(hero, target_room)
+
 func hand_card_phase_allows_play(hand_card: Dictionary) -> bool:
 	var phase: String = String(hand_card.get("phase", "combat"))
 	match phase:
@@ -4953,6 +5245,8 @@ func hand_card_phase_allows_play(hand_card: Dictionary) -> bool:
 
 func apply_hand_card_effect(hero: Variant, hand_card: Dictionary, target_data: Dictionary) -> bool:
 	var target_world_position: Vector2 = Vector2(target_data.get("world_position", hero.global_position))
+	if hand_card_starts_spell_study(hero, hand_card, target_data):
+		return begin_spell_scroll_study(hero, String(hand_card.get("learn_spell_id", "")))
 	match String(hand_card.get("card_id", "")):
 		"fireball_card":
 			var room_coord: Vector2i = target_data.get("room", INVALID_ROOM)
@@ -4960,6 +5254,20 @@ func apply_hand_card_effect(hero: Variant, hand_card: Dictionary, target_data: D
 				return false
 			cast_fireball_spell(hero, target_world_position, room_coord, hand_card)
 			status_message = "%s cast Fireball." % hero.hero_name
+			return true
+		"magic_missile_card":
+			var missile_room: Vector2i = target_data.get("room", INVALID_ROOM)
+			if missile_room == INVALID_ROOM or not rooms.has(missile_room):
+				return false
+			cast_magic_missile_spell(hero, target_world_position, missile_room, hand_card)
+			status_message = "%s cast Magic Missile." % hero.hero_name
+			return true
+		"misty_step_card":
+			var teleport_room: Vector2i = target_data.get("room", INVALID_ROOM)
+			if teleport_room == INVALID_ROOM or not rooms.has(teleport_room):
+				return false
+			cast_misty_step_spell(hero, target_world_position, teleport_room, hand_card)
+			status_message = "%s cast Misty Step." % hero.hero_name
 			return true
 		"lantern_torch_card":
 			var target_hero: Variant = target_data.get("hero", null)
@@ -5077,8 +5385,9 @@ func play_card_for_hero(hero_index: int, card_uid: int, target_world_position: V
 			return false
 		if not hero_ready_for_card_cast(hero, cast_room, target_room, hand_card, Vector2(target_data.get("world_position", target_world_position))):
 			return request_deferred_room_card_for_hero(hero_index, cast_room, target_room, card_uid, Vector2(target_data.get("world_position", target_world_position)))
+	var is_study_play: bool = hand_card_starts_spell_study(hero, hand_card, target_data)
 	var stamina_cost: float = float(hand_card.get("stamina_cost", 0.0))
-	if stamina_cost > 0.0 and not hero.spend_stamina(stamina_cost):
+	if not is_study_play and stamina_cost > 0.0 and not hero.spend_stamina(stamina_cost):
 		status_message = "%s is too exhausted for that." % hero.hero_name
 		update_hud()
 		return false
@@ -5103,6 +5412,59 @@ func cast_fireball_spell(hero: Variant, target_world_position: Vector2, target_r
 		"push_distance": 56.0,
 		"room": target_room,
 	})
+
+func nearest_enemies_in_room(room_coord: Vector2i, origin: Vector2, max_count: int) -> Array:
+	var room_enemies: Array = []
+	for enemy in enemies:
+		if enemy == null or not is_instance_valid(enemy) or enemy.current_room != room_coord:
+			continue
+		room_enemies.append({
+			"enemy": enemy,
+			"distance": origin.distance_squared_to(enemy.global_position),
+		})
+	room_enemies.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return float(a.get("distance", INF)) < float(b.get("distance", INF))
+	)
+	var resolved: Array = []
+	for enemy_entry_variant in room_enemies:
+		if resolved.size() >= max_count:
+			break
+		resolved.append(enemy_entry_variant.get("enemy", null))
+	return resolved
+
+func cast_magic_missile_spell(hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
+	hero.trigger_attack(target_world_position, "laser")
+	var missile_targets: Array = nearest_enemies_in_room(target_room, target_world_position, int(hand_card.get("projectile_count", 3)))
+	if missile_targets.is_empty():
+		add_resource_floating_text(target_world_position, "Miss", Color(hand_card.get("color", Color("9cd7ff"))))
+		return
+	var missile_count: int = maxi(1, int(hand_card.get("projectile_count", 3)))
+	for missile_index in range(missile_count):
+		var target_enemy: Variant = missile_targets[missile_index % missile_targets.size()]
+		if target_enemy == null or not is_instance_valid(target_enemy):
+			continue
+		spawn_laser_projectile(hero.global_position, target_enemy, float(hand_card.get("damage", hand_card.get("base_damage", 14.0))), hand_card.get("color", Color("9cd7ff")), 4.2, 1480.0)
+
+func cast_misty_step_spell(hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
+	var landing_position: Vector2 = clamp_point_to_room(target_world_position, target_room)
+	hero.clear_orders()
+	clear_pending_room_action_request(hero.hero_index)
+	clear_pending_room_loot_request(hero.hero_index)
+	hero.set_room(target_room, landing_position)
+	hero.trigger_attack(landing_position, "laser")
+	projectiles.append({
+		"kind": "fireball_blast",
+		"position": landing_position,
+		"previous": landing_position,
+		"target_position": landing_position,
+		"color": hand_card.get("color", Color("b89cff")),
+		"radius": 18.0,
+		"impact_radius": 42.0,
+		"lifetime_left": 0.16,
+		"blast_duration": 0.16,
+		"width": 4.0,
+	})
+	add_resource_floating_text(landing_position, "Step", Color(hand_card.get("color", Color("b89cff"))))
 
 func explode_fireball_projectile(projectile: Dictionary) -> void:
 	var room_coord: Vector2i = projectile.get("room", INVALID_ROOM)
@@ -5482,6 +5844,11 @@ func build_network_snapshot() -> Dictionary:
 			"calm_multiplier": hero.calm_move_speed_multiplier,
 			"combat_multiplier": hero.combat_move_speed_multiplier,
 			"combat_mode": hero.combat_movement_mode,
+			"learned_spells": hero.learned_spells.duplicate(),
+			"slotted_spells": hero.slotted_spells.duplicate(),
+			"studying_spell_id": hero.studying_spell_id,
+			"studying_room": hero.studying_room,
+			"studying_started_at_door": hero.studying_started_at_door,
 		})
 	var projectile_states: Array = []
 	for projectile_variant in projectiles:
@@ -5651,6 +6018,14 @@ func apply_hero_snapshots(hero_states: Array) -> void:
 		hero.level = int(hero_state.get("level", hero.level))
 		hero.pack_modules = Array(hero_state.get("pack_modules", hero.pack_modules)).duplicate(true)
 		hero.inventory_items = Array(hero_state.get("inventory_items", hero.inventory_items)).duplicate(true)
+		hero.learned_spells = Array(hero_state.get("learned_spells", hero.learned_spells)).duplicate()
+		hero.slotted_spells = Array(hero_state.get("slotted_spells", hero.slotted_spells)).duplicate()
+		hero.studying_spell_id = String(hero_state.get("studying_spell_id", hero.studying_spell_id))
+		hero.studying_room = hero_state.get("studying_room", hero.studying_room)
+		hero.studying_started_at_door = int(hero_state.get("studying_started_at_door", hero.studying_started_at_door))
+		sanitize_hero_spellbook(hero)
+		hero_profiles[hero_index]["learned_spells"] = hero.learned_spells.duplicate()
+		hero_profiles[hero_index]["slotted_spells"] = hero.slotted_spells.duplicate()
 		hero.stamina = float(hero_state.get("stamina", hero.stamina))
 		hero.max_stamina = float(hero_state.get("max_stamina", hero.max_stamina))
 		hero.stamina_regen_rate = float(hero_state.get("stamina_regen_rate", hero.stamina_regen_rate))
@@ -5865,6 +6240,17 @@ func server_commit_pack_layout(hero_index: int, pack_modules: Array) -> void:
 	if not peer_can_control_hero(sender_peer_id, hero_index):
 		return
 	commit_pack_layout(hero_index, pack_modules)
+	update_hud()
+	broadcast_network_snapshot()
+
+@rpc("any_peer", "call_remote", "reliable")
+func server_commit_spell_slots(hero_index: int, slotted_spells: Array) -> void:
+	if not multiplayer.is_server():
+		return
+	var sender_peer_id: int = multiplayer.get_remote_sender_id()
+	if not peer_can_control_hero(sender_peer_id, hero_index):
+		return
+	commit_spell_slots(hero_index, slotted_spells)
 	update_hud()
 	broadcast_network_snapshot()
 
@@ -6694,6 +7080,8 @@ func advance_wave_recovery(delta: float) -> void:
 func update_hud() -> void:
 	update_selected_hero_flags()
 	var inventory_open: bool = inventory_overlay != null and inventory_overlay.visible
+	if inventory_open:
+		refresh_open_inventory_overlay()
 	var door_income: Dictionary = calculate_door_rewards()
 	var calm_phase: bool = not wave_in_progress()
 	var inventory_allowed: bool = inventory_actions_allowed_for_local_peer()
@@ -6725,6 +7113,17 @@ func update_hud() -> void:
 	hint_label.text = status_message
 	update_network_ui()
 	update_hero_select_overlay()
+
+func refresh_open_inventory_overlay() -> void:
+	if inventory_overlay == null or not inventory_overlay.visible or inventory_session.is_empty():
+		return
+	var hero_index: int = int(inventory_session.get("hero_index", -1))
+	if hero_index < 0 or hero_index >= heroes.size():
+		return
+	var hero: Variant = heroes[hero_index]
+	if hero == null or not is_instance_valid(hero):
+		return
+	inventory_overlay.refresh_state(build_inventory_stat_lines(hero, hero.inventory_items), build_inventory_ability_sections(hero), build_level_up_reward_lines(hero), food, level_up_food_cost(hero.level), hero_can_level_up(hero), hero.level, hero.pack_modules, hero_spellbook_overlay_data(hero))
 
 func selected_calm_speed_multiplier() -> float:
 	return float(CALM_SPEED_OPTIONS[clampi(calm_speed_option_index, 0, CALM_SPEED_OPTIONS.size() - 1)])
@@ -7383,7 +7782,7 @@ func _on_inventory_overlay_changed(items: Array) -> void:
 	apply_inventory_stats_to_hero(hero)
 	if multiplayer_session_active() and not authoritative_simulation_active() and inventory_overlay != null:
 		server_commit_inventory_state.rpc_id(NETWORK_HOST_PEER_ID, hero_index, room_coord, items, inventory_overlay.get_ground_items())
-	inventory_overlay.refresh_state(build_inventory_stat_lines(hero, hero.inventory_items), build_inventory_ability_sections(hero), build_level_up_reward_lines(hero), food, level_up_food_cost(hero.level), hero_can_level_up(hero), hero.level, hero.pack_modules)
+	inventory_overlay.refresh_state(build_inventory_stat_lines(hero, hero.inventory_items), build_inventory_ability_sections(hero), build_level_up_reward_lines(hero), food, level_up_food_cost(hero.level), hero_can_level_up(hero), hero.level, hero.pack_modules, hero_spellbook_overlay_data(hero))
 	update_hud()
 
 func _on_inventory_close_requested() -> void:
@@ -7403,7 +7802,7 @@ func _on_inventory_pack_layout_changed(pack_modules: Array) -> void:
 	commit_pack_layout(hero_index, pack_modules)
 	if multiplayer_session_active() and not authoritative_simulation_active():
 		server_commit_pack_layout.rpc_id(NETWORK_HOST_PEER_ID, hero_index, pack_modules)
-	inventory_overlay.refresh_state(build_inventory_stat_lines(hero, hero.inventory_items), build_inventory_ability_sections(hero), build_level_up_reward_lines(hero), food, level_up_food_cost(hero.level), hero_can_level_up(hero), hero.level, hero.pack_modules)
+	inventory_overlay.refresh_state(build_inventory_stat_lines(hero, hero.inventory_items), build_inventory_ability_sections(hero), build_level_up_reward_lines(hero), food, level_up_food_cost(hero.level), hero_can_level_up(hero), hero.level, hero.pack_modules, hero_spellbook_overlay_data(hero))
 	update_hud()
 
 func _on_inventory_level_up_requested() -> void:
@@ -7425,7 +7824,22 @@ func _on_inventory_level_up_requested() -> void:
 	else:
 		status_message = "Not enough food or no room for another pack."
 	apply_inventory_stats_to_hero(hero)
-	inventory_overlay.refresh_state(build_inventory_stat_lines(hero, hero.inventory_items), build_inventory_ability_sections(hero), build_level_up_reward_lines(hero), food, level_up_food_cost(hero.level), hero_can_level_up(hero), hero.level, hero.pack_modules)
+	inventory_overlay.refresh_state(build_inventory_stat_lines(hero, hero.inventory_items), build_inventory_ability_sections(hero), build_level_up_reward_lines(hero), food, level_up_food_cost(hero.level), hero_can_level_up(hero), hero.level, hero.pack_modules, hero_spellbook_overlay_data(hero))
+	update_hud()
+
+func _on_inventory_spellbook_slots_changed(slotted_spells: Array) -> void:
+	if inventory_session.is_empty():
+		return
+	var hero_index: int = int(inventory_session.get("hero_index", -1))
+	if hero_index < 0 or hero_index >= heroes.size():
+		return
+	var hero: Variant = heroes[hero_index]
+	if hero == null or not is_instance_valid(hero):
+		return
+	commit_spell_slots(hero_index, slotted_spells)
+	if multiplayer_session_active() and not authoritative_simulation_active():
+		server_commit_spell_slots.rpc_id(NETWORK_HOST_PEER_ID, hero_index, slotted_spells)
+	inventory_overlay.refresh_state(build_inventory_stat_lines(hero, hero.inventory_items), build_inventory_ability_sections(hero), build_level_up_reward_lines(hero), food, level_up_food_cost(hero.level), hero_can_level_up(hero), hero.level, hero.pack_modules, hero_spellbook_overlay_data(hero))
 	update_hud()
 
 func _on_inventory_item_dropped(item: Dictionary) -> void:

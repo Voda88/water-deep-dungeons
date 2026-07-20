@@ -6,6 +6,7 @@ signal inventory_changed(items: Array)
 signal item_dropped(item: Dictionary)
 signal pack_layout_changed(pack_modules: Array)
 signal level_up_requested
+signal spellbook_slots_changed(slotted_spells: Array)
 
 const INVALID_CELL: Vector2i = Vector2i(-1, -1)
 const BACKDROP_COLOR: Color = Color(0.03, 0.06, 0.08, 0.82)
@@ -84,6 +85,12 @@ var swipe_close_offset_y: float = 0.0
 var inventory_open_count: int = 0
 var inventory_nudge_timer: float = -1.0
 var last_touched_item: Dictionary = {}
+var spellbook_enabled: bool = false
+var spellbook_known: Array[String] = []
+var spellbook_slotted: Array[String] = []
+var spellbook_slot_capacity: int = 0
+var selected_spellbook_spell_id: String = ""
+var synergy_shine_time: float = 0.0
 
 @onready var layout_root: Control = $LayoutRoot
 @onready var main_panel_guide: Control = $LayoutRoot/MainPanelGuide
@@ -104,6 +111,9 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	var needs_redraw: bool = false
 	update_layout_nodes()
+	if visible:
+		synergy_shine_time += delta
+		needs_redraw = true
 	if advance_inventory_nudge(delta):
 		needs_redraw = true
 	if highlighted_pack_timer > 0.0:
@@ -167,7 +177,7 @@ func update_action_button_nodes() -> void:
 func control_local_rect(control: Control) -> Rect2:
 	return Rect2(screen_to_local(control.get_global_rect().position), control.size)
 
-func configure(next_hero_name: String, next_hero_level: int, next_food_value: int, next_level_up_cost: int, next_can_level_up: bool, next_stats_lines: Array, next_ability_sections: Array, next_level_up_reward_lines: Array, next_inventory_canvas_size: Vector2i, next_base_origin: Vector2i, next_base_size: Vector2i, next_pack_modules: Array, next_item_defs: Dictionary, next_items: Array, next_ground_items: Array, next_loot_enabled: bool) -> void:
+func configure(next_hero_name: String, next_hero_level: int, next_food_value: int, next_level_up_cost: int, next_can_level_up: bool, next_stats_lines: Array, next_ability_sections: Array, next_level_up_reward_lines: Array, next_inventory_canvas_size: Vector2i, next_base_origin: Vector2i, next_base_size: Vector2i, next_pack_modules: Array, next_item_defs: Dictionary, next_items: Array, next_ground_items: Array, next_loot_enabled: bool, next_spellbook_data: Dictionary = {}) -> void:
 	hero_name = next_hero_name
 	hero_level = next_hero_level
 	food_value = next_food_value
@@ -196,6 +206,7 @@ func configure(next_hero_name: String, next_hero_level: int, next_food_value: in
 	for ground_item_variant in next_ground_items:
 		ground_items.append((ground_item_variant as Dictionary).duplicate(true))
 	loot_enabled = next_loot_enabled
+	apply_spellbook_data(next_spellbook_data)
 	dragging_item.clear()
 	dragging_pack.clear()
 	dragging_source_index = -1
@@ -246,7 +257,7 @@ func hide_overlay() -> void:
 	last_touched_item.clear()
 	queue_redraw()
 
-func refresh_state(next_stats_lines: Array, next_ability_sections: Array, next_level_up_reward_lines: Array, next_food_value: int, next_level_up_cost: int, next_can_level_up: bool, next_hero_level: int, next_pack_modules: Array) -> void:
+func refresh_state(next_stats_lines: Array, next_ability_sections: Array, next_level_up_reward_lines: Array, next_food_value: int, next_level_up_cost: int, next_can_level_up: bool, next_hero_level: int, next_pack_modules: Array, next_spellbook_data: Dictionary = {}) -> void:
 	stats_lines.clear()
 	for stat_line_variant in next_stats_lines:
 		stats_lines.append(String(stat_line_variant))
@@ -263,11 +274,24 @@ func refresh_state(next_stats_lines: Array, next_ability_sections: Array, next_l
 	pack_modules.clear()
 	for pack_variant in next_pack_modules:
 		pack_modules.append((pack_variant as Dictionary).duplicate(true))
+	apply_spellbook_data(next_spellbook_data)
 	reset_swipe_close_state()
 	swipe_close_offset_y = 0.0
 	reset_level_hold()
 	update_layout_nodes()
 	queue_redraw()
+
+func apply_spellbook_data(next_spellbook_data: Dictionary) -> void:
+	spellbook_enabled = bool(next_spellbook_data.get("enabled", false))
+	spellbook_known.clear()
+	for spell_variant in Array(next_spellbook_data.get("known", [])):
+		spellbook_known.append(String(spell_variant))
+	spellbook_slotted.clear()
+	for spell_variant in Array(next_spellbook_data.get("slotted", [])):
+		spellbook_slotted.append(String(spell_variant))
+	spellbook_slot_capacity = maxi(0, int(next_spellbook_data.get("capacity", 0)))
+	if selected_spellbook_spell_id != "" and not spellbook_known.has(selected_spellbook_spell_id):
+		selected_spellbook_spell_id = ""
 
 func pointer_press(screen_position: Vector2) -> void:
 	if not visible:
@@ -278,6 +302,11 @@ func pointer_press(screen_position: Vector2) -> void:
 		return
 	if level_up_button_rect().has_point(local_position) and can_level_up:
 		begin_level_hold()
+		return
+	if handle_spellbook_pointer_press(local_position):
+		return
+	if spellbook_active_for_selected_item() and spellbook_panel_rect().has_point(local_position):
+		queue_redraw()
 		return
 	if rotate_button_rect().has_point(local_position):
 		return
@@ -519,6 +548,7 @@ func _draw() -> void:
 	draw_item_description_panel()
 	draw_dragging_pack()
 	draw_dragging_item()
+	draw_item_synergy_overlay()
 
 func panel_rect() -> Rect2:
 	return control_local_rect(main_panel_guide)
@@ -733,10 +763,52 @@ func draw_item_description_panel() -> void:
 	var item_lines: Array[String] = item_description_lines(last_touched_item)
 	var line_y: float = description_rect.position.y + 74.0
 	var line_height: float = 15.0
-	var max_lines: int = maxi(1, int(floor((description_rect.size.y - 82.0) / line_height)))
+	var max_description_bottom: float = description_rect.position.y + description_rect.size.y - 8.0
+	if spellbook_active_for_selected_item():
+		max_description_bottom = spellbook_panel_rect().position.y - 10.0
+	var max_lines: int = maxi(1, int(floor((max_description_bottom - line_y) / line_height)))
 	for line_index in range(mini(item_lines.size(), max_lines)):
 		draw_string(font, Vector2(description_rect.position.x + 14.0, line_y), item_lines[line_index], HORIZONTAL_ALIGNMENT_LEFT, description_rect.size.x - 24.0, 14, Color("d4eaf4"))
 		line_y += line_height
+	if spellbook_active_for_selected_item():
+		draw_spellbook_panel(font)
+
+func draw_spellbook_panel(font: Font) -> void:
+	var panel: Rect2 = spellbook_panel_rect()
+	if panel.size.x <= 12.0 or panel.size.y <= 12.0:
+		return
+	draw_rect(panel, Color(0.08, 0.13, 0.17, 0.76), true)
+	draw_rect(panel, Color("7d8fb8"), false, 1.5)
+	draw_string(font, panel.position + Vector2(10.0, 18.0), "Spellbook", HORIZONTAL_ALIGNMENT_LEFT, panel.size.x * 0.5, 15, Color("e8dcff"))
+	draw_string(font, panel.position + Vector2(panel.size.x - 92.0, 18.0), "%d/%d slots" % [spellbook_slotted.size(), spellbook_slot_capacity], HORIZONTAL_ALIGNMENT_LEFT, 84.0, 13, Color("cdd9ff"))
+	draw_string(font, panel.position + Vector2(10.0, 34.0), "Tap a spell, then tap a slot.", HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 20.0, 11, Color("a8bfd6"))
+	var known_rect: Rect2 = spellbook_known_column_rect()
+	var slots_rect: Rect2 = spellbook_slot_column_rect()
+	draw_string(font, known_rect.position + Vector2(0.0, 0.0), "Known", HORIZONTAL_ALIGNMENT_LEFT, known_rect.size.x, 13, Color("fff1b8"))
+	draw_string(font, slots_rect.position + Vector2(0.0, 0.0), "Prepared", HORIZONTAL_ALIGNMENT_LEFT, slots_rect.size.x, 13, Color("fff1b8"))
+	if spellbook_known.is_empty():
+		draw_string(font, known_rect.position + Vector2(0.0, 20.0), "No learned spells.", HORIZONTAL_ALIGNMENT_LEFT, known_rect.size.x, 12, Color("9fb8c2"))
+	else:
+		for spell_index in range(spellbook_known.size()):
+			var row_rect: Rect2 = spellbook_known_row_rect(spell_index)
+			var spell_id: String = spellbook_known[spell_index]
+			var selected: bool = spell_id == selected_spellbook_spell_id
+			var prepared: bool = spellbook_slotted.has(spell_id)
+			draw_rect(row_rect, Color("394b66") if selected else Color("243841"), true)
+			draw_rect(row_rect, Color("b99fff") if selected else Color("6a88a3"), false, 1.0)
+			draw_string(font, row_rect.position + Vector2(8.0, 18.0), spell_display_name_local(spell_id), HORIZONTAL_ALIGNMENT_LEFT, row_rect.size.x - 16.0, 12, Color("edf5ff"))
+			if prepared:
+				draw_string(font, row_rect.position + Vector2(row_rect.size.x - 40.0, 18.0), "SET", HORIZONTAL_ALIGNMENT_LEFT, 34.0, 10, Color("ffe28a"))
+	for slot_index in range(spellbook_slot_capacity):
+		var slot_rect: Rect2 = spellbook_slot_rect(slot_index)
+		var slotted_spell_id: String = spellbook_slotted[slot_index] if slot_index < spellbook_slotted.size() else ""
+		draw_rect(slot_rect, Color("243841"), true)
+		draw_rect(slot_rect, Color("6a88a3"), false, 1.0)
+		var slot_label: String = "Slot %d" % [slot_index + 1]
+		draw_string(font, slot_rect.position + Vector2(8.0, 16.0), slot_label, HORIZONTAL_ALIGNMENT_LEFT, slot_rect.size.x - 16.0, 11, Color("b9d8e4"))
+		var slot_spell_name: String = spell_display_name_local(slotted_spell_id) if slotted_spell_id != "" else "Empty"
+		var slot_color: Color = Color("edf5ff") if slotted_spell_id != "" else Color("8ea5b4")
+		draw_string(font, slot_rect.position + Vector2(8.0, 31.0), slot_spell_name, HORIZONTAL_ALIGNMENT_LEFT, slot_rect.size.x - 16.0, 12, slot_color)
 
 func draw_rotate_button() -> void:
 	var rotate_rect: Rect2 = rotate_button_rect()
@@ -746,12 +818,6 @@ func draw_rotate_button() -> void:
 	var font: Font = ThemeDB.fallback_font
 	draw_string(font, rotate_rect.position + Vector2(5.0, 18.0), "Rotate", HORIZONTAL_ALIGNMENT_LEFT, rotate_rect.size.x - 8.0, 11, Color("eef8ff"))
 	draw_string(font, rotate_rect.position + Vector2(5.0, 33.0), "Hover", HORIZONTAL_ALIGNMENT_LEFT, rotate_rect.size.x - 8.0, 10, Color("d0e6ef"))
-	draw_rect(toggle_rect, Color("98c2d0"), false, 2.0)
-	var font: Font = ThemeDB.fallback_font
-	var title: String = "Disable" if enabled else "Enable"
-	var subtitle: String = "Hover" if has_item else "Touch"
-	draw_string(font, toggle_rect.position + Vector2(4.0, 18.0), title, HORIZONTAL_ALIGNMENT_LEFT, toggle_rect.size.x - 8.0, 10, Color("eef8ff"))
-	draw_string(font, toggle_rect.position + Vector2(4.0, 33.0), subtitle, HORIZONTAL_ALIGNMENT_LEFT, toggle_rect.size.x - 8.0, 10, Color("d0e6ef"))
 
 func draw_dragging_item() -> void:
 	if dragging_item.is_empty():
@@ -801,7 +867,20 @@ func draw_inventory_item(item_rect: Rect2, item: Dictionary, emphasize: bool) ->
 	var short_label: String = String(item_def.get("short", item_name.substr(0, mini(item_name.length(), 3)).to_upper()))
 	draw_string(font, item_rect.position + Vector2(8.0, 22.0), short_label, HORIZONTAL_ALIGNMENT_LEFT, item_rect.size.x - 12.0, 18, Color("0f171b"))
 	draw_string(font, item_rect.position + Vector2(8.0, item_rect.size.y - 8.0), item_name, HORIZONTAL_ALIGNMENT_LEFT, item_rect.size.x - 12.0, 14, Color("0f171b"))
-	draw_item_synergy_sockets(item_rect, item)
+
+func draw_item_synergy_overlay() -> void:
+	for item_variant in items:
+		var item: Dictionary = item_variant
+		if item_is_animating(item):
+			continue
+		draw_item_synergy_sockets(item)
+	for animation_variant in item_snap_animations:
+		var animation: Dictionary = animation_variant
+		draw_item_synergy_sockets(animation.get("item", {}))
+	if not dragging_item.is_empty():
+		var preview_item: Dictionary = dragging_item.duplicate(true)
+		preview_item["anchor"] = preview_anchor_for_item(preview_item, drag_pointer_local)
+		draw_item_synergy_sockets(preview_item)
 
 func remember_touched_item(item: Dictionary, should_redraw: bool = true) -> void:
 	if item.is_empty():
@@ -826,6 +905,12 @@ func item_description_lines(item: Dictionary) -> Array[String]:
 		lines.append("+%d stamina" % int(round(float(stats.get("stamina", 0.0)))))
 	if int(stats.get("hand_size", 0)) != 0:
 		lines.append("+%d hand size" % int(stats.get("hand_size", 0)))
+	for socket_variant in Array(item_def.get("synergy_sockets", [])):
+		var socket_rule: Dictionary = socket_variant
+		var socket_tag: String = String(socket_rule.get("tag", "item"))
+		var socket_bonus_text: String = synergy_bonus_text(Dictionary(socket_rule.get("bonuses", {})))
+		if socket_bonus_text != "":
+			lines.append("Star needs %s: %s" % [socket_tag, socket_bonus_text])
 	var card_generators: Array = []
 	if item_def.has("hand_cards"):
 		card_generators = Array(item_def.get("hand_cards", [])).duplicate(true)
@@ -845,7 +930,7 @@ func item_description_lines(item: Dictionary) -> Array[String]:
 				lines.append("Generates 1 %s card each floor" % generator_label)
 			_:
 				lines.append("Adds %s every %d doors" % [generator_label, int(generator.get("door_interval", 1))])
-		var max_stored_cards: int = int(generator.get("max_stored_cards", 0))
+		var max_stored_cards: int = int(generator.get("max_stored_cards", 1))
 		if max_stored_cards > 0:
 			lines.append("Stores at most %d ready %s card%s" % [max_stored_cards, generator_label, "" if max_stored_cards == 1 else "s"])
 		var exhaust_cards: int = int(generator.get("exhaust_cards", 0))
@@ -867,6 +952,48 @@ func item_description_lines(item: Dictionary) -> Array[String]:
 	if lines.is_empty():
 		lines.append("No special notes.")
 	return lines
+
+func synergy_bonus_text(bonus_stats: Dictionary) -> String:
+	var parts: Array[String] = []
+	for bonus_key_variant in bonus_stats.keys():
+		var bonus_key: String = String(bonus_key_variant)
+		match bonus_key:
+			"attack":
+				parts.append("+%d damage" % int(round(float(bonus_stats[bonus_key_variant]))))
+			"health":
+				parts.append("+%d health" % int(round(float(bonus_stats[bonus_key_variant]))))
+			"speed":
+				parts.append("+%d speed" % int(round(float(bonus_stats[bonus_key_variant]))))
+			"stamina":
+				parts.append("+%s stamina" % format_socket_metric(float(bonus_stats[bonus_key_variant])))
+			"hand_size":
+				parts.append("+%d hand size" % int(bonus_stats[bonus_key_variant]))
+			"projectile_count":
+				parts.append("+%d projectile" % int(bonus_stats[bonus_key_variant]))
+			"card_damage":
+				parts.append("+%d card damage" % int(round(float(bonus_stats[bonus_key_variant]))))
+			"dagger_backstab_bonus":
+				parts.append("+%d%% backstab" % int(round(float(bonus_stats[bonus_key_variant]) * 100.0)))
+			"card_charge_mult":
+				var charge_mult: float = float(bonus_stats[bonus_key_variant])
+				if charge_mult < 1.0:
+					parts.append("%d%% faster card charge" % int(round((1.0 - charge_mult) * 100.0)))
+				elif charge_mult > 1.0:
+					parts.append("%d%% slower card charge" % int(round((charge_mult - 1.0) * 100.0)))
+			"stamina_cost_mult":
+				var stamina_mult: float = float(bonus_stats[bonus_key_variant])
+				if stamina_mult < 1.0:
+					parts.append("%d%% lower stamina cost" % int(round((1.0 - stamina_mult) * 100.0)))
+				elif stamina_mult > 1.0:
+					parts.append("%d%% higher stamina cost" % int(round((stamina_mult - 1.0) * 100.0)))
+	if parts.is_empty():
+		return ""
+	return ", ".join(PackedStringArray(parts))
+
+func format_socket_metric(value: float) -> String:
+	if absf(value - round(value)) <= 0.05:
+		return str(int(round(value)))
+	return "%.1f" % value
 
 func touched_inventory_item_index() -> int:
 	if last_touched_item.is_empty():
@@ -1041,7 +1168,7 @@ func rotated_socket_offset(item: Dictionary, socket_offset: Vector2i) -> Vector2
 		return socket_offset
 	return Vector2i(base_size.y - 1 - socket_offset.y, socket_offset.x)
 
-func draw_item_synergy_sockets(item_rect: Rect2, item: Dictionary) -> void:
+func draw_item_synergy_sockets(item: Dictionary) -> void:
 	var item_def: Dictionary = item_defs.get(String(item.get("item_id", "")), {})
 	var sockets: Array = Array(item_def.get("synergy_sockets", []))
 	var anchor: Vector2i = item.get("anchor", INVALID_CELL)
@@ -1064,10 +1191,101 @@ func draw_item_synergy_sockets(item_rect: Rect2, item: Dictionary) -> void:
 				socket_matched = true
 				break
 		var star_radius: float = clampf(socket_cell_size * 0.16, 5.0, 8.5)
-		var star_fill: Color = Color("fff6ca") if socket_matched else Color(1.0, 1.0, 1.0, 0.18)
-		var star_outline: Color = Color("ffe083") if socket_matched else Color("92aeb9")
-		draw_colored_polygon(star_points(socket_center, star_radius), star_fill)
-		draw_polyline(star_points(socket_center, star_radius, star_radius * 0.46), star_outline, 1.6, true)
+		var pulse: float = 0.5 + 0.5 * sin(synergy_shine_time * 5.0 + float(target_cell.x * 3 + target_cell.y) * 0.75)
+		if socket_matched:
+			draw_circle(socket_center, star_radius * (2.05 + pulse * 0.28), Color(1.0, 0.9, 0.35, 0.11 + pulse * 0.08))
+			draw_circle(socket_center, star_radius * (1.4 + pulse * 0.14), Color(1.0, 0.96, 0.62, 0.22 + pulse * 0.12))
+			var shine_direction: Vector2 = Vector2.RIGHT.rotated(synergy_shine_time * 1.7 + float(target_cell.x + target_cell.y) * 0.35)
+			draw_line(socket_center - shine_direction * star_radius * 1.45, socket_center + shine_direction * star_radius * 1.45, Color(1.0, 0.99, 0.8, 0.22 + pulse * 0.1), 1.6, true)
+			draw_line(socket_center - shine_direction.orthogonal() * star_radius * 0.9, socket_center + shine_direction.orthogonal() * star_radius * 0.9, Color(1.0, 0.96, 0.72, 0.16 + pulse * 0.08), 1.2, true)
+		var star_fill: Color = Color(1.0, 0.93, 0.58, 0.72 + pulse * 0.18) if socket_matched else Color(0.0, 0.0, 0.0, 0.0)
+		var star_outline: Color = Color(1.0, 0.98, 0.76, 0.95) if socket_matched else Color(0.55, 0.60, 0.66, 0.92)
+		if socket_matched:
+			draw_colored_polygon(star_points(socket_center, star_radius), star_fill)
+		draw_polyline(star_points(socket_center, star_radius, star_radius * 0.46), star_outline, 2.0 if socket_matched else 1.6, true)
+
+func spellbook_active_for_selected_item() -> bool:
+	return spellbook_enabled and String(last_touched_item.get("item_id", "")) == "spellbook"
+
+func spellbook_panel_rect() -> Rect2:
+	if not spellbook_active_for_selected_item():
+		return Rect2()
+	var description_rect: Rect2 = item_description_rect()
+	var item_lines: Array[String] = item_description_lines(last_touched_item)
+	var desired_top: float = description_rect.position.y + 92.0 + float(mini(item_lines.size(), 4)) * 15.0
+	var minimum_top: float = description_rect.position.y + 148.0
+	var maximum_top: float = description_rect.end.y - 148.0
+	var panel_top: float = clampf(desired_top, minimum_top, maximum_top)
+	return Rect2(Vector2(description_rect.position.x + 14.0, panel_top), Vector2(description_rect.size.x - 28.0, description_rect.end.y - panel_top - 12.0))
+
+func spellbook_known_column_rect() -> Rect2:
+	var panel: Rect2 = spellbook_panel_rect()
+	var column_top: float = panel.position.y + 42.0
+	return Rect2(panel.position + Vector2(10.0, 42.0), Vector2(panel.size.x * 0.58 - 14.0, panel.end.y - column_top - 10.0))
+
+func spellbook_slot_column_rect() -> Rect2:
+	var panel: Rect2 = spellbook_panel_rect()
+	var column_top: float = panel.position.y + 42.0
+	var left_width: float = panel.size.x * 0.58
+	return Rect2(panel.position + Vector2(left_width + 8.0, 42.0), Vector2(panel.size.x - left_width - 18.0, panel.end.y - column_top - 10.0))
+
+func spellbook_known_row_rect(spell_index: int) -> Rect2:
+	var known_rect: Rect2 = spellbook_known_column_rect()
+	var row_height: float = 28.0
+	return Rect2(known_rect.position + Vector2(0.0, 18.0 + float(spell_index) * (row_height + 4.0)), Vector2(known_rect.size.x, row_height))
+
+func spellbook_slot_rect(slot_index: int) -> Rect2:
+	var slots_rect: Rect2 = spellbook_slot_column_rect()
+	var row_height: float = 42.0
+	return Rect2(slots_rect.position + Vector2(0.0, 18.0 + float(slot_index) * (row_height + 6.0)), Vector2(slots_rect.size.x, row_height))
+
+func spell_display_name_local(spell_id: String) -> String:
+	if spell_id == "":
+		return ""
+	return spell_id.replace("_card", "").replace("_", " ").capitalize()
+
+func handle_spellbook_pointer_press(local_position: Vector2) -> bool:
+	if not spellbook_active_for_selected_item():
+		return false
+	for spell_index in range(spellbook_known.size()):
+		if not spellbook_known_row_rect(spell_index).has_point(local_position):
+			continue
+		var spell_id: String = spellbook_known[spell_index]
+		selected_spellbook_spell_id = "" if selected_spellbook_spell_id == spell_id else spell_id
+		queue_redraw()
+		return true
+	for slot_index in range(spellbook_slot_capacity):
+		if not spellbook_slot_rect(slot_index).has_point(local_position):
+			continue
+		var next_slots: Array[String] = padded_spellbook_slots()
+		var previous_spell: String = next_slots[slot_index]
+		if selected_spellbook_spell_id != "":
+			var existing_slot_index: int = next_slots.find(selected_spellbook_spell_id)
+			if previous_spell == selected_spellbook_spell_id:
+				next_slots[slot_index] = ""
+			elif existing_slot_index >= 0:
+				next_slots[existing_slot_index] = previous_spell
+				next_slots[slot_index] = selected_spellbook_spell_id
+			else:
+				next_slots[slot_index] = selected_spellbook_spell_id
+		else:
+			next_slots[slot_index] = ""
+		var compact_slots: Array[String] = []
+		for spell_variant in next_slots:
+			var spell_id: String = String(spell_variant)
+			if spell_id != "":
+				compact_slots.append(spell_id)
+		spellbook_slotted = compact_slots
+		spellbook_slots_changed.emit(compact_slots)
+		queue_redraw()
+		return true
+	return false
+
+func padded_spellbook_slots() -> Array[String]:
+	var padded: Array[String] = []
+	for slot_index in range(spellbook_slot_capacity):
+		padded.append(spellbook_slotted[slot_index] if slot_index < spellbook_slotted.size() else "")
+	return padded
 
 func star_points(center: Vector2, outer_radius: float, inner_radius: float = -1.0) -> PackedVector2Array:
 	var points: PackedVector2Array = PackedVector2Array()

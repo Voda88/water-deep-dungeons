@@ -55,6 +55,11 @@ var card_generation_timers: Dictionary = {}
 var passive_combat_timers: Dictionary = {}
 var stamina_regen_rate: float = 0.0
 var stamina_regen_time_left: float = 0.0
+var learned_spells: Array[String] = []
+var slotted_spells: Array[String] = []
+var studying_spell_id: String = ""
+var studying_room: Vector2i = INVALID_ROOM
+var studying_started_at_door: int = -1
 
 func _ready() -> void:
 	base_move_speed = move_speed
