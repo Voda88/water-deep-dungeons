@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://b42ktk61o7k0h"]
 
-[ext_resource type="Script" path="res://scripts/spellbook_overlay.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/ui/spellbook_overlay.gd" id="1"]
 
 [node name="SpellbookOverlay" type="Control"]
 layout_mode = 3

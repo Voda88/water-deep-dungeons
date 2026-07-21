@@ -4,3 +4,15 @@
 /build/
 .codex-godot-mcp/
 .npm-cache/
+.npm-global/
+
+# Local environment / Python scratch
+.env
+*.pyc
+__pycache__/
+.DS_Store
+._*
+
+# Local art / asset content kept out of source control
+/art/
+/assets/

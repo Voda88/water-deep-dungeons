@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://ccg88m7wioiiy"]
 
-[ext_resource type="Script" uid="uid://drtcle4ys7edj" path="res://scripts/inventory_overlay.gd" id="1"]
+[ext_resource type="Script" uid="uid://drtcle4ys7edj" path="res://scripts/ui/inventory_overlay.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/ui/spellbook_overlay.tscn" id="2"]
 
 [node name="InventoryOverlay" type="Control" unique_id=2111616624]

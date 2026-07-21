@@ -20,11 +20,13 @@ const CARD_TEXT: Color = Color("edf5ff")
 const CARD_SUBTEXT: Color = Color("b7d2de")
 const DESCRIPTION_FILL: Color = Color("142028")
 const DESCRIPTION_OUTLINE: Color = Color("56798b")
-const CLOSE_FILL: Color = Color("2a3f4c")
-const CLOSE_OUTLINE: Color = Color("9fb8c8")
 const DRAG_THRESHOLD: float = 8.0
 const SLOT_LABEL_WIDTH: float = 74.0
 const SLOT_CELL_GAP: float = 10.0
+const SWIPE_CLOSE_START_THRESHOLD: float = 22.0
+const SWIPE_CLOSE_TRIGGER_DISTANCE: float = 132.0
+const SWIPE_CLOSE_MAX_OFFSET: float = 320.0
+const SLOT_HITBOX_PADDING: float = 28.0
 
 var spellbook_enabled: bool = false
 var spellbook_editable: bool = false
@@ -45,11 +47,27 @@ var dragging_spell_id: String = ""
 var dragging_from_level: int = -1
 var dragging_from_column: int = -1
 var dragging_active: bool = false
+var swipe_close_tracking: bool = false
+var swipe_close_active: bool = false
+var swipe_close_start_local: Vector2 = Vector2.ZERO
+var swipe_close_offset_y: float = 0.0
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	visible = false
+
+func _process(delta: float) -> void:
+	if not visible:
+		if absf(swipe_close_offset_y) > 0.01:
+			swipe_close_offset_y = 0.0
+			queue_redraw()
+		return
+	if not swipe_close_active and not swipe_close_tracking and absf(swipe_close_offset_y) > 0.01:
+		swipe_close_offset_y = lerpf(swipe_close_offset_y, 0.0, minf(delta * 18.0, 1.0))
+		if absf(swipe_close_offset_y) < 0.5:
+			swipe_close_offset_y = 0.0
+		queue_redraw()
 
 func configure_overlay(spellbook_data: Dictionary) -> void:
 	spellbook_enabled = bool(spellbook_data.get("enabled", false))
@@ -86,6 +104,7 @@ func open_overlay() -> void:
 func hide_overlay() -> void:
 	visible = false
 	reset_drag_state()
+	reset_swipe_close_state()
 	queue_redraw()
 
 func is_open() -> bool:
@@ -96,9 +115,6 @@ func pointer_press(screen_position: Vector2) -> bool:
 		return false
 	pointer_local = screen_to_local(screen_position)
 	if not panel_rect().has_point(pointer_local):
-		close_requested.emit()
-		return true
-	if close_button_rect().has_point(pointer_local):
 		close_requested.emit()
 		return true
 	var available_spell_id: String = spell_id_at_available_point(pointer_local)
@@ -120,6 +136,7 @@ func pointer_press(screen_position: Vector2) -> bool:
 		press_local = pointer_local
 		queue_redraw()
 		return true
+	begin_swipe_close(pointer_local)
 	if description_rect().has_point(pointer_local):
 		queue_redraw()
 		return true
@@ -129,11 +146,18 @@ func pointer_move(screen_position: Vector2) -> bool:
 	if not visible:
 		return false
 	pointer_local = screen_to_local(screen_position)
+	if swipe_close_tracking and not dragging_active:
+		update_swipe_close(pointer_local)
+		if swipe_close_active:
+			queue_redraw()
+			return true
 	if not spellbook_editable:
 		return true
 	if pressed_spell_id != "" and not dragging_active and press_local.distance_to(pointer_local) >= DRAG_THRESHOLD:
+		reset_swipe_close_state()
 		begin_drag(pressed_spell_id, -1, -1)
 	elif pressed_slot_level >= 0 and pressed_slot_column >= 0 and not dragging_active and press_local.distance_to(pointer_local) >= DRAG_THRESHOLD:
+		reset_swipe_close_state()
 		begin_drag(slot_spell_id(pressed_slot_level, pressed_slot_column), pressed_slot_level, pressed_slot_column)
 	if dragging_active:
 		queue_redraw()
@@ -143,6 +167,16 @@ func pointer_release(screen_position: Vector2) -> bool:
 	if not visible:
 		return false
 	pointer_local = screen_to_local(screen_position)
+	if swipe_close_tracking:
+		var should_close: bool = swipe_close_active and absf(pointer_local.y - swipe_close_start_local.y) >= SWIPE_CLOSE_TRIGGER_DISTANCE
+		reset_swipe_close_state()
+		if should_close:
+			close_requested.emit()
+			return true
+		if not dragging_active:
+			reset_press_state()
+			queue_redraw()
+			return true
 	if dragging_active:
 		finish_drag()
 	else:
@@ -155,7 +189,9 @@ func _draw() -> void:
 	if not visible:
 		return
 	var font: Font = ThemeDB.fallback_font
-	draw_rect(Rect2(Vector2.ZERO, size), BACKDROP_COLOR, true)
+	var backdrop: Color = BACKDROP_COLOR
+	backdrop.a *= 1.0 - minf(absf(swipe_close_offset_y) / SWIPE_CLOSE_MAX_OFFSET, 1.0) * 0.35
+	draw_rect(Rect2(Vector2.ZERO, size), backdrop, true)
 	var panel: Rect2 = panel_rect()
 	draw_rect(panel, PANEL_FILL, true)
 	draw_rect(panel, PANEL_OUTLINE, false, 2.0)
@@ -175,10 +211,7 @@ func draw_header(font: Font) -> void:
 	draw_string(font, panel.position + Vector2(22.0, 54.0), instruction_text, HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 180.0, 14, Color("a8bfd6"))
 	if spellbook_prep_note != "":
 		draw_string(font, panel.position + Vector2(22.0, 74.0), spellbook_prep_note, HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 180.0, 13, Color("fff1b8"))
-	var close_rect: Rect2 = close_button_rect()
-	draw_rect(close_rect, CLOSE_FILL, true)
-	draw_rect(close_rect, CLOSE_OUTLINE, false, 2.0)
-	draw_string(font, close_rect.position + Vector2(18.0, 24.0), "Close", HORIZONTAL_ALIGNMENT_LEFT, close_rect.size.x - 24.0, 16, Color("eef8ff"))
+	draw_string(font, panel.position + Vector2(panel.end.x - 196.0, 54.0), "Swipe vertically to close", HORIZONTAL_ALIGNMENT_LEFT, 174.0, 13, Color("b7d2de"))
 
 func draw_slots(font: Font) -> void:
 	var slots_area: Rect2 = slots_area_rect()
@@ -324,6 +357,28 @@ func reset_drag_state() -> void:
 	dragging_from_column = -1
 	dragging_active = false
 
+func begin_swipe_close(local_position: Vector2) -> void:
+	swipe_close_tracking = true
+	swipe_close_active = false
+	swipe_close_start_local = local_position
+
+func update_swipe_close(local_position: Vector2) -> void:
+	var delta: Vector2 = local_position - swipe_close_start_local
+	if swipe_close_active:
+		swipe_close_offset_y = clampf(delta.y, -SWIPE_CLOSE_MAX_OFFSET, SWIPE_CLOSE_MAX_OFFSET)
+		return
+	if absf(delta.x) > SWIPE_CLOSE_START_THRESHOLD and absf(delta.x) > absf(delta.y) * 1.1:
+		reset_swipe_close_state()
+		return
+	if absf(delta.y) >= SWIPE_CLOSE_START_THRESHOLD and absf(delta.y) > absf(delta.x) * 1.05:
+		swipe_close_active = true
+	swipe_close_offset_y = clampf(delta.y, -SWIPE_CLOSE_MAX_OFFSET, SWIPE_CLOSE_MAX_OFFSET)
+
+func reset_swipe_close_state() -> void:
+	swipe_close_tracking = false
+	swipe_close_active = false
+	swipe_close_start_local = Vector2.ZERO
+
 func build_slot_rows(slotted_spells: Array) -> Array:
 	var rows: Array = []
 	for level_index in range(slot_counts_by_level.size()):
@@ -408,11 +463,7 @@ func screen_to_local(screen_position: Vector2) -> Vector2:
 	return get_global_transform_with_canvas().affine_inverse() * screen_position
 
 func panel_rect() -> Rect2:
-	return Rect2(Vector2(14.0, 14.0), size - Vector2(28.0, 28.0))
-
-func close_button_rect() -> Rect2:
-	var panel: Rect2 = panel_rect()
-	return Rect2(Vector2(panel.end.x - 122.0, panel.position.y + 14.0), Vector2(104.0, 36.0))
+	return Rect2(Vector2(14.0, 14.0 + swipe_close_offset_y), size - Vector2(28.0, 28.0))
 
 func slots_area_rect() -> Rect2:
 	var panel: Rect2 = panel_rect()
@@ -477,12 +528,20 @@ func spell_id_at_available_point(local_position: Vector2) -> String:
 	return ""
 
 func slot_hit_at_point(local_position: Vector2) -> Dictionary:
+	var best_hit: Dictionary = {}
+	var best_distance: float = INF
 	for level_index in range(slot_rows.size()):
 		var row_slots: Array = slot_rows[level_index]
 		for column_index in range(row_slots.size()):
-			if slot_cell_rect(level_index, column_index).has_point(local_position):
-				return {
+			var hit_rect: Rect2 = slot_cell_rect(level_index, column_index).grow(SLOT_HITBOX_PADDING)
+			if hit_rect.has_point(local_position):
+				var cell_center: Vector2 = slot_cell_rect(level_index, column_index).get_center()
+				var distance_to_center: float = cell_center.distance_to(local_position)
+				if distance_to_center >= best_distance:
+					continue
+				best_distance = distance_to_center
+				best_hit = {
 					"level_index": level_index,
 					"column_index": column_index,
 				}
-	return {}
+	return best_hit

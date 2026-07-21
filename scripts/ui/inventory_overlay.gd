@@ -30,6 +30,7 @@ const LEVEL_BUTTON_FILL: Color = Color("3a5c3d")
 const LEVEL_BUTTON_DISABLED: Color = Color("29352a")
 const LEVEL_BUTTON_PROGRESS: Color = Color("87d78f")
 const PENDING_BG: Color = Color("1c3038")
+const PREVIEW_BONUS_COLOR: Color = Color("8fe38f")
 const PACK_SNAP_DURATION: float = 0.18
 const LEVEL_HOLD_DURATION: float = 0.7
 const SPELLBOOK_ACTION_HOLD_DURATION: float = 0.5
@@ -109,7 +110,7 @@ var synergy_shine_time: float = 0.0
 @onready var loot_guide: Control = $LayoutRoot/MainPanelGuide/LootGuide
 @onready var rotate_button_node: Button = $LayoutRoot/MainPanelGuide/RotateButton
 @onready var toggle_button_node: Button = $LayoutRoot/MainPanelGuide/ToggleButton
-@onready var spellbook_overlay_node: SpellbookOverlay = $SpellbookOverlay
+@onready var spellbook_overlay_node: Variant = $SpellbookOverlay
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -728,7 +729,12 @@ func draw_stats_block() -> void:
 	var stat_line_height: float = 18.0
 	var max_stat_lines: int = maxi(0, int(floor((left_rect.size.y - 22.0) / stat_line_height)))
 	for stat_index in range(mini(stats_lines.size(), max_stat_lines)):
-		draw_string(font, Vector2(left_rect.position.x, stats_y), stats_lines[stat_index], HORIZONTAL_ALIGNMENT_LEFT, left_rect.size.x, 15, Color("d4eaf4"))
+		var stat_line: String = stats_lines[stat_index]
+		draw_string(font, Vector2(left_rect.position.x, stats_y), stat_line, HORIZONTAL_ALIGNMENT_LEFT, left_rect.size.x, 15, Color("d4eaf4"))
+		var preview_suffix: String = dragging_item_stat_preview_suffix(stat_line)
+		if preview_suffix != "":
+			var base_width: float = font.get_string_size(stat_line, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 15).x
+			draw_string(font, Vector2(left_rect.position.x + base_width + 8.0, stats_y), preview_suffix, HORIZONTAL_ALIGNMENT_LEFT, maxf(left_rect.size.x - base_width - 8.0, 0.0), 15, PREVIEW_BONUS_COLOR)
 		stats_y += stat_line_height
 	if stats_lines.size() > max_stat_lines:
 		draw_string(font, Vector2(left_rect.position.x, stats_y), "...", HORIZONTAL_ALIGNMENT_LEFT, left_rect.size.x, 15, Color("9fb8c2"))
@@ -865,7 +871,9 @@ func draw_item_description_panel() -> void:
 		max_description_bottom = spellbook_action_button_rect().position.y - 10.0
 	var max_lines: int = maxi(1, int(floor((max_description_bottom - line_y) / line_height)))
 	for line_index in range(mini(item_lines.size(), max_lines)):
-		draw_string(font, Vector2(description_rect.position.x + 14.0, line_y), item_lines[line_index], HORIZONTAL_ALIGNMENT_LEFT, description_rect.size.x - 24.0, 14, Color("d4eaf4"))
+		var line_text: String = item_lines[line_index]
+		var line_color: Color = PREVIEW_BONUS_COLOR if line_text.begins_with("[") and line_text.ends_with("]") else Color("d4eaf4")
+		draw_string(font, Vector2(description_rect.position.x + 14.0, line_y), line_text, HORIZONTAL_ALIGNMENT_LEFT, description_rect.size.x - 24.0, 14, line_color)
 		line_y += line_height
 	if spell_focus_selected_item():
 		draw_spellbook_action_button(font)
@@ -1034,25 +1042,23 @@ func _on_spellbook_overlay_slots_changed(slotted_spells: Array) -> void:
 func item_description_lines(item: Dictionary) -> Array[String]:
 	var lines: Array[String] = []
 	var item_def: Dictionary = item_defs.get(String(item.get("item_id", "")), {})
+	var unique_star_lines: Dictionary = {}
 	for line_variant in Array(item_def.get("description_lines", [])):
 		lines.append(String(line_variant))
 	var stats: Dictionary = item_def.get("stats", {})
-	if float(stats.get("attack", 0.0)) != 0.0:
-		lines.append("+%d damage" % int(round(float(stats.get("attack", 0.0)))))
-	if float(stats.get("health", 0.0)) != 0.0:
-		lines.append("+%d health" % int(round(float(stats.get("health", 0.0)))))
-	if float(stats.get("speed", 0.0)) != 0.0:
-		lines.append("+%d speed" % int(round(float(stats.get("speed", 0.0)))))
-	if float(stats.get("stamina", 0.0)) != 0.0:
-		lines.append("+%d stamina" % int(round(float(stats.get("stamina", 0.0)))))
-	if int(stats.get("hand_size", 0)) != 0:
-		lines.append("+%d hand size" % int(stats.get("hand_size", 0)))
+	var passive_bonus_text: String = synergy_bonus_text(stats)
+	if passive_bonus_text != "":
+		lines.append("[%s]" % passive_bonus_text)
 	for socket_variant in Array(item_def.get("synergy_sockets", [])):
 		var socket_rule: Dictionary = socket_variant
-		var socket_tag: String = String(socket_rule.get("tag", "item"))
-		var socket_bonus_text: String = synergy_bonus_text(Dictionary(socket_rule.get("bonuses", {})))
-		if socket_bonus_text != "":
-			lines.append("Star needs %s: %s" % [socket_tag, socket_bonus_text])
+		for match_variant in socket_match_entries(socket_rule):
+			var match_rule: Dictionary = match_variant as Dictionary
+			var socket_tag: String = String(match_rule.get("tag", "item"))
+			var socket_bonus_text: String = synergy_bonus_text(Dictionary(match_rule.get("bonuses", {})))
+			if socket_bonus_text != "":
+				unique_star_lines["Star needs %s: %s" % [socket_tag, socket_bonus_text]] = true
+	for star_line_variant in unique_star_lines.keys():
+		lines.append(String(star_line_variant))
 	var card_generators: Array = []
 	if item_def.has("hand_cards"):
 		card_generators = Array(item_def.get("hand_cards", [])).duplicate(true)
@@ -1131,6 +1137,44 @@ func synergy_bonus_text(bonus_stats: Dictionary) -> String:
 	if parts.is_empty():
 		return ""
 	return ", ".join(PackedStringArray(parts))
+
+func socket_match_entries(socket_rule: Dictionary) -> Array:
+	if socket_rule.has("matches"):
+		return Array(socket_rule.get("matches", []))
+	if socket_rule.has("tag"):
+		return [{
+			"tag": String(socket_rule.get("tag", "")),
+			"bonuses": Dictionary(socket_rule.get("bonuses", {})),
+		}]
+	return []
+
+func dragging_item_passive_stats() -> Dictionary:
+	if dragging_item.is_empty():
+		return {}
+	var item_def: Dictionary = item_defs.get(String(dragging_item.get("item_id", "")), {})
+	return Dictionary(item_def.get("stats", {}))
+
+func dragging_item_stat_preview_suffix(stat_line: String) -> String:
+	var stats: Dictionary = dragging_item_passive_stats()
+	if stats.is_empty():
+		return ""
+	if stat_line.begins_with("Damage "):
+		return format_preview_bonus_suffix(float(stats.get("attack", 0.0)))
+	if stat_line.begins_with("Health "):
+		return format_preview_bonus_suffix(float(stats.get("health", 0.0)))
+	if stat_line.begins_with("Speed "):
+		return format_preview_bonus_suffix(float(stats.get("speed", 0.0)))
+	if stat_line.begins_with("Stamina "):
+		return format_preview_bonus_suffix(float(stats.get("stamina", 0.0)))
+	if stat_line.begins_with("Hand "):
+		return format_preview_bonus_suffix(float(int(stats.get("hand_size", 0))))
+	return ""
+
+func format_preview_bonus_suffix(value: float) -> String:
+	if absf(value) <= 0.001:
+		return ""
+	var metric: String = format_socket_metric(absf(value))
+	return "[+%s]" % metric if value > 0.0 else "[-%s]" % metric
 
 func format_socket_metric(value: float) -> String:
 	if absf(value - round(value)) <= 0.05:
@@ -1310,12 +1354,27 @@ func rotated_socket_offset(item: Dictionary, socket_offset: Vector2i) -> Vector2
 		return socket_offset
 	return Vector2i(base_size.y - 1 - socket_offset.y, socket_offset.x)
 
+func draw_inventory_star(socket_center: Vector2, socket_cell: Vector2i, socket_matched: bool, socket_cell_size: float) -> void:
+	var star_radius: float = clampf(socket_cell_size * 0.16, 5.0, 8.5)
+	var pulse: float = 0.5 + 0.5 * sin(synergy_shine_time * 5.0 + float(socket_cell.x * 3 + socket_cell.y) * 0.75)
+	if socket_matched:
+		draw_circle(socket_center, star_radius * (2.05 + pulse * 0.28), Color(1.0, 0.9, 0.35, 0.11 + pulse * 0.08))
+		draw_circle(socket_center, star_radius * (1.4 + pulse * 0.14), Color(1.0, 0.96, 0.62, 0.22 + pulse * 0.12))
+		var shine_direction: Vector2 = Vector2.RIGHT.rotated(synergy_shine_time * 1.7 + float(socket_cell.x + socket_cell.y) * 0.35)
+		draw_line(socket_center - shine_direction * star_radius * 1.45, socket_center + shine_direction * star_radius * 1.45, Color(1.0, 0.99, 0.8, 0.22 + pulse * 0.1), 1.6, true)
+		draw_line(socket_center - shine_direction.orthogonal() * star_radius * 0.9, socket_center + shine_direction.orthogonal() * star_radius * 0.9, Color(1.0, 0.96, 0.72, 0.16 + pulse * 0.08), 1.2, true)
+	var star_fill: Color = Color(1.0, 0.93, 0.58, 0.72 + pulse * 0.18) if socket_matched else Color(0.0, 0.0, 0.0, 0.0)
+	var star_outline: Color = Color(1.0, 0.98, 0.76, 0.95) if socket_matched else Color(0.55, 0.60, 0.66, 0.92)
+	if socket_matched:
+		draw_colored_polygon(star_points(socket_center, star_radius), star_fill)
+	draw_polyline(star_points(socket_center, star_radius, star_radius * 0.46), star_outline, 2.0 if socket_matched else 1.6, true)
+
 func draw_item_synergy_sockets(item: Dictionary) -> void:
 	var item_def: Dictionary = item_defs.get(String(item.get("item_id", "")), {})
-	var sockets: Array = Array(item_def.get("synergy_sockets", []))
 	var anchor: Vector2i = item.get("anchor", INVALID_CELL)
-	if sockets.is_empty() or anchor == INVALID_CELL:
+	if anchor == INVALID_CELL:
 		return
+	var sockets: Array = Array(item_def.get("synergy_sockets", []))
 	var socket_cell_size: float = cell_size()
 	for socket_variant in sockets:
 		var socket_rule: Dictionary = socket_variant
@@ -1327,24 +1386,15 @@ func draw_item_synergy_sockets(item: Dictionary) -> void:
 			var other_item: Dictionary = other_item_variant
 			if int(other_item.get("uid", -1)) == int(item.get("uid", -1)):
 				continue
-			if not inventory_item_has_tag(other_item, String(socket_rule.get("tag", ""))):
-				continue
 			if occupied_cells_for_item(other_item).has(target_cell):
-				socket_matched = true
+				for match_variant in socket_match_entries(socket_rule):
+					var match_rule: Dictionary = match_variant as Dictionary
+					if inventory_item_has_tag(other_item, String(match_rule.get("tag", ""))):
+						socket_matched = true
+						break
+			if socket_matched:
 				break
-		var star_radius: float = clampf(socket_cell_size * 0.16, 5.0, 8.5)
-		var pulse: float = 0.5 + 0.5 * sin(synergy_shine_time * 5.0 + float(target_cell.x * 3 + target_cell.y) * 0.75)
-		if socket_matched:
-			draw_circle(socket_center, star_radius * (2.05 + pulse * 0.28), Color(1.0, 0.9, 0.35, 0.11 + pulse * 0.08))
-			draw_circle(socket_center, star_radius * (1.4 + pulse * 0.14), Color(1.0, 0.96, 0.62, 0.22 + pulse * 0.12))
-			var shine_direction: Vector2 = Vector2.RIGHT.rotated(synergy_shine_time * 1.7 + float(target_cell.x + target_cell.y) * 0.35)
-			draw_line(socket_center - shine_direction * star_radius * 1.45, socket_center + shine_direction * star_radius * 1.45, Color(1.0, 0.99, 0.8, 0.22 + pulse * 0.1), 1.6, true)
-			draw_line(socket_center - shine_direction.orthogonal() * star_radius * 0.9, socket_center + shine_direction.orthogonal() * star_radius * 0.9, Color(1.0, 0.96, 0.72, 0.16 + pulse * 0.08), 1.2, true)
-		var star_fill: Color = Color(1.0, 0.93, 0.58, 0.72 + pulse * 0.18) if socket_matched else Color(0.0, 0.0, 0.0, 0.0)
-		var star_outline: Color = Color(1.0, 0.98, 0.76, 0.95) if socket_matched else Color(0.55, 0.60, 0.66, 0.92)
-		if socket_matched:
-			draw_colored_polygon(star_points(socket_center, star_radius), star_fill)
-		draw_polyline(star_points(socket_center, star_radius, star_radius * 0.46), star_outline, 2.0 if socket_matched else 1.6, true)
+		draw_inventory_star(socket_center, target_cell, socket_matched, socket_cell_size)
 
 func spellbook_action_button_rect() -> Rect2:
 	if not spell_focus_selected_item():

@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
-[ext_resource type="Script" path="res://scripts/game.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/world/game.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/world/dungeon_static_layer.gd" id="2"]
 
 [node name="Game" type="Node2D"]
 script = ExtResource("1")
@@ -10,6 +11,10 @@ enabled = true
 position_smoothing_enabled = false
 process_callback = 1
 physics_interpolation_mode = 2
+
+[node name="StaticDungeonLayer" type="Node2D" parent="."]
+show_behind_parent = true
+script = ExtResource("2")
 
 [node name="ActorLayer" type="Node2D" parent="."]
 
@@ -139,17 +144,24 @@ theme_override_constants/separation = 12
 mouse_filter = 2
 
 [node name="InventoryButton" type="Button" parent="UI/BottomBar/Margin/Panel/VBox/Actions"]
-custom_minimum_size = Vector2(0, 52)
+custom_minimum_size = Vector2(0, 64)
 layout_mode = 2
 size_flags_horizontal = 4
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 20
 text = "Inventory"
 
-[node name="RestartButton" type="Button" parent="UI/BottomBar/Margin/Panel/VBox/Actions"]
-custom_minimum_size = Vector2(0, 52)
+[node name="StaminaToggleButton" type="CheckBox" parent="UI/BottomBar/Margin/Panel/VBox/Actions"]
+custom_minimum_size = Vector2(0, 64)
 layout_mode = 2
 size_flags_horizontal = 4
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 20
+text = "Stamina On"
+
+[node name="RestartButton" type="Button" parent="UI/BottomBar/Margin/Panel/VBox/Actions"]
+custom_minimum_size = Vector2(0, 64)
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_font_sizes/font_size = 20
 text = "Restart"
 
 [node name="BuildMenu" type="Control" parent="UI"]
