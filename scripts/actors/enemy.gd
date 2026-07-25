@@ -4,7 +4,7 @@ class_name DungeonEnemy
 const INVALID_ROOM: Vector2i = Vector2i(-99, -99)
 const TYPE_LIZARDMAN: String = "lizardman"
 const TYPE_GOBLIN: String = "goblin"
-const TYPE_KOBOLD: String = "kobold"
+const TYPE_BAT: String = "bat"
 const TYPE_GOLEM: String = "golem"
 const TYPE_GOBLIN_SHAMAN: String = "goblin_shaman"
 const TYPE_SKELETON_ARCHER: String = "skeleton_archer"
@@ -21,13 +21,13 @@ const ENEMY_SPRITE_PROFILES := {
 		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc/Orc/Orc_Death.png",
 	},
 	TYPE_GOBLIN_SHAMAN: {
-		"idle_path": "res://assets/characters/packs/pack02/characters_split_100x100/Warlock/Warlock/Warlock_Idle.png",
-		"walk_path": "res://assets/characters/packs/pack02/characters_split_100x100/Warlock/Warlock/Warlock_Walk.png",
-		"hurt_path": "res://assets/characters/packs/pack02/characters_split_100x100/Warlock/Warlock/Warlock_Hurt.png",
-		"attack_path": "res://assets/characters/packs/pack02/characters_split_100x100/Warlock/Warlock/Warlock_Attack02(With magic effects).png",
-		"death_path": "res://assets/characters/packs/pack02/characters_split_100x100/Warlock/Warlock/Warlock_Death.png",
+		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Necromancer/Necromancer/Necromancer_Idle.png",
+		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Necromancer/Necromancer/Necromancer_Walk.png",
+		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Necromancer/Necromancer/Necromancer_Hurt.png",
+		"attack_path": "res://assets/characters/packs/pack01/characters_split_100x100/Necromancer/Necromancer/Necromancer_Attack02(With magic effects).png",
+		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Necromancer/Necromancer/Necromancer_DEATH.png",
 	},
-	TYPE_KOBOLD: {
+	TYPE_BAT: {
 		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Bat/Bat/Bat_Flying.png",
 		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Bat/Bat/Bat_Flying.png",
 		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Bat/Bat/Bat_Hurt.png",
@@ -82,6 +82,8 @@ var moving_between_rooms: bool = false
 var transit_stage: String = ""
 var enemy_role: String = TYPE_GOBLIN
 var body_color: Color = Color("ff7764")
+var base_move_speed: float = 60.0
+var situational_speed_multiplier: float = 1.0
 var attack_effect_left: float = 0.0
 var hurt_effect_left: float = 0.0
 var visual_facing_left: bool = false
@@ -95,6 +97,7 @@ var knockback_regions: Array = []
 
 func _ready() -> void:
 	current_health = max_health
+	base_move_speed = move_speed
 	destination = global_position
 	next_room = current_room
 	previous_room = current_room
@@ -170,7 +173,7 @@ func role_scale() -> float:
 			return 2.45
 		TYPE_LIZARDMAN:
 			return 2.15
-		TYPE_KOBOLD:
+		TYPE_BAT:
 			return 1.54
 		TYPE_SKELETON_ARCHER:
 			return 1.88
@@ -215,11 +218,17 @@ func update_sprite_state(move_offset: Vector2) -> void:
 	elif not animated_sprite.is_playing():
 		animated_sprite.play()
 	if animation_name == "walk":
-		animated_sprite.speed_scale = clampf(move_speed / 48.0, 0.7, 2.1)
+		animated_sprite.speed_scale = clampf(effective_move_speed() / 48.0, 0.7, 2.1)
 	elif animation_name == "attack":
 		animated_sprite.speed_scale = 0.82
 	else:
 		animated_sprite.speed_scale = 1.0
+
+func effective_move_speed() -> float:
+	return move_speed * situational_speed_multiplier
+
+func set_situational_speed_multiplier(multiplier: float) -> void:
+	situational_speed_multiplier = clampf(multiplier, 0.15, 2.5)
 
 func set_destination(world_position: Vector2) -> void:
 	if death_started:
@@ -328,23 +337,23 @@ func _on_animated_sprite_animation_finished() -> void:
 		queue_free()
 
 func set_role(role_name: String) -> void:
-	enemy_role = role_name
+	enemy_role = TYPE_BAT if role_name == "kobold" else role_name
 	match enemy_role:
 		TYPE_LIZARDMAN:
-			move_speed = 84.0
-			max_health = 154.0
-			attack_damage = 31.0
+			move_speed = 110.0
+			max_health = 208.0
+			attack_damage = 36.0
 			attack_cooldown = 1.0
-			weight = 3.15
-			melee_reach = 62.0
+			weight = 3.35
+			melee_reach = 78.0
 			body_color = Color("8d9e67")
-		TYPE_KOBOLD:
-			move_speed = 70.0
-			max_health = 14.0
+		TYPE_BAT:
+			move_speed = 57.0
+			max_health = 34.0
 			attack_damage = 6.0
 			attack_cooldown = 1.0
 			weight = 0.55
-			melee_reach = 54.0
+			melee_reach = 78.0
 			body_color = Color("d0c6c0")
 		TYPE_GOLEM:
 			move_speed = 33.0
@@ -352,32 +361,34 @@ func set_role(role_name: String) -> void:
 			attack_damage = 24.0
 			attack_cooldown = 1.15
 			weight = 5.4
-			melee_reach = 68.0
+			melee_reach = 80.0
 			body_color = Color("8a887d")
 		TYPE_GOBLIN_SHAMAN:
-			move_speed = 38.0
-			max_health = 36.0
-			attack_damage = 11.0
-			attack_cooldown = 1.1
+			move_speed = 31.0
+			max_health = 34.0
+			attack_damage = 9.0
+			attack_cooldown = 1.0
 			weight = 1.08
-			melee_reach = 52.0
+			melee_reach = 78.0
 			body_color = Color("a16fd5")
 		TYPE_SKELETON_ARCHER:
-			move_speed = 50.0
-			max_health = 26.0
+			move_speed = 42.0
+			max_health = 156.0
 			attack_damage = 13.0
 			attack_cooldown = 1.0
 			weight = 0.95
 			melee_reach = 52.0
 			body_color = Color("d7decf")
 		_:
-			move_speed = 42.0
-			max_health = 32.0
+			move_speed = 48.0
+			max_health = 34.0
 			attack_damage = 10.0
 			attack_cooldown = 1.0
 			weight = 1.28
-			melee_reach = 52.0
+			melee_reach = 70.0
 			body_color = Color("7fad5b")
+	base_move_speed = move_speed
+	situational_speed_multiplier = 1.0
 	current_health = max_health
 	ensure_sprite_setup()
 	apply_role_visuals()
@@ -416,7 +427,7 @@ func _physics_process(delta: float) -> void:
 	if offset.length() < 4.0:
 		global_position = destination
 	else:
-		var step: float = minf(move_speed * knockback_recovery_factor() * delta, offset.length())
+		var step: float = minf(effective_move_speed() * knockback_recovery_factor() * delta, offset.length())
 		desired_velocity = offset.normalized() * step / maxf(delta, 0.001)
 	var knockback_impulse: Vector2 = advance_knockback(delta)
 	velocity = desired_velocity + knockback_impulse
