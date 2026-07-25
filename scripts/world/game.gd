@@ -3,10 +3,12 @@ extends Node2D
 const HERO_SCENE: PackedScene = preload("res://scenes/actors/hero.tscn")
 const ENEMY_SCENE: PackedScene = preload("res://scenes/actors/enemy.tscn")
 const INVENTORY_OVERLAY_SCENE: PackedScene = preload("res://scenes/ui/inventory_overlay.tscn")
+const HERO_SCRIPT: GDScript = preload("res://scripts/actors/hero.gd")
+const ENEMY_SCRIPT: GDScript = preload("res://scripts/actors/enemy.gd")
 const GRID_SIZE: Vector2i = Vector2i(7, 7)
 const ROOM_SPACING: Vector2 = Vector2(548.0, 358.0)
-const ROOM_DOOR_GAP: float = 10.0
-const ROOM_LAYOUT_CLEARANCE: float = 4.0
+const ROOM_DOOR_GAP: float = 0.0
+const ROOM_LAYOUT_CLEARANCE: float = 0.0
 const DOOR_VISUAL_WIDTH: float = 42.0
 const DOOR_VISUAL_THICKNESS: float = 10.0
 const ROOM_WALKABLE_INSET: float = 4.0
@@ -14,12 +16,21 @@ const ROOM_SLOT_INSET: float = 18.0
 const ROOM_NAV_CELL_SIZE: float = 12.0
 const ROOM_NAV_WALKABLE_MARGIN: float = 3.0
 const INVALID_ROOM: Vector2i = Vector2i(-99, -99)
+const HERO_INVALID_ROOM: Vector2i = Vector2i(-99, -99)
 const DOOR_OPEN_DURATION: float = 1.82
 const FRONTIER_DOOR_RADIUS: float = 24.0
 const ROOM_TEMPLATE_NOOK: String = "nook"
 const ROOM_TEMPLATE_GALLERY: String = "gallery"
 const ROOM_TEMPLATE_WORKSHOP: String = "workshop"
 const ROOM_TEMPLATE_FORGE: String = "forge"
+const FLOOR1_CRYSTAL_ROOM_SCENE: PackedScene = preload("res://scenes/rooms/floor1_crystal_room/floor1_crystal_room.tscn")
+const CRYSTAL_ROOM_SCENE: PackedScene = preload("res://scenes/rooms/crystal_room/crystal_room.tscn")
+const ROOM_TEMPLATE_SCENES: Dictionary = {
+	ROOM_TEMPLATE_NOOK: preload("res://scenes/rooms/nook_room/nook_room.tscn"),
+	ROOM_TEMPLATE_GALLERY: preload("res://scenes/rooms/gallery_room/gallery_room.tscn"),
+	ROOM_TEMPLATE_WORKSHOP: preload("res://scenes/rooms/workshop_room/workshop_room.tscn"),
+	ROOM_TEMPLATE_FORGE: preload("res://scenes/rooms/forge_room/forge_room.tscn"),
+}
 const FLOOR_THEME_CAVERN: String = "cavern"
 const FLOOR_THEME_FUNGAL: String = "fungal"
 const FLOOR_THEME_RUINS: String = "ruins"
@@ -33,6 +44,7 @@ const ENEMY_TYPE_GOBLIN: String = "goblin"
 const ENEMY_TYPE_KOBOLD: String = "kobold"
 const ENEMY_TYPE_GOLEM: String = "golem"
 const ENEMY_TYPE_GOBLIN_SHAMAN: String = "goblin_shaman"
+const ENEMY_TYPE_SKELETON_ARCHER: String = "skeleton_archer"
 const MINOR_MODULE_TURRET: String = "laser_turret"
 const MINOR_MODULE_PULSE: String = "pulse_turret"
 const MINOR_MODULE_CANNON: String = "cannon_turret"
@@ -83,6 +95,7 @@ const ROOM_ACTION_BUTTON_RADIUS: float = 66.0
 const ROOM_ACTION_DEADZONE_RADIUS: float = 16.0
 const ROOM_ACTION_SECTOR_OUTER_RADIUS: float = 252.0
 const ROOM_ACTION_LABEL_RADIUS: float = 168.0
+const DOOR_WAVE_POINTS: int = 2
 const GROUND_ITEM_DRAW_SCALE: float = 17.0
 const GROUND_ITEM_PICK_MIN_SIZE: float = 46.0
 const GROUND_ITEM_PICK_RADIUS: float = 34.0
@@ -111,7 +124,7 @@ const CAMERA_PAN_DRAG_MULTIPLIER: float = 1.52
 const CAMERA_SOFT_FOLLOW_OFFSET: Vector2 = Vector2(0.0, -70.0)
 const CAMERA_BOUNDS_PADDING: Vector2 = Vector2(360.0, 320.0)
 const CAMERA_DISCOVERED_PAN_SLACK: Vector2 = Vector2(220.0, 180.0)
-const HERO_SELECTION_RADIUS: float = 58.0
+const HERO_SELECTION_RADIUS: float = 72.0
 const CALM_SPEED_OPTIONS: Array = [1, 2, 5, 10]
 const CARD_HAND_CARD_SIZE: Vector2 = Vector2(64.0, 88.0)
 const CARD_HAND_GAP: float = 8.0
@@ -155,6 +168,7 @@ const CARDINAL_DIRS: Array[Vector2i] = [
 @onready var industry_major_button: Button = $UI/BuildMenu/Panel/VBox/Buttons/IndustryMajorButton
 
 var rng: RandomNumberGenerator = RandomNumberGenerator.new()
+var room_template_metadata_cache: Dictionary = {}
 var item_defs: Dictionary = {}
 var hero_profiles: Array = []
 var rooms: Dictionary = {}
@@ -352,7 +366,7 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 func _draw() -> void:
-	draw_rooms()
+	draw_room_overlays()
 	draw_active_hand_card_target_preview()
 	draw_projectiles()
 	draw_floating_resource_texts()
@@ -703,7 +717,7 @@ func hero_class_definition(class_id: String) -> Dictionary:
 				"max_health": 142.0,
 				"attack_damage": 28.0,
 				"attack_range": 76.0,
-				"attack_cooldown": 0.58,
+				"attack_cooldown": 1.0,
 				"attack_style": "melee",
 				"weight": 2.45,
 				"melee_windup": 0.24,
@@ -714,7 +728,7 @@ func hero_class_definition(class_id: String) -> Dictionary:
 func hero_portrait_texture(class_id: String) -> Texture2D:
 	if hero_portrait_cache.has(class_id):
 		return hero_portrait_cache[class_id]
-	var portrait_path: String = Hero.portrait_path_for_class(class_id)
+	var portrait_path: String = HERO_SCRIPT.portrait_path_for_class(class_id)
 	var source_texture_resource: Resource = load(portrait_path)
 	if not (source_texture_resource is Texture2D):
 		return null
@@ -1732,41 +1746,49 @@ func build_dungeon(reset_resources: bool = true) -> void:
 		industry = 14
 		science = 0
 		crystal_health = 100.0
-	var crystal_door_dirs: Array = crystal_room_door_dirs_for_floor()
-	create_room(crystal_room, ROOM_TEMPLATE_FORGE, crystal_door_dirs, Vector2.ZERO)
-	var crystal: Dictionary = rooms[crystal_room]
-	crystal["opened"] = true
-	crystal["lit"] = true
-	crystal["permanent_light"] = true
-	crystal["temporary_light_turns"] = 0
-	crystal["wave_torch_until_wave"] = -1
-	crystal["crystal"] = true
-	crystal["minor_slots"] = 0
-	crystal["major_slots"] = 0
-	crystal["major_under_construction"] = false
+	var minimum_room_count: int = 7
 	var target_room_count: int = 12
-	var layout_attempts: int = 0
-	while rooms.size() < target_room_count and layout_attempts < 800:
-		layout_attempts += 1
-		var frontier_sockets: Array = collect_frontier_sockets()
-		if frontier_sockets.is_empty():
+	var layout_generation_attempts: int = 0
+	while layout_generation_attempts < 12:
+		layout_generation_attempts += 1
+		rooms.clear()
+		room_nav_cache.clear()
+		var crystal_door_dirs: Array = crystal_room_door_dirs_for_floor()
+		create_room(crystal_room, ROOM_TEMPLATE_FORGE, crystal_door_dirs, Vector2.ZERO)
+		var crystal: Dictionary = rooms[crystal_room]
+		crystal["opened"] = true
+		crystal["lit"] = true
+		crystal["permanent_light"] = true
+		crystal["temporary_light_turns"] = 0
+		crystal["wave_torch_until_wave"] = -1
+		crystal["crystal"] = true
+		crystal["minor_slots"] = 0
+		crystal["major_slots"] = 0
+		crystal["major_under_construction"] = false
+		var layout_attempts: int = 0
+		while rooms.size() < target_room_count and layout_attempts < 800:
+			layout_attempts += 1
+			var frontier_sockets: Array = collect_frontier_sockets()
+			if frontier_sockets.is_empty():
+				break
+			var socket: Dictionary = frontier_sockets[rng.randi_range(0, frontier_sockets.size() - 1)]
+			var origin: Vector2i = socket["room"]
+			var direction: Vector2i = socket["direction"]
+			var room_coord: Vector2i = origin + direction
+			var generating_second_room: bool = rooms.size() == 1
+			var prefer_dead_end: bool = rooms.size() >= 4 and frontier_sockets.size() >= 3 and rng.randf() < 0.58
+			var minimum_doors: int = 2 if generating_second_room else 1
+			var blueprint: Dictionary = roll_room_blueprint(-direction, generating_second_room, prefer_dead_end, minimum_doors)
+			if blueprint.is_empty():
+				continue
+			var template_id: String = String(blueprint["template_id"])
+			var candidate_center: Vector2 = proposed_room_center(origin, template_id, direction)
+			if not can_place_room_center(candidate_center, room_template_size(template_id)):
+				continue
+			create_room(room_coord, template_id, blueprint["door_dirs"], candidate_center)
+			connect_rooms(origin, room_coord)
+		if rooms.size() >= minimum_room_count:
 			break
-		var socket: Dictionary = frontier_sockets[rng.randi_range(0, frontier_sockets.size() - 1)]
-		var origin: Vector2i = socket["room"]
-		var direction: Vector2i = socket["direction"]
-		var room_coord: Vector2i = origin + direction
-		var generating_second_room: bool = rooms.size() == 1
-		var prefer_dead_end: bool = rooms.size() >= 4 and frontier_sockets.size() >= 3 and rng.randf() < 0.58
-		var minimum_doors: int = 2 if generating_second_room else 1
-		var blueprint: Dictionary = roll_room_blueprint(-direction, generating_second_room, prefer_dead_end, minimum_doors)
-		if blueprint.is_empty():
-			continue
-		var template_id: String = String(blueprint["template_id"])
-		var candidate_center: Vector2 = proposed_room_center(origin, template_id, direction)
-		if not can_place_room_center(candidate_center, room_template_size(template_id)):
-			continue
-		create_room(room_coord, template_id, blueprint["door_dirs"], candidate_center)
-		connect_rooms(origin, room_coord)
 	finalize_room_slot_distribution()
 	assign_exit_room()
 	refresh_room_lighting_states()
@@ -1988,6 +2010,72 @@ func crystal_room_door_dirs_for_floor() -> Array:
 		return [CARDINAL_DIRS[rng.randi_range(0, CARDINAL_DIRS.size() - 1)]]
 	return random_template_doors(ROOM_TEMPLATE_FORGE)
 
+func door_dirs_suffix(door_dirs: Array) -> String:
+	var suffix: String = ""
+	var ordered_dirs: Array[Dictionary] = [
+		{"dir": Vector2i.LEFT, "key": "l"},
+		{"dir": Vector2i.RIGHT, "key": "r"},
+		{"dir": Vector2i.UP, "key": "u"},
+		{"dir": Vector2i.DOWN, "key": "d"},
+	]
+	for entry in ordered_dirs:
+		var direction: Vector2i = entry["dir"]
+		if door_dirs.has(direction):
+			suffix += String(entry["key"])
+	return suffix
+
+func cardinal_dir_key(direction: Vector2i) -> String:
+	match direction:
+		Vector2i.LEFT:
+			return "left"
+		Vector2i.RIGHT:
+			return "right"
+		Vector2i.UP:
+			return "up"
+		Vector2i.DOWN:
+			return "down"
+		_:
+			return ""
+
+func room_template_base_scene_path(template_id: String, crystal_chamber: bool = false) -> String:
+	if crystal_chamber:
+		if floor_index == 1:
+			return FLOOR1_CRYSTAL_ROOM_SCENE.resource_path
+		return CRYSTAL_ROOM_SCENE.resource_path
+	var base_scene: PackedScene = ROOM_TEMPLATE_SCENES.get(template_id, ROOM_TEMPLATE_SCENES[ROOM_TEMPLATE_NOOK])
+	return base_scene.resource_path
+
+func room_template_scene_path(template_id: String, _door_dirs: Array = [], crystal_chamber: bool = false) -> String:
+	return room_template_base_scene_path(template_id, crystal_chamber)
+
+func room_template_scene(template_id: String, door_dirs: Array = [], crystal_chamber: bool = false) -> PackedScene:
+	var scene_path: String = room_template_scene_path(template_id, door_dirs, crystal_chamber)
+	var scene_resource: Resource = load(scene_path)
+	if scene_resource is PackedScene:
+		return scene_resource
+	var fallback_scene_path: String = room_template_base_scene_path(template_id, crystal_chamber)
+	var fallback_resource: Resource = load(fallback_scene_path)
+	return fallback_resource as PackedScene
+
+func room_template_metadata(template_id: String, door_dirs: Array = [], crystal_chamber: bool = false) -> Dictionary:
+	var scene: PackedScene = room_template_scene(template_id, door_dirs, crystal_chamber)
+	if scene == null:
+		return {}
+	var scene_path: String = scene.resource_path
+	if room_template_metadata_cache.has(scene_path):
+		return Dictionary(room_template_metadata_cache[scene_path]).duplicate(true)
+	var instance: Node = scene.instantiate()
+	var metadata: Dictionary = {}
+	if instance != null and instance.has_method("build_template_metadata"):
+		metadata = Dictionary(instance.call("build_template_metadata"))
+	instance.free()
+	if metadata.is_empty():
+		metadata = {
+			"scene_path": scene_path,
+		}
+	room_template_metadata_cache[scene_path] = metadata.duplicate(true)
+	return metadata.duplicate(true)
+
 func shrink_normalized_rect(rect: Rect2, margin: Vector2) -> Rect2:
 	var shrunk_position: Vector2 = rect.position + margin
 	var shrunk_size: Vector2 = rect.size - margin * 2.0
@@ -1998,49 +2086,6 @@ func shrink_normalized_rect(rect: Rect2, margin: Vector2) -> Rect2:
 			maxf(shrunk_size.y, 0.04)
 		)
 	)
-
-func room_layout_platform_rect(template_id: String, crystal_chamber: bool = false) -> Rect2:
-	if crystal_chamber:
-		return Rect2(0.24, 0.23, 0.52, 0.54)
-	match template_id:
-		ROOM_TEMPLATE_GALLERY:
-			return Rect2(0.27, 0.28, 0.46, 0.44)
-		ROOM_TEMPLATE_WORKSHOP:
-			return Rect2(0.23, 0.24, 0.54, 0.50)
-		ROOM_TEMPLATE_FORGE:
-			return Rect2(0.21, 0.22, 0.58, 0.54)
-		_:
-			return Rect2(0.28, 0.29, 0.44, 0.42)
-
-func room_layout_causeway_width(template_id: String, crystal_chamber: bool = false) -> float:
-	if crystal_chamber:
-		return 0.18
-	match template_id:
-		ROOM_TEMPLATE_GALLERY:
-			return 0.16
-		ROOM_TEMPLATE_WORKSHOP:
-			return 0.17
-		ROOM_TEMPLATE_FORGE:
-			return 0.18
-		_:
-			return 0.15
-
-func room_layout_causeway_rect(direction: Vector2i, platform_rect: Rect2, width: float) -> Rect2:
-	var center_x: float = platform_rect.position.x + platform_rect.size.x * 0.5
-	var center_y: float = platform_rect.position.y + platform_rect.size.y * 0.5
-	match direction:
-		Vector2i.LEFT:
-			return Rect2(0.0, center_y - width * 0.5, maxf(platform_rect.position.x, 0.08), width)
-		Vector2i.RIGHT:
-			var right_start: float = platform_rect.position.x + platform_rect.size.x
-			return Rect2(right_start, center_y - width * 0.5, maxf(1.0 - right_start, 0.08), width)
-		Vector2i.UP:
-			return Rect2(center_x - width * 0.5, 0.0, width, maxf(platform_rect.position.y, 0.08))
-		Vector2i.DOWN:
-			var lower_start: float = platform_rect.position.y + platform_rect.size.y
-			return Rect2(center_x - width * 0.5, lower_start, width, maxf(1.0 - lower_start, 0.08))
-		_:
-			return platform_rect
 
 func floor_theme_id_for_floor(target_floor_index: int) -> String:
 	if FLOOR_THEME_ORDER.is_empty():
@@ -2068,98 +2113,34 @@ func pick_room_geometry_id(template_id: String, door_dirs: Array, crystal_chambe
 	return candidates[rng.randi_range(0, candidates.size() - 1)]
 
 func build_room_geometry(template_id: String, door_dirs: Array, crystal_chamber: bool = false) -> Dictionary:
-	var platform_rect: Rect2 = room_layout_platform_rect(template_id, crystal_chamber)
-	var causeway_width: float = room_layout_causeway_width(template_id, crystal_chamber)
-	var walkable_regions: Array = [platform_rect]
-	for direction in CARDINAL_DIRS:
-		if door_dirs.has(direction):
-			walkable_regions.append(room_layout_causeway_rect(direction, platform_rect, causeway_width))
-	var slot_regions: Array = []
-	if not crystal_chamber:
-		slot_regions.append(shrink_normalized_rect(platform_rect, Vector2(0.05, 0.05)))
-	var geometry_id: String = pick_room_geometry_id(template_id, door_dirs, crystal_chamber)
+	var metadata: Dictionary = room_template_metadata(template_id, door_dirs, crystal_chamber)
+	var walkable_regions: Array = []
+	for spec_variant in Array(metadata.get("walkable_region_specs", [])):
+		var spec: Dictionary = spec_variant
+		var required_door_key: String = String(spec.get("required_door_key", ""))
+		if not required_door_key.is_empty():
+			var required_direction: Vector2i = Vector2i.ZERO
+			match required_door_key:
+				"left":
+					required_direction = Vector2i.LEFT
+				"right":
+					required_direction = Vector2i.RIGHT
+				"up":
+					required_direction = Vector2i.UP
+				"down":
+					required_direction = Vector2i.DOWN
+			if required_direction == Vector2i.ZERO or not door_dirs.has(required_direction):
+				continue
+		if spec.has("rect"):
+			walkable_regions.append(Rect2(spec["rect"]))
+	var slot_regions: Array = Array(metadata.get("slot_regions_normalized", []))
+	var geometry_id: String = String(metadata.get("geometry_id", pick_room_geometry_id(template_id, door_dirs, crystal_chamber)))
 	var liquid_regions: Array = []
 	var growth_regions: Array = []
 	var obstacle_regions: Array = []
-	match geometry_id:
-		"stream_horizontal":
-			liquid_regions = [
-				Rect2(0.05, 0.13, 0.90, 0.15),
-				Rect2(0.05, 0.71, 0.90, 0.12),
-			]
-			growth_regions = [
-				Rect2(0.10, 0.31, 0.18, 0.11),
-				Rect2(0.73, 0.57, 0.16, 0.10),
-				Rect2(0.36, 0.82, 0.22, 0.09),
-			]
-			obstacle_regions = [
-				Rect2(0.06, 0.05, 0.24, 0.08),
-				Rect2(0.70, 0.85, 0.22, 0.07),
-			]
-		"stream_vertical":
-			liquid_regions = [
-				Rect2(0.12, 0.07, 0.16, 0.86),
-				Rect2(0.72, 0.07, 0.13, 0.86),
-			]
-			growth_regions = [
-				Rect2(0.34, 0.10, 0.14, 0.11),
-				Rect2(0.48, 0.75, 0.18, 0.10),
-				Rect2(0.34, 0.46, 0.14, 0.10),
-			]
-			obstacle_regions = [
-				Rect2(0.04, 0.09, 0.08, 0.22),
-				Rect2(0.88, 0.66, 0.07, 0.20),
-			]
-		"moss_terraces":
-			liquid_regions = [
-				Rect2(0.06, 0.16, 0.18, 0.17),
-				Rect2(0.76, 0.66, 0.18, 0.17),
-			]
-			growth_regions = [
-				Rect2(0.12, 0.62, 0.20, 0.13),
-				Rect2(0.68, 0.20, 0.18, 0.12),
-				Rect2(0.39, 0.10, 0.22, 0.10),
-				Rect2(0.38, 0.79, 0.22, 0.09),
-			]
-			obstacle_regions = [
-				Rect2(0.05, 0.04, 0.25, 0.09),
-				Rect2(0.71, 0.05, 0.21, 0.08),
-				Rect2(0.07, 0.86, 0.19, 0.07),
-			]
-		"crystal_grotto":
-			liquid_regions = [
-				Rect2(0.05, 0.17, 0.16, 0.18),
-				Rect2(0.79, 0.17, 0.16, 0.18),
-				Rect2(0.08, 0.69, 0.15, 0.16),
-				Rect2(0.77, 0.69, 0.15, 0.16),
-			]
-			growth_regions = [
-				Rect2(0.15, 0.48, 0.16, 0.12),
-				Rect2(0.68, 0.48, 0.16, 0.12),
-			]
-			obstacle_regions = [
-				Rect2(0.32, 0.06, 0.36, 0.08),
-				Rect2(0.31, 0.86, 0.38, 0.07),
-			]
-		_:
-			liquid_regions = [
-				Rect2(0.06, 0.10, 0.20, 0.22),
-				Rect2(0.74, 0.10, 0.20, 0.22),
-				Rect2(0.08, 0.67, 0.18, 0.17),
-				Rect2(0.74, 0.67, 0.18, 0.17),
-			]
-			growth_regions = [
-				Rect2(0.11, 0.39, 0.16, 0.10),
-				Rect2(0.73, 0.39, 0.16, 0.10),
-				Rect2(0.38, 0.80, 0.24, 0.08),
-			]
-			obstacle_regions = [
-				Rect2(0.05, 0.04, 0.22, 0.07),
-				Rect2(0.72, 0.87, 0.19, 0.06),
-			]
 	return {
 		"geometry_id": geometry_id,
-		"walkable_regions": walkable_regions,
+		"walkable_regions": walkable_regions.duplicate(true),
 		"slot_regions": slot_regions,
 		"liquid_regions": liquid_regions,
 		"growth_regions": growth_regions,
@@ -2167,33 +2148,18 @@ func build_room_geometry(template_id: String, door_dirs: Array, crystal_chamber:
 	}
 
 func create_room(room_coord: Vector2i, template_id: String, door_dirs: Array, world_center: Vector2 = Vector2.INF) -> void:
+	var template_metadata: Dictionary = room_template_metadata(template_id, door_dirs, room_coord == crystal_room)
 	var room_size: Vector2 = Vector2(330.0, 220.0)
 	var minor_slots: int = 2
 	var major_slots: int = 0
 	var template_name: String = "Nook"
-	match template_id:
-		ROOM_TEMPLATE_GALLERY:
-			room_size = Vector2(400.0, 250.0)
-			minor_slots = 3
-			template_name = "Gallery"
-		ROOM_TEMPLATE_WORKSHOP:
-			room_size = Vector2(490.0, 320.0)
-			minor_slots = 5
-			major_slots = 1
-			template_name = "Workshop"
-		ROOM_TEMPLATE_FORGE:
-			room_size = Vector2(540.0, 350.0)
-			minor_slots = 7
-			major_slots = 1
-			template_name = "Forge"
-		_:
-			room_size = Vector2(330.0, 220.0)
-			minor_slots = 2
-			major_slots = 0
-			template_name = "Nook"
+	room_size = Vector2(template_metadata.get("room_size", room_size))
+	minor_slots = int(template_metadata.get("minor_slots", minor_slots))
+	major_slots = int(template_metadata.get("major_slots", major_slots))
+	template_name = String(template_metadata.get("template_name", template_name))
 	var geometry_data: Dictionary = build_room_geometry(template_id, door_dirs, room_coord == crystal_room)
 	var theme_id: String = current_floor_theme_id()
-	rooms[room_coord] = {
+	var room_data: Dictionary = {
 		"neighbors": [],
 		"center": world_center if world_center != Vector2.INF else room_center(room_coord),
 		"opened": false,
@@ -2207,6 +2173,8 @@ func create_room(room_coord: Vector2i, template_id: String, door_dirs: Array, wo
 		"theme_id": theme_id,
 		"template_name": template_name,
 		"door_dirs": door_dirs.duplicate(),
+		"room_scene_path": String(template_metadata.get("scene_path", room_template_scene_path(template_id, door_dirs, room_coord == crystal_room))),
+		"door_positions_normalized": Dictionary(template_metadata.get("door_positions_normalized", {})).duplicate(true),
 		"geometry_id": String(geometry_data.get("geometry_id", "flooded_cross")),
 		"walkable_regions": Array(geometry_data.get("walkable_regions", [])),
 		"slot_regions": Array(geometry_data.get("slot_regions", [])),
@@ -2223,6 +2191,10 @@ func create_room(room_coord: Vector2i, template_id: String, door_dirs: Array, wo
 		"warning_timer_left": 0.0,
 		"ground_items": [],
 	}
+	if template_metadata.has("major_slot_normalized"):
+		room_data["major_slot_normalized"] = Vector2(template_metadata["major_slot_normalized"])
+	room_data["minor_slot_positions_normalized"] = Array(template_metadata.get("minor_slot_positions_normalized", [])).duplicate(true)
+	rooms[room_coord] = room_data
 
 func room_template_door_options(template_id: String) -> Array:
 	match template_id:
@@ -2350,6 +2322,9 @@ func roll_room_blueprint(required_dir: Vector2i, prefer_major: bool = false, pre
 	}
 
 func room_template_size(template_id: String) -> Vector2:
+	var metadata: Dictionary = room_template_metadata(template_id)
+	if metadata.has("room_size"):
+		return Vector2(metadata["room_size"])
 	match template_id:
 		ROOM_TEMPLATE_GALLERY:
 			return Vector2(400.0, 250.0)
@@ -4117,6 +4092,12 @@ func center_camera() -> void:
 func hero_is_active(hero: Variant) -> bool:
 	return hero != null and is_instance_valid(hero) and (not hero.has_method("is_dead_state") or not hero.is_dead_state()) and float(hero.current_health) > 0.0
 
+func is_hero_actor(actor: Variant) -> bool:
+	return actor != null and is_instance_valid(actor) and actor.get_script() == HERO_SCRIPT
+
+func is_enemy_actor(actor: Variant) -> bool:
+	return actor != null and is_instance_valid(actor) and actor.get_script() == ENEMY_SCRIPT
+
 func alive_hero_count() -> int:
 	var count: int = 0
 	for hero in heroes:
@@ -4170,7 +4151,7 @@ func all_heroes_in_exit_room() -> bool:
 	for hero in heroes:
 		if not hero_is_active(hero):
 			continue
-		if hero.current_room != exit_room or hero.pending_room != Hero.INVALID_ROOM or not hero.is_idle():
+		if hero.current_room != exit_room or hero.pending_room != HERO_INVALID_ROOM or not hero.is_idle():
 			return false
 	return true
 
@@ -4326,7 +4307,7 @@ func advance_camera(delta: float) -> void:
 		touch_pan_last_screen = touch_screen
 	if camera_interaction_cooldown <= 0.0 and touch_points.is_empty() and not mouse_pressed:
 		var hero: Variant = selected_hero()
-		if hero != null and (not hero.is_idle() or hero.pending_room != Hero.INVALID_ROOM):
+		if hero != null and (not hero.is_idle() or hero.pending_room != HERO_INVALID_ROOM):
 			var target_position: Vector2 = hero_focus_position()
 			camera.global_position = camera.global_position.lerp(target_position, minf(CAMERA_SOFT_FOLLOW_SPEED * delta, 1.0))
 	clamp_camera()
@@ -4395,7 +4376,7 @@ func try_open_pending_room_loot_request(hero: Variant) -> bool:
 		return false
 	if not pending_room_loot_requests.has(hero.hero_index):
 		return false
-	if hero.pending_room != Hero.INVALID_ROOM or not hero.is_idle() or not hero.move_steps.is_empty():
+	if hero.pending_room != HERO_INVALID_ROOM or not hero.is_idle() or not hero.move_steps.is_empty():
 		return false
 	var loot_request: Dictionary = pending_room_loot_requests[hero.hero_index]
 	var room_coord: Vector2i = loot_request.get("room", INVALID_ROOM)
@@ -4511,7 +4492,7 @@ func room_action_target_for_selected_hero() -> Vector2i:
 		return INVALID_ROOM
 	if opening_hero == hero and opening_origin_room != INVALID_ROOM and rooms.has(opening_origin_room) and rooms[opening_origin_room]["opened"]:
 		return opening_origin_room
-	if hero.pending_open_origin_room != Hero.INVALID_ROOM and rooms.has(hero.pending_open_origin_room) and rooms[hero.pending_open_origin_room]["opened"]:
+	if hero.pending_open_origin_room != HERO_INVALID_ROOM and rooms.has(hero.pending_open_origin_room) and rooms[hero.pending_open_origin_room]["opened"]:
 		return hero.pending_open_origin_room
 	if not hero.move_steps.is_empty():
 		for step_index in range(hero.move_steps.size() - 1, -1, -1):
@@ -4519,7 +4500,7 @@ func room_action_target_for_selected_hero() -> Vector2i:
 			var step_room: Vector2i = step.get("room", INVALID_ROOM)
 			if step_room != INVALID_ROOM and rooms.has(step_room) and rooms[step_room]["opened"]:
 				return step_room
-	if hero.pending_room != Hero.INVALID_ROOM and rooms.has(hero.pending_room) and rooms[hero.pending_room]["opened"]:
+	if hero.pending_room != HERO_INVALID_ROOM and rooms.has(hero.pending_room) and rooms[hero.pending_room]["opened"]:
 		return hero.pending_room
 	if rooms.has(hero.current_room) and rooms[hero.current_room]["opened"]:
 		return hero.current_room
@@ -4770,7 +4751,7 @@ func try_handle_crystal_tap(world_position: Vector2) -> bool:
 	crystal_prompt_visible = true
 	selected_room = crystal_ground_room
 	var hero: Variant = selected_hero()
-	if hero != null and hero.current_room == crystal_ground_room and hero.pending_room == Hero.INVALID_ROOM and hero.is_idle():
+	if hero != null and hero.current_room == crystal_ground_room and hero.pending_room == HERO_INVALID_ROOM and hero.is_idle():
 		status_message = "Crystal selected. Tap Carry to burden %s with it." % hero.hero_name
 	else:
 		status_message = "Crystal selected. Move a hero into this room, then tap Carry."
@@ -4778,7 +4759,7 @@ func try_handle_crystal_tap(world_position: Vector2) -> bool:
 
 func can_selected_hero_pick_up_crystal() -> bool:
 	var hero: Variant = selected_hero()
-	return hero != null and crystal_holder == null and crystal_ground_room != INVALID_ROOM and is_exit_discovered() and hero.current_room == crystal_ground_room and hero.pending_room == Hero.INVALID_ROOM and hero.is_idle()
+	return hero != null and crystal_holder == null and crystal_ground_room != INVALID_ROOM and is_exit_discovered() and hero.current_room == crystal_ground_room and hero.pending_room == HERO_INVALID_ROOM and hero.is_idle()
 
 func is_exit_discovered() -> bool:
 	return exit_room != INVALID_ROOM and rooms.has(exit_room) and rooms[exit_room]["opened"]
@@ -4853,14 +4834,14 @@ func execute_world_command_for_hero(hero_index: int, world_position: Vector2, up
 		hero.pending_open_origin_room = from_room
 		hero.pending_open_room = sealed_room
 		if command_room == from_room:
-			issue_hero_steps(hero, build_steps_for_path([from_room], hero.global_position, doorway_position(from_room, sealed_room)))
+			issue_hero_steps(hero, build_steps_for_path([from_room], hero.global_position, doorway_navigation_position(from_room, sealed_room)))
 		else:
 			var door_path: Array[Vector2i] = find_path(command_room, from_room, true)
 			if door_path.is_empty():
 				status_message = "No open route to that door."
 				update_hud()
 				return
-			issue_hero_steps(hero, build_steps_for_path(door_path, hero.global_position, doorway_position(from_room, sealed_room)))
+			issue_hero_steps(hero, build_steps_for_path(door_path, hero.global_position, doorway_navigation_position(from_room, sealed_room)))
 		status_message = "%s moving to open a new chamber from %s." % [hero.hero_name, room_title(from_room)]
 		update_hud()
 		return
@@ -5139,7 +5120,7 @@ func request_room_loot_for_hero(hero_index: int, room_coord: Vector2i) -> void:
 	queue_redraw()
 
 func hero_ready_for_room_action(hero: Variant, room_coord: Vector2i) -> bool:
-	return hero != null and is_instance_valid(hero) and rooms.has(room_coord) and hero.current_room == room_coord and hero.pending_room == Hero.INVALID_ROOM and hero.is_idle() and hero.move_steps.is_empty() and room_rect(room_coord).has_point(hero.global_position)
+	return hero != null and is_instance_valid(hero) and rooms.has(room_coord) and hero.current_room == room_coord and hero.pending_room == HERO_INVALID_ROOM and hero.is_idle() and hero.move_steps.is_empty() and room_rect(room_coord).has_point(hero.global_position)
 
 func room_action_staging_position(room_coord: Vector2i) -> Vector2:
 	return room_walkable_center(room_coord)
@@ -5333,7 +5314,7 @@ func advance_room_opening(delta: float) -> void:
 		var hero: Variant = hero_variant
 		if hero == null or not is_instance_valid(hero):
 			continue
-		if hero.current_room == opening_origin_room and hero.pending_room == Hero.INVALID_ROOM and hero.is_idle():
+		if hero.current_room == opening_origin_room and hero.pending_room == HERO_INVALID_ROOM and hero.is_idle():
 			active_openers.append(hero)
 	opening_heroes = active_openers
 	var opener_count: int = max(opening_heroes.size(), 1)
@@ -5359,7 +5340,7 @@ func finish_room_opening() -> void:
 		var breach_hero: Variant = breach_hero_variant
 		if breach_hero != null and is_instance_valid(breach_hero):
 			issue_hero_steps(breach_hero, [
-				make_hero_step(breached_room, doorway_position(breached_room, from_room)),
+				make_hero_step(breached_room, doorway_navigation_position(breached_room, from_room)),
 			])
 	update_hud()
 
@@ -5496,8 +5477,8 @@ func launch_wave(entered_room: Vector2i) -> void:
 		update_hud()
 		return
 	wave_index += 1
-	var spawn_room_count: int = mini(1 + int(floor(float(max(wave_index - 1, 0)) / 2.0)), dark_rooms.size())
-	var total_enemies: int = mini(4 + wave_index, 12)
+	var spawn_room_count: int = mini(1 + int(floor(float(max(wave_index - 1, 0)) / 2.0)), dark_rooms.size(), DOOR_WAVE_POINTS)
+	var total_wave_points: int = DOOR_WAVE_POINTS
 	var chosen_rooms: Array[Vector2i] = []
 	while chosen_rooms.size() < spawn_room_count and not dark_rooms.is_empty():
 		var room_index: int = rng.randi_range(0, dark_rooms.size() - 1)
@@ -5506,20 +5487,20 @@ func launch_wave(entered_room: Vector2i) -> void:
 	var delayed_room_order: int = 0
 	for spawn_index in range(chosen_rooms.size()):
 		var room_coord: Vector2i = chosen_rooms[spawn_index]
-		var enemy_count: int = maxi(1, int(floor(float(total_enemies) / float(chosen_rooms.size()))))
-		if spawn_index < total_enemies % chosen_rooms.size():
-			enemy_count += 1
+		var wave_points: int = maxi(1, int(floor(float(total_wave_points) / float(chosen_rooms.size()))))
+		if spawn_index < total_wave_points % chosen_rooms.size():
+			wave_points += 1
 		var immediate: bool = room_coord == entered_room
-		queue_wave_spawn(room_coord, enemy_count, immediate, delayed_room_order)
+		queue_wave_spawn(room_coord, wave_points, immediate, delayed_room_order)
 		if not immediate:
 			delayed_room_order += 1
 	status_message = "Wave %d emerged from %d dark room%s." % [wave_index, chosen_rooms.size(), "" if chosen_rooms.size() == 1 else "s"]
 	update_hud()
 
-func queue_wave_spawn(room_coord: Vector2i, count: int, immediate: bool, spawn_order: int) -> void:
+func queue_wave_spawn(room_coord: Vector2i, wave_points: int, immediate: bool, spawn_order: int) -> void:
 	if not rooms.has(room_coord):
 		return
-	var spawn_plan: Array[String] = build_enemy_spawn_plan(count, false)
+	var spawn_plan: Array[String] = build_enemy_spawn_plan(wave_points, false)
 	if spawn_plan.is_empty():
 		return
 	if immediate:
@@ -5599,14 +5580,16 @@ func queue_pressure_spawn(room_coord: Vector2i, count: int) -> void:
 		"plan": spawn_plan,
 	})
 
-func enemy_wave_size(enemy_type: String) -> int:
+func enemy_pack_size(enemy_type: String) -> int:
 	match enemy_type:
 		ENEMY_TYPE_LIZARDMAN:
 			return 1
 		ENEMY_TYPE_GOBLIN:
 			return 5
 		ENEMY_TYPE_KOBOLD:
-			return 3
+			return 6
+		ENEMY_TYPE_SKELETON_ARCHER:
+			return 2
 		ENEMY_TYPE_GOLEM:
 			return 1
 		ENEMY_TYPE_GOBLIN_SHAMAN:
@@ -5614,18 +5597,27 @@ func enemy_wave_size(enemy_type: String) -> int:
 		_:
 			return 1
 
+func enemy_wave_point_cost(enemy_type: String) -> int:
+	match enemy_type:
+		ENEMY_TYPE_GOLEM:
+			return 2
+		_:
+			return 1
+
 func enemy_spawn_weight(enemy_type: String, pressure_spawn: bool = false) -> float:
 	match enemy_type:
 		ENEMY_TYPE_LIZARDMAN:
-			return 1.6 if not pressure_spawn else 1.2
+			return 1.1 if not pressure_spawn else 0.9
 		ENEMY_TYPE_GOBLIN:
-			return 3.8 if not pressure_spawn else 2.4
+			return 3.4 if not pressure_spawn else 2.8
 		ENEMY_TYPE_KOBOLD:
-			return 3.0 if not pressure_spawn else 3.8
-		ENEMY_TYPE_GOLEM:
-			return 1.0 if not pressure_spawn else 0.8
-		ENEMY_TYPE_GOBLIN_SHAMAN:
+			return 2.8 if not pressure_spawn else 3.2
+		ENEMY_TYPE_SKELETON_ARCHER:
 			return 1.4 if not pressure_spawn else 1.1
+		ENEMY_TYPE_GOLEM:
+			return 0.42 if not pressure_spawn else 0.36
+		ENEMY_TYPE_GOBLIN_SHAMAN:
+			return 0.72 if not pressure_spawn else 0.54
 		_:
 			return 1.0
 
@@ -5647,16 +5639,18 @@ func build_enemy_spawn_plan(budget: int, pressure_spawn: bool = false) -> Array[
 	var plan: Array[String] = []
 	while remaining > 0:
 		var candidates: Array[String] = []
-		for enemy_type in [ENEMY_TYPE_GOBLIN, ENEMY_TYPE_KOBOLD, ENEMY_TYPE_GOBLIN_SHAMAN, ENEMY_TYPE_LIZARDMAN, ENEMY_TYPE_GOLEM]:
-			if enemy_wave_size(enemy_type) <= remaining:
+		for enemy_type in [ENEMY_TYPE_GOBLIN, ENEMY_TYPE_KOBOLD, ENEMY_TYPE_SKELETON_ARCHER, ENEMY_TYPE_GOBLIN_SHAMAN, ENEMY_TYPE_LIZARDMAN, ENEMY_TYPE_GOLEM]:
+			if floor_index == 1 and enemy_type == ENEMY_TYPE_GOLEM:
+				continue
+			if enemy_wave_point_cost(enemy_type) <= remaining:
 				candidates.append(enemy_type)
 		if candidates.is_empty():
-			candidates = [ENEMY_TYPE_LIZARDMAN, ENEMY_TYPE_GOLEM]
+			candidates = [ENEMY_TYPE_GOBLIN]
 		var chosen_type: String = weighted_enemy_type_choice(candidates, pressure_spawn)
-		var pack_size: int = mini(enemy_wave_size(chosen_type), remaining)
+		var pack_size: int = enemy_pack_size(chosen_type)
 		for _pack_index in range(pack_size):
 			plan.append(chosen_type)
-		remaining -= pack_size
+		remaining -= enemy_wave_point_cost(chosen_type)
 	return plan
 
 func spawn_wave(room_coord: Vector2i, count: int) -> void:
@@ -5703,7 +5697,7 @@ func issue_hero_steps(hero: Variant, steps: Array) -> void:
 		hero.move_steps.append(step)
 
 func active_hero_room_for_commands(hero: Variant) -> Vector2i:
-	if hero.pending_room == Hero.INVALID_ROOM:
+	if hero.pending_room == HERO_INVALID_ROOM:
 		return hero.current_room
 	var current_distance: float = hero.global_position.distance_to(room_center(hero.current_room))
 	var pending_distance: float = hero.global_position.distance_to(room_center(hero.pending_room))
@@ -5725,9 +5719,9 @@ func interrupt_hero_orders(hero: Variant) -> Vector2i:
 		opening_origin_room = INVALID_ROOM
 		opening_hero = null
 		opening_timer_left = 0.0
-	hero.pending_open_room = Hero.INVALID_ROOM
-	hero.pending_open_origin_room = Hero.INVALID_ROOM
-	hero.pending_room = Hero.INVALID_ROOM
+	hero.pending_open_room = HERO_INVALID_ROOM
+	hero.pending_open_origin_room = HERO_INVALID_ROOM
+	hero.pending_room = HERO_INVALID_ROOM
 	hero.current_room = command_room
 	hero.set_destination(hero.global_position)
 	return command_room
@@ -5739,7 +5733,7 @@ func hero_has_locked_player_command(hero: Variant) -> bool:
 		return true
 	if pending_room_action_requests.has(hero.hero_index) or pending_room_loot_requests.has(hero.hero_index):
 		return true
-	if hero.pending_room != Hero.INVALID_ROOM or hero.pending_open_room != Hero.INVALID_ROOM or not hero.move_steps.is_empty():
+	if hero.pending_room != HERO_INVALID_ROOM or hero.pending_open_room != HERO_INVALID_ROOM or not hero.move_steps.is_empty():
 		return true
 	return opening_hero == hero or opening_heroes.has(hero)
 
@@ -5748,7 +5742,7 @@ func release_finished_player_command(hero: Variant) -> void:
 		return
 	if pending_room_action_requests.has(hero.hero_index) or pending_room_loot_requests.has(hero.hero_index):
 		return
-	if hero.pending_room != Hero.INVALID_ROOM or hero.pending_open_room != Hero.INVALID_ROOM or not hero.move_steps.is_empty():
+	if hero.pending_room != HERO_INVALID_ROOM or hero.pending_open_room != HERO_INVALID_ROOM or not hero.move_steps.is_empty():
 		return
 	if opening_hero == hero or opening_heroes.has(hero):
 		return
@@ -5970,9 +5964,9 @@ func build_steps_for_path(path: Array[Vector2i], start_position: Vector2, final_
 	for index in range(path.size() - 1):
 		var current_room: Vector2i = path[index]
 		var next_room: Vector2i = path[index + 1]
-		var exit_position: Vector2 = doorway_position(current_room, next_room)
+		var exit_position: Vector2 = doorway_navigation_position(current_room, next_room)
 		append_room_navigation_steps(steps, current_room, current_position, exit_position)
-		var entry_position: Vector2 = doorway_position(next_room, current_room)
+		var entry_position: Vector2 = doorway_navigation_position(next_room, current_room)
 		steps.append(make_hero_step(next_room, entry_position))
 		current_position = entry_position
 	var destination_room: Vector2i = path[path.size() - 1]
@@ -5988,25 +5982,25 @@ func advance_hero_movement() -> void:
 			continue
 		if try_open_pending_room_loot_request(hero):
 			continue
-		if hero.pending_room != Hero.INVALID_ROOM:
+		if hero.pending_room != HERO_INVALID_ROOM:
 			if hero.is_idle():
 				hero.current_room = hero.pending_room
-				hero.pending_room = Hero.INVALID_ROOM
+				hero.pending_room = HERO_INVALID_ROOM
 				if hero == selected_hero():
 					selected_room = hero.current_room
 			else:
 				continue
-		if opening_room == INVALID_ROOM and hero.pending_open_room != Hero.INVALID_ROOM and hero.is_idle() and hero.move_steps.is_empty():
+		if opening_room == INVALID_ROOM and hero.pending_open_room != HERO_INVALID_ROOM and hero.is_idle() and hero.move_steps.is_empty():
 			var breach_room: Vector2i = hero.pending_open_room
 			var from_room: Vector2i = hero.pending_open_origin_room
-			hero.pending_open_room = Hero.INVALID_ROOM
-			hero.pending_open_origin_room = Hero.INVALID_ROOM
+			hero.pending_open_room = HERO_INVALID_ROOM
+			hero.pending_open_origin_room = HERO_INVALID_ROOM
 			opening_hero = hero
 			start_room_opening(breach_room, from_room)
 			continue
 		if opening_room != INVALID_ROOM and hero.pending_open_room == opening_room and hero.pending_open_origin_room == opening_origin_room and hero.is_idle() and hero.move_steps.is_empty():
-			hero.pending_open_room = Hero.INVALID_ROOM
-			hero.pending_open_origin_room = Hero.INVALID_ROOM
+			hero.pending_open_room = HERO_INVALID_ROOM
+			hero.pending_open_origin_room = HERO_INVALID_ROOM
 			if not opening_heroes.has(hero):
 				opening_heroes.append(hero)
 			continue
@@ -6075,10 +6069,15 @@ func advance_enemy_routes(delta: float) -> void:
 func target_room_for_enemy(enemy: Variant) -> Vector2i:
 	match String(enemy.enemy_role):
 		ENEMY_TYPE_LIZARDMAN:
-			var lizard_target: Variant = lizardman_target_hero(enemy)
+			var lizard_target: Variant = priority_hunter_target_hero(enemy)
 			if lizard_target == null:
 				return crystal_room
 			return hero_room_for_enemy_targeting(lizard_target)
+		ENEMY_TYPE_SKELETON_ARCHER:
+			var archer_target: Variant = skeleton_archer_target_hero(enemy)
+			if archer_target == null:
+				return crystal_room
+			return hero_room_for_enemy_targeting(archer_target)
 		ENEMY_TYPE_GOBLIN, ENEMY_TYPE_GOBLIN_SHAMAN:
 			if not heroes_in_room(enemy.current_room).is_empty():
 				return enemy.current_room
@@ -6101,16 +6100,21 @@ func enemy_room_goal_position(enemy: Variant, room_coord: Vector2i) -> Vector2:
 		return enemy_target_position(enemy)
 	var path: Array[Vector2i] = find_path(room_coord, target_room, true)
 	if path.size() > 1:
-		return doorway_position(room_coord, path[1])
+		return doorway_navigation_position(room_coord, path[1])
 	return clamp_point_to_room(enemy.global_position, room_coord)
 
 func enemy_target_position(enemy: Variant) -> Vector2:
 	match String(enemy.enemy_role):
 		ENEMY_TYPE_LIZARDMAN:
-			var lizard_target: Variant = lizardman_target_hero(enemy)
+			var lizard_target: Variant = priority_hunter_target_hero(enemy)
 			if lizard_target != null and hero_is_in_room(lizard_target, enemy.current_room):
 				return lizard_target.global_position
 			return clamp_point_to_room(enemy.global_position, enemy.current_room)
+		ENEMY_TYPE_SKELETON_ARCHER:
+			var archer_target: Variant = skeleton_archer_target_hero(enemy)
+			if archer_target != null and hero_is_in_room(archer_target, enemy.current_room):
+				return skeleton_archer_goal_position(enemy)
+			return crystal_world_position()
 		ENEMY_TYPE_GOBLIN, ENEMY_TYPE_GOBLIN_SHAMAN:
 			var room_target: Variant = default_room_hero_target(enemy.current_room, enemy.global_position)
 			if room_target != null:
@@ -6129,18 +6133,26 @@ func enemy_target_position(enemy: Variant) -> Vector2:
 func hero_room_for_enemy_targeting(hero: Variant) -> Vector2i:
 	if hero == null or not is_instance_valid(hero):
 		return INVALID_ROOM
-	if hero.pending_room != Hero.INVALID_ROOM and rooms.has(hero.pending_room) and room_rect(hero.pending_room).has_point(hero.global_position):
+	if hero.pending_room != HERO_INVALID_ROOM and rooms.has(hero.pending_room) and room_rect(hero.pending_room).has_point(hero.global_position):
 		return hero.pending_room
 	return hero.current_room
 
 func hero_is_in_room(hero: Variant, room_coord: Vector2i) -> bool:
 	return hero_room_for_enemy_targeting(hero) == room_coord
 
-func hero_default_aggro_value(hero: Variant) -> float:
+func hero_is_long_range_target(hero: Variant) -> bool:
 	if hero == null or not is_instance_valid(hero):
-		return INF
-	var barrier_value: float = maxf(float(hero.barrier_capacity), float(hero.barrier_amount))
-	return float(hero.max_health) + barrier_value
+		return false
+	return String(hero.preferred_attack_style) != "melee" or float(hero.attack_range) > 120.0
+
+func hero_target_priority_rank(hero: Variant) -> int:
+	if hero == null or not is_instance_valid(hero):
+		return 999
+	if bool(hero.carrying_crystal):
+		return 0
+	if hero_is_long_range_target(hero):
+		return 1
+	return 2
 
 func room_path_distance(from_room: Vector2i, to_room: Vector2i) -> int:
 	if from_room == to_room:
@@ -6161,23 +6173,23 @@ func heroes_in_room(room_coord: Vector2i) -> Array:
 
 func default_room_hero_target(room_coord: Vector2i, origin: Vector2) -> Variant:
 	var chosen_hero: Variant = null
-	var chosen_aggro: float = INF
+	var chosen_rank: int = 999
 	var chosen_distance: float = INF
 	for hero in heroes_in_room(room_coord):
-		var aggro_value: float = hero_default_aggro_value(hero)
+		var priority_rank: int = hero_target_priority_rank(hero)
 		var distance_value: float = origin.distance_to(hero.global_position)
 		if chosen_hero == null \
-		or aggro_value < chosen_aggro - 0.01 \
-		or (absf(aggro_value - chosen_aggro) <= 0.01 and distance_value < chosen_distance):
+		or priority_rank < chosen_rank \
+		or (priority_rank == chosen_rank and distance_value < chosen_distance):
 			chosen_hero = hero
-			chosen_aggro = aggro_value
+			chosen_rank = priority_rank
 			chosen_distance = distance_value
 	return chosen_hero
 
-func lizardman_target_hero(enemy: Variant) -> Variant:
+func priority_hunter_target_hero(enemy: Variant) -> Variant:
 	var chosen_hero: Variant = null
+	var chosen_rank: int = 999
 	var chosen_path_length: int = 99999
-	var chosen_aggro: float = INF
 	var chosen_distance: float = INF
 	for hero in heroes:
 		if not hero_is_active(hero):
@@ -6188,17 +6200,31 @@ func lizardman_target_hero(enemy: Variant) -> Variant:
 		var path_length: int = room_path_distance(enemy.current_room, candidate_room)
 		if path_length >= 99999:
 			continue
-		var aggro_value: float = hero_default_aggro_value(hero)
+		var priority_rank: int = hero_target_priority_rank(hero)
 		var distance_value: float = enemy.global_position.distance_to(hero.global_position)
 		if chosen_hero == null \
-		or path_length < chosen_path_length \
-		or (path_length == chosen_path_length and aggro_value < chosen_aggro - 0.01) \
-		or (path_length == chosen_path_length and absf(aggro_value - chosen_aggro) <= 0.01 and distance_value < chosen_distance):
+		or priority_rank < chosen_rank \
+		or (priority_rank == chosen_rank and path_length < chosen_path_length) \
+		or (priority_rank == chosen_rank and path_length == chosen_path_length and distance_value < chosen_distance):
 			chosen_hero = hero
+			chosen_rank = priority_rank
 			chosen_path_length = path_length
-			chosen_aggro = aggro_value
 			chosen_distance = distance_value
 	return chosen_hero
+
+func skeleton_archer_target_hero(enemy: Variant) -> Variant:
+	return priority_hunter_target_hero(enemy)
+
+func skeleton_archer_goal_position(enemy: Variant) -> Vector2:
+	var archer_target: Variant = skeleton_archer_target_hero(enemy)
+	if archer_target == null or not hero_is_in_room(archer_target, enemy.current_room):
+		return clamp_point_to_room(enemy.global_position, enemy.current_room)
+	var desired_range: float = 182.0
+	var separation: Vector2 = enemy.global_position - archer_target.global_position
+	if separation.length() < desired_range:
+		var fallback_direction: Vector2 = separation.normalized() if separation.length() > 0.001 else Vector2.LEFT
+		return clamp_point_to_room(archer_target.global_position + fallback_direction * desired_range, enemy.current_room)
+	return clamp_point_to_room(enemy.global_position, enemy.current_room)
 
 func module_target_position(room_coord: Vector2i, origin: Vector2) -> Vector2:
 	if not rooms.has(room_coord):
@@ -6249,38 +6275,34 @@ func resolve_enemy_attack(enemy: Variant) -> void:
 		return
 	match String(enemy.enemy_role):
 		ENEMY_TYPE_LIZARDMAN:
-			var lizard_target: Variant = lizardman_target_hero(enemy)
+			var lizard_target: Variant = priority_hunter_target_hero(enemy)
 			if lizard_target == null or not hero_is_in_room(lizard_target, enemy.current_room):
 				return
 			enemy.trigger_attack(lizard_target.global_position)
-			if try_auto_cast_fatal_shield(lizard_target, enemy.attack_damage):
-				enemy.attack_cooldown_left = enemy.attack_cooldown
-				update_hud()
-				return
-			var lizard_killed: bool = lizard_target.take_damage(enemy.attack_damage)
-			if lizard_killed:
-				finalize_hero_death(lizard_target, "A lizardman")
+			queue_pending_melee_attack(enemy, lizard_target, enemy.attack_damage, enemy.melee_impact_delay(), "An orc rider")
+			status_message = "An orc rider lunges at %s." % lizard_target.hero_name
+		ENEMY_TYPE_SKELETON_ARCHER:
+			var archer_target: Variant = skeleton_archer_target_hero(enemy)
+			if archer_target != null and hero_is_in_room(archer_target, enemy.current_room):
+				enemy.trigger_attack(archer_target.global_position)
+				spawn_laser_projectile(enemy.global_position, archer_target, enemy.attack_damage, Color("dbe5c8"), 3.2, 980.0)
+				status_message = "A skeleton archer looses an arrow at %s." % archer_target.hero_name
+			elif enemy.current_room == crystal_room:
+				enemy.trigger_attack(room_center(crystal_room))
+				crystal_health = maxf(crystal_health - enemy.attack_damage, 0.0)
+				status_message = "Skeleton archers are peppering the crystal."
 			else:
-				apply_weighted_melee_knockback(enemy, lizard_target, enemy.current_room)
-				status_message = "A lizardman is attacking %s." % lizard_target.hero_name
+				return
 		ENEMY_TYPE_GOBLIN:
 			var goblin_target: Variant = default_room_hero_target(enemy.current_room, enemy.global_position)
 			if goblin_target != null:
 				enemy.trigger_attack(goblin_target.global_position)
-				if try_auto_cast_fatal_shield(goblin_target, enemy.attack_damage):
-					enemy.attack_cooldown_left = enemy.attack_cooldown
-					update_hud()
-					return
-				var goblin_killed: bool = goblin_target.take_damage(enemy.attack_damage)
-				if goblin_killed:
-					finalize_hero_death(goblin_target, "Goblins")
-				else:
-					apply_weighted_melee_knockback(enemy, goblin_target, enemy.current_room)
-					status_message = "Goblins are swarming %s." % goblin_target.hero_name
+				queue_pending_melee_attack(enemy, goblin_target, enemy.attack_damage, enemy.melee_impact_delay(), "Orcs")
+				status_message = "Orcs are swarming %s." % goblin_target.hero_name
 			elif enemy.current_room == crystal_room:
 				enemy.trigger_attack(room_center(crystal_room))
 				crystal_health = maxf(crystal_health - enemy.attack_damage, 0.0)
-				status_message = "Goblins are striking the crystal."
+				status_message = "Orcs are striking the crystal."
 			else:
 				return
 		ENEMY_TYPE_KOBOLD:
@@ -6288,7 +6310,7 @@ func resolve_enemy_attack(enemy: Variant) -> void:
 				return
 			enemy.trigger_attack(room_center(crystal_room))
 			crystal_health = maxf(crystal_health - enemy.attack_damage, 0.0)
-			status_message = "Kobolds gnaw at the crystal."
+			status_message = "Bats dive at the crystal."
 		ENEMY_TYPE_GOLEM:
 			var target_major_room: Vector2i = preferred_golem_major_module_room(enemy)
 			if target_major_room != INVALID_ROOM and target_major_room == enemy.current_room:
@@ -6314,19 +6336,19 @@ func resolve_enemy_attack(enemy: Variant) -> void:
 				for hero_name in defeated_heroes:
 					for hero in room_targets:
 						if is_instance_valid(hero) and hero.hero_name == hero_name:
-							finalize_hero_death(hero, "A goblin shaman")
+							finalize_hero_death(hero, "An orc shaman")
 							break
-				damage_module(enemy.current_room, enemy.attack_damage * 0.6, false, "A goblin shaman")
+				damage_module(enemy.current_room, enemy.attack_damage * 0.6, false, "An orc shaman")
 				if defeated_heroes.is_empty():
-					status_message = "A goblin shaman unleashes a room-wide blast."
+					status_message = "An orc shaman unleashes a room-wide blast."
 				elif defeated_heroes.size() == 1:
-					status_message = "A goblin shaman killed %s." % defeated_heroes[0]
+					status_message = "An orc shaman killed %s." % defeated_heroes[0]
 				else:
-					status_message = "A goblin shaman killed multiple heroes."
+					status_message = "An orc shaman killed multiple heroes."
 			elif enemy.current_room == crystal_room:
 				enemy.trigger_attack(room_center(crystal_room))
 				crystal_health = maxf(crystal_health - enemy.attack_damage, 0.0)
-				status_message = "Goblin shamans are scorching the crystal."
+				status_message = "Orc shamans are scorching the crystal."
 			else:
 				return
 		_:
@@ -6397,9 +6419,9 @@ func send_hero_back_to_crystal(hero: Variant) -> void:
 		drop_crystal(hero.current_room)
 	hero.restore_health()
 	hero.move_steps.clear()
-	hero.pending_room = Hero.INVALID_ROOM
-	hero.pending_open_room = Hero.INVALID_ROOM
-	hero.pending_open_origin_room = Hero.INVALID_ROOM
+	hero.pending_room = HERO_INVALID_ROOM
+	hero.pending_open_room = HERO_INVALID_ROOM
+	hero.pending_open_origin_room = HERO_INVALID_ROOM
 	opening_heroes.erase(hero)
 	if opening_hero == hero:
 		opening_hero = opening_heroes[0] if not opening_heroes.is_empty() else null
@@ -7281,15 +7303,17 @@ func find_hero_by_index(hero_index: int) -> Variant:
 	var hero: Variant = heroes[hero_index]
 	return hero if hero_is_active(hero) else null
 
-func knockback_actor(actor: Variant, direction: Vector2, distance: float, room_coord: Vector2i) -> void:
-	if actor == null or not is_instance_valid(actor) or direction == Vector2.ZERO or distance <= 0.0:
+func knockback_actor(actor: Variant, direction: Vector2, impulse_strength: float, recovery_duration: float, room_coord: Vector2i) -> void:
+	if actor == null or not is_instance_valid(actor) or direction == Vector2.ZERO or impulse_strength <= 0.0 or recovery_duration <= 0.0:
 		return
-	var target_position: Vector2 = clamp_point_to_room(actor.global_position + direction.normalized() * distance, room_coord)
-	actor.global_position = target_position
-	actor.set_destination(target_position)
+	if not actor.has_method("apply_knockback_impulse"):
+		return
+	var knockback_bounds: Rect2 = room_interior_rect(room_coord, 20.0)
+	var knockback_regions: Array = room_walkable_regions(room_coord, ROOM_WALKABLE_INSET + 2.0)
+	actor.apply_knockback_impulse(direction.normalized() * impulse_strength, recovery_duration, knockback_bounds, knockback_regions)
 	actor.reset_physics_interpolation()
 
-func apply_weighted_melee_knockback(attacker: Variant, defender: Variant, room_coord: Vector2i, base_force: float = 26.0) -> void:
+func apply_weighted_melee_knockback(attacker: Variant, defender: Variant, room_coord: Vector2i, base_force: float = 520.0) -> void:
 	if attacker == null or defender == null or not is_instance_valid(attacker) or not is_instance_valid(defender):
 		return
 	var push_direction: Vector2 = (defender.global_position - attacker.global_position).normalized()
@@ -7297,21 +7321,29 @@ func apply_weighted_melee_knockback(attacker: Variant, defender: Variant, room_c
 		push_direction = Vector2.RIGHT
 	var attacker_weight: float = actor_weight(attacker)
 	var defender_weight: float = actor_weight(defender)
+	var weight_gap: float = absf(attacker_weight - defender_weight)
+	var equal_duration: float = clampf(0.16 + weight_gap * 0.04, 0.14, 0.34)
 	if absf(attacker_weight - defender_weight) <= 0.18:
-		knockback_actor(defender, push_direction, base_force * 0.58, room_coord)
-		knockback_actor(attacker, -push_direction, base_force * 0.58, room_coord)
+		knockback_actor(defender, push_direction, base_force * 0.62, equal_duration, room_coord)
+		knockback_actor(attacker, -push_direction, base_force * 0.62, equal_duration, room_coord)
 		return
 	if attacker_weight > defender_weight:
-		knockback_actor(defender, push_direction, base_force * clampf(attacker_weight / defender_weight, 1.0, 2.5), room_coord)
-		knockback_actor(attacker, -push_direction, base_force * 0.2 * clampf(defender_weight / attacker_weight, 0.4, 1.0), room_coord)
+		var attacker_ratio: float = clampf(attacker_weight / maxf(defender_weight, 0.1), 1.0, 2.5)
+		var defender_duration: float = clampf(0.18 + weight_gap * 0.05, 0.16, 0.42)
+		var attacker_duration: float = clampf(0.10 + weight_gap * 0.02, 0.08, 0.24)
+		knockback_actor(defender, push_direction, base_force * attacker_ratio, defender_duration, room_coord)
+		knockback_actor(attacker, -push_direction, base_force * 0.34 * clampf(defender_weight / attacker_weight, 0.45, 1.0), attacker_duration, room_coord)
 		return
-	knockback_actor(attacker, -push_direction, base_force * clampf(defender_weight / attacker_weight, 1.0, 2.5), room_coord)
-	knockback_actor(defender, push_direction, base_force * 0.2 * clampf(attacker_weight / defender_weight, 0.4, 1.0), room_coord)
+	var defender_ratio: float = clampf(defender_weight / maxf(attacker_weight, 0.1), 1.0, 2.5)
+	var attacker_duration_heavy: float = clampf(0.18 + weight_gap * 0.05, 0.16, 0.42)
+	var defender_duration_light: float = clampf(0.10 + weight_gap * 0.02, 0.08, 0.24)
+	knockback_actor(attacker, -push_direction, base_force * defender_ratio, attacker_duration_heavy, room_coord)
+	knockback_actor(defender, push_direction, base_force * 0.34 * clampf(attacker_weight / defender_weight, 0.45, 1.0), defender_duration_light, room_coord)
 
 func attacker_pending_melee_key(attacker: Variant) -> String:
 	if attacker == null or not is_instance_valid(attacker):
 		return ""
-	if attacker is Hero:
+	if is_hero_actor(attacker):
 		return "hero:%d" % int(attacker.hero_index)
 	return "enemy:%d" % int(attacker.enemy_uid)
 
@@ -7330,13 +7362,13 @@ func queue_pending_melee_attack(attacker: Variant, target: Variant, damage: floa
 		return
 	if attacker_has_pending_melee(attacker):
 		return
-	var target_enemy_uid: int = int(target.enemy_uid) if target is DungeonEnemy else -1
-	var target_hero_index: int = int(target.hero_index) if target is Hero else -1
+	var target_enemy_uid: int = int(target.enemy_uid) if is_enemy_actor(target) else -1
+	var target_hero_index: int = int(target.hero_index) if is_hero_actor(target) else -1
 	pending_melee_attacks.append({
 		"attacker_key": attacker_pending_melee_key(attacker),
-		"attacker_is_hero": attacker is Hero,
-		"attacker_hero_index": int(attacker.hero_index) if attacker is Hero else -1,
-		"attacker_enemy_uid": int(attacker.enemy_uid) if attacker is DungeonEnemy else -1,
+		"attacker_is_hero": is_hero_actor(attacker),
+		"attacker_hero_index": int(attacker.hero_index) if is_hero_actor(attacker) else -1,
+		"attacker_enemy_uid": int(attacker.enemy_uid) if is_enemy_actor(attacker) else -1,
 		"target_hero_index": target_hero_index,
 		"target_enemy_uid": target_enemy_uid,
 		"damage": damage,
@@ -7398,19 +7430,18 @@ func advance_pending_melee_attacks(delta: float) -> void:
 		if attacker == null or target == null:
 			continue
 		var attack_room: Vector2i = attacker.current_room
-		if target is Hero and not hero_is_in_room(target, attack_room):
+		if is_hero_actor(target) and not hero_is_in_room(target, attack_room):
 			continue
-		if target is DungeonEnemy and target.current_room != attack_room:
+		if is_enemy_actor(target) and target.current_room != attack_room:
 			continue
-		var attack_range: float = attacker.attack_range if attacker is Hero else float(attacker.get("melee_reach"))
+		var attack_range: float = attacker.attack_range if is_hero_actor(attacker) else float(attacker.get("melee_reach"))
 		if attacker.global_position.distance_to(target.global_position) > attack_range + 18.0:
 			continue
-		if target is Hero and try_auto_cast_fatal_shield(target, float(pending_attack.get("damage", 0.0))):
+		if is_hero_actor(target) and try_auto_cast_fatal_shield(target, float(pending_attack.get("damage", 0.0))):
 			continue
 		var defeated: bool = target.take_damage(float(pending_attack.get("damage", 0.0)))
-		if not defeated:
-			apply_weighted_melee_knockback(attacker, target, attack_room)
-		elif target is Hero:
+		apply_weighted_melee_knockback(attacker, target, attack_room)
+		if defeated and is_hero_actor(target):
 			finalize_hero_death(target, String(pending_attack.get("source_label", "An enemy")))
 	pending_melee_attacks = active_attacks
 
@@ -7450,7 +7481,7 @@ func process_combat(_delta: float) -> void:
 		if not hero_is_active(hero):
 			continue
 		hero.cooldown_left = maxf(hero.cooldown_left - _delta, 0.0)
-		if hero.carrying_crystal or hero.pending_room != Hero.INVALID_ROOM or hero.cooldown_left > 0.0 or attacker_has_pending_melee(hero):
+		if hero.carrying_crystal or hero.pending_room != HERO_INVALID_ROOM or hero.cooldown_left > 0.0 or attacker_has_pending_melee(hero):
 			continue
 		if hero.preferred_attack_style == "melee":
 			var melee_target: Variant = nearest_enemy_in_room(hero.current_room, hero.global_position, 100000.0)
@@ -7466,7 +7497,7 @@ func process_combat(_delta: float) -> void:
 				issue_hero_steps(hero, build_steps_for_path([hero.current_room], hero.global_position, desired_position))
 				continue
 			hero.trigger_attack(melee_target.global_position, hero.preferred_attack_style)
-			queue_pending_melee_attack(hero, melee_target, hero.attack_damage, hero.melee_windup_duration, hero.hero_name)
+			queue_pending_melee_attack(hero, melee_target, hero.attack_damage, hero.melee_impact_delay(), hero.hero_name)
 			hero.cooldown_left = hero.attack_cooldown
 			continue
 		var hero_target: Variant = nearest_enemy_in_room(hero.current_room, hero.global_position, hero.attack_range)
@@ -8074,7 +8105,7 @@ func server_request_pick_up_crystal(hero_index: int) -> void:
 		return
 	if crystal_holder != null or crystal_ground_room == INVALID_ROOM or not is_exit_discovered():
 		return
-	if hero.current_room != crystal_ground_room or hero.pending_room != Hero.INVALID_ROOM or not hero.is_idle():
+	if hero.current_room != crystal_ground_room or hero.pending_room != HERO_INVALID_ROOM or not hero.is_idle():
 		return
 	crystal_holder = hero
 	crystal_holder.carrying_crystal = true
@@ -8470,6 +8501,10 @@ func normalized_rect_to_room(room_coord: Vector2i, normalized_rect: Rect2) -> Re
 		Vector2(normalized_rect.size.x * rect.size.x, normalized_rect.size.y * rect.size.y)
 	)
 
+func normalized_point_to_room(room_coord: Vector2i, normalized_point: Vector2) -> Vector2:
+	var rect: Rect2 = room_rect(room_coord)
+	return rect.position + Vector2(normalized_point.x * rect.size.x, normalized_point.y * rect.size.y)
+
 func room_layout_regions(room_coord: Vector2i, key: String, inset: float = 0.0) -> Array:
 	if not rooms.has(room_coord):
 		return []
@@ -8550,6 +8585,48 @@ func room_walkable_center(room_coord: Vector2i) -> Vector2:
 		return room_center(room_coord)
 	var primary_rect: Rect2 = largest_region_rect(walkable_regions)
 	return closest_point_in_rect(room_center(room_coord), primary_rect)
+
+func doorway_navigation_position(from_room: Vector2i, to_room: Vector2i) -> Vector2:
+	var threshold_position: Vector2 = doorway_position(from_room, to_room)
+	var walkable_regions: Array = room_walkable_regions(from_room, 0.0)
+	if walkable_regions.is_empty():
+		return clamp_point_to_room(threshold_position, from_room)
+	var walkable_bounds: Rect2 = bounding_rect_for_regions(walkable_regions)
+	var delta: Vector2i = to_room - from_room
+	var edge_padding: float = 10.0
+	if delta.x < 0:
+		return clamp_point_to_room(
+			Vector2(
+				walkable_bounds.position.x + edge_padding,
+				clampf(threshold_position.y, walkable_bounds.position.y + edge_padding, walkable_bounds.end.y - edge_padding)
+			),
+			from_room
+		)
+	if delta.x > 0:
+		return clamp_point_to_room(
+			Vector2(
+				walkable_bounds.end.x - edge_padding,
+				clampf(threshold_position.y, walkable_bounds.position.y + edge_padding, walkable_bounds.end.y - edge_padding)
+			),
+			from_room
+		)
+	if delta.y < 0:
+		return clamp_point_to_room(
+			Vector2(
+				clampf(threshold_position.x, walkable_bounds.position.x + edge_padding, walkable_bounds.end.x - edge_padding),
+				walkable_bounds.position.y + edge_padding
+			),
+			from_room
+		)
+	if delta.y > 0:
+		return clamp_point_to_room(
+			Vector2(
+				clampf(threshold_position.x, walkable_bounds.position.x + edge_padding, walkable_bounds.end.x - edge_padding),
+				walkable_bounds.end.y - edge_padding
+			),
+			from_room
+		)
+	return clamp_point_to_room(threshold_position, from_room)
 
 func random_point_in_regions(regions: Array) -> Vector2:
 	if regions.is_empty():
@@ -8644,18 +8721,33 @@ func clamp_point_to_room(world_position: Vector2, room_coord: Vector2i) -> Vecto
 	return nearest_point
 
 func doorway_position(from_room: Vector2i, to_room: Vector2i) -> Vector2:
+	var delta: Vector2i = to_room - from_room
+	if rooms.has(from_room):
+		var door_positions: Dictionary = Dictionary(rooms[from_room].get("door_positions_normalized", {}))
+		var direction_key: String = cardinal_dir_key(delta)
+		if not direction_key.is_empty() and door_positions.has(direction_key):
+			return normalized_point_to_room(from_room, Vector2(door_positions[direction_key]))
 	var room_half: Vector2 = room_size_for(from_room) * 0.5
 	var center: Vector2 = room_center(from_room)
-	var delta: Vector2i = to_room - from_room
 	if delta.x != 0:
-		return center + Vector2(float(delta.x) * (room_half.x - 20.0), 0.0)
-	return center + Vector2(0.0, float(delta.y) * (room_half.y - 20.0))
+		return center + Vector2(float(delta.x) * room_half.x, 0.0)
+	return center + Vector2(0.0, float(delta.y) * room_half.y)
 
 func major_slot_position(room_coord: Vector2i) -> Vector2:
+	if rooms.has(room_coord) and rooms[room_coord].has("major_slot_normalized"):
+		return normalized_point_to_room(room_coord, Vector2(rooms[room_coord]["major_slot_normalized"]))
 	var rect: Rect2 = room_slot_anchor_rect(room_coord)
 	return rect.position + Vector2(rect.size.x * 0.5, rect.size.y * 0.23)
 
 func minor_slot_positions(room_coord: Vector2i) -> Array:
+	if rooms.has(room_coord):
+		var normalized_positions: Array = Array(rooms[room_coord].get("minor_slot_positions_normalized", []))
+		if not normalized_positions.is_empty():
+			var resolved_positions: Array = []
+			var desired_count: int = mini(int(rooms[room_coord]["minor_slots"]), normalized_positions.size())
+			for index in range(desired_count):
+				resolved_positions.append(normalized_point_to_room(room_coord, Vector2(normalized_positions[index])))
+			return resolved_positions
 	var rect: Rect2 = room_slot_anchor_rect(room_coord)
 	var count: int = int(rooms[room_coord]["minor_slots"])
 	var offsets: Array[Vector2] = []
@@ -9008,7 +9100,7 @@ func room_theme_palette(theme_id: String, lit: bool, crystal_chamber: bool) -> D
 		palette["growth_edge"] = Color("a7864f")
 	return palette
 
-func draw_rooms() -> void:
+func draw_room_overlays() -> void:
 	var view_rect: Rect2 = current_view_world_rect(160.0)
 	for room_coord_variant in rooms.keys():
 		var room_coord: Vector2i = room_coord_variant
@@ -9045,11 +9137,15 @@ func draw_rooms() -> void:
 			var pending_major: Dictionary = pending_major_construction_for_room(room_coord)
 			var show_major_slot: bool = should_show_room_slot_guides(room_coord) or should_highlight_major_slot(room_coord) or (room["major_module_type"] != "" and float(room["major_health"]) > 0.0) or not pending_major.is_empty()
 			if show_major_slot:
+				var major_fill: Color = Color(0.08, 0.12, 0.15, 0.34)
 				var major_outline: Color = Color("182024")
 				if should_show_room_slot_guides(room_coord) and not should_highlight_major_slot(room_coord):
-					major_outline = Color(0.78, 0.80, 0.74, 0.55)
+					major_fill = Color(0.10, 0.14, 0.16, 0.24)
+					major_outline = Color(0.82, 0.88, 0.92, 0.78)
 				if should_highlight_major_slot(room_coord):
+					major_fill = Color(1.0, 0.89, 0.61, 0.16)
 					major_outline = Color("ffe39b")
+				draw_rect(Rect2(major_position - Vector2(17.0, 17.0), Vector2(34.0, 34.0)), major_fill, true)
 				draw_rect(Rect2(major_position - Vector2(17.0, 17.0), Vector2(34.0, 34.0)), major_outline, false, 2.0)
 			if room["major_module_type"] != "" and float(room["major_health"]) > 0.0:
 				var major_color: Color = Color("f1c26b")
@@ -9079,11 +9175,11 @@ func draw_rooms() -> void:
 			var pending_minor: Dictionary = pending_minor_construction_for_slot(room_coord, slot_index)
 			var show_minor_slot: bool = should_show_room_slot_guides(room_coord) or should_highlight_minor_slot(room_coord, slot_index) or module_index >= 0 or not pending_minor.is_empty()
 			if show_minor_slot:
-				var slot_fill: Color = Color("152127")
-				var slot_outline: Color = Color("4f6c7b")
+				var slot_fill: Color = Color(0.08, 0.12, 0.15, 0.44)
+				var slot_outline: Color = Color(0.68, 0.84, 0.92, 0.82)
 				if should_show_room_slot_guides(room_coord) and not should_highlight_minor_slot(room_coord, slot_index):
-					slot_fill = Color(0.11, 0.15, 0.17, 0.28)
-					slot_outline = Color(0.74, 0.77, 0.72, 0.46)
+					slot_fill = Color(0.10, 0.14, 0.16, 0.24)
+					slot_outline = Color(0.82, 0.88, 0.92, 0.78)
 				if should_highlight_minor_slot(room_coord, slot_index):
 					slot_fill = Color("23323a")
 					slot_outline = Color("8df6ff")

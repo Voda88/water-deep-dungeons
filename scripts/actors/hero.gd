@@ -3,42 +3,45 @@ class_name Hero
 
 const INVALID_ROOM: Vector2i = Vector2i(-99, -99)
 const SPRITE_FRAME_SIZE: Vector2i = Vector2i(100, 100)
+const MELEE_IMPACT_FRAME: float = 2.0
+const MELEE_ATTACK_FPS: float = 13.0
+const MELEE_ATTACK_SPEED_SCALE: float = 0.72
 const HERO_SPRITE_PROFILES := {
 	"fighter": {
-		"idle_path": "res://assets/characters/heroes/fighter/Swordsman_Idle.png",
-		"walk_path": "res://assets/characters/heroes/fighter/Swordsman_Walk.png",
-		"hurt_path": "res://assets/characters/heroes/fighter/Swordsman_Hurt.png",
-		"attack_melee_path": "res://assets/characters/heroes/fighter/Swordsman_Attack01.png",
-		"attack_ranged_path": "res://assets/characters/heroes/fighter/Swordsman_Attack02.png",
-		"death_path": "res://assets/characters/heroes/fighter/Swordsman_Death.png",
-		"portrait_path": "res://assets/characters/heroes/fighter/Swordsman_Idle.png",
+		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Knight/Knight/Knight_Idle.png",
+		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Knight/Knight/Knight_Walk.png",
+		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Knight/Knight/Knight_Hurt.png",
+		"attack_melee_path": "res://assets/characters/packs/pack01/characters_split_100x100/Knight/Knight/Knight_Attack01.png",
+		"attack_ranged_path": "res://assets/characters/packs/pack01/characters_split_100x100/Knight/Knight/Knight_Attack02.png",
+		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Knight/Knight/Knight_Death.png",
+		"portrait_path": "res://assets/characters/packs/pack01/characters_split_100x100/Knight/Knight/Knight_Idle.png",
 	},
 	"cleric": {
-		"idle_path": "res://assets/characters/heroes/cleric/Priest_Idle.png",
-		"walk_path": "res://assets/characters/heroes/cleric/Priest_Walk.png",
-		"hurt_path": "res://assets/characters/heroes/cleric/Priest_Hurt.png",
-		"attack_melee_path": "res://assets/characters/heroes/cleric/Priest_Attack.png",
-		"attack_ranged_path": "res://assets/characters/heroes/cleric/Priest_Heal.png",
-		"death_path": "res://assets/characters/heroes/cleric/Priest_Death.png",
-		"portrait_path": "res://assets/characters/heroes/cleric/Priest_Idle.png",
+		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Priest/Priest/Priest_Idle.png",
+		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Priest/Priest/Priest_Walk.png",
+		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Priest/Priest/Priest_Hurt.png",
+		"attack_melee_path": "res://assets/characters/packs/pack01/characters_split_100x100/Priest/Priest/Priest_Attack.png",
+		"attack_ranged_path": "res://assets/characters/packs/pack01/characters_split_100x100/Priest/Priest/Priest_Heal.png",
+		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Priest/Priest/Priest_Death.png",
+		"portrait_path": "res://assets/characters/packs/pack01/characters_split_100x100/Priest/Priest/Priest_Idle.png",
 	},
 	"rogue": {
-		"idle_path": "res://assets/characters/heroes/rogue/Archer_Idle.png",
-		"walk_path": "res://assets/characters/heroes/rogue/Archer_Walk.png",
-		"hurt_path": "res://assets/characters/heroes/rogue/Archer_Hurt.png",
-		"attack_melee_path": "res://assets/characters/heroes/rogue/Archer_Attack01.png",
-		"attack_ranged_path": "res://assets/characters/heroes/rogue/Archer_Attack01.png",
-		"death_path": "res://assets/characters/heroes/rogue/Archer_Death.png",
-		"portrait_path": "res://assets/characters/heroes/rogue/Archer_Idle.png",
+		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Archer/Archer/Archer_Idle.png",
+		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Archer/Archer/Archer_Walk.png",
+		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Archer/Archer/Archer_Hurt.png",
+		"attack_melee_path": "res://assets/characters/packs/pack01/characters_split_100x100/Archer/Archer/Archer_Attack01.png",
+		"attack_ranged_path": "res://assets/characters/packs/pack01/characters_split_100x100/Archer/Archer/Archer_Attack01.png",
+		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Archer/Archer/Archer_Death.png",
+		"portrait_path": "res://assets/characters/packs/pack01/characters_split_100x100/Archer/Archer/Archer_Idle.png",
 	},
 	"wizard": {
-		"idle_path": "res://assets/characters/heroes/wizard/Wizard_Idle.png",
-		"walk_path": "res://assets/characters/heroes/wizard/Wizard_Walk.png",
-		"hurt_path": "res://assets/characters/heroes/wizard/Wizard_Hurt.png",
-		"attack_melee_path": "res://assets/characters/heroes/wizard/Wizard_Attack01.png",
-		"attack_ranged_path": "res://assets/characters/heroes/wizard/Wizard_Attack01(With magic effects).png",
-		"death_path": "res://assets/characters/heroes/wizard/Wizard_Death.png",
-		"portrait_path": "res://assets/characters/heroes/wizard/Wizard_Idle.png",
+		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Wizard/Wizard/Wizard_Idle.png",
+		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Wizard/Wizard/Wizard_Walk.png",
+		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Wizard/Wizard/Wizard_Hurt.png",
+		"attack_melee_path": "res://assets/characters/packs/pack01/characters_split_100x100/Wizard/Wizard/Wizard_Attack01.png",
+		"attack_ranged_path": "res://assets/characters/packs/pack01/characters_split_100x100/Wizard/Wizard/Wizard_Attack01(With magic effects).png",
+		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Wizard/Wizard/Wizard_Death.png",
+		"portrait_path": "res://assets/characters/packs/pack01/characters_split_100x100/Wizard/Wizard/Wizard_Idle.png",
 	},
 }
 
@@ -117,6 +120,12 @@ var hurt_effect_left: float = 0.0
 var visual_facing_left: bool = false
 var dead_started: bool = false
 var permanently_hidden_dead: bool = false
+var knockback_velocity: Vector2 = Vector2.ZERO
+var knockback_time_left: float = 0.0
+var knockback_duration: float = 0.0
+var knockback_bounds_enabled: bool = false
+var knockback_bounds: Rect2 = Rect2()
+var knockback_regions: Array = []
 
 func _ready() -> void:
 	base_move_speed = move_speed
@@ -263,7 +272,9 @@ func begin_death() -> void:
 		collision_shape.disabled = true
 	collision_layer = 0
 	collision_mask = 0
-	update_sprite_state(Vector2.ZERO)
+	if animated_sprite != null:
+		animated_sprite.speed_scale = 1.0
+		animated_sprite.play("death")
 	queue_redraw()
 
 func set_permanently_dead_hidden() -> void:
@@ -286,6 +297,71 @@ func set_destination(world_position: Vector2) -> void:
 	if dead_started:
 		return
 	destination = world_position
+
+func melee_impact_delay() -> float:
+	return MELEE_IMPACT_FRAME / maxf(MELEE_ATTACK_FPS * MELEE_ATTACK_SPEED_SCALE, 0.001)
+
+func knockback_recovery_factor() -> float:
+	if knockback_time_left <= 0.0 or knockback_duration <= 0.0:
+		return 1.0
+	return clampf(1.0 - (knockback_time_left / knockback_duration), 0.0, 1.0)
+
+func apply_knockback_impulse(next_velocity: Vector2, duration: float, bounds: Rect2 = Rect2(), walkable_regions: Array = []) -> void:
+	if next_velocity.length() <= 0.001 or duration <= 0.0:
+		return
+	if next_velocity.length() >= knockback_velocity.length():
+		knockback_velocity = next_velocity
+	else:
+		knockback_velocity += next_velocity * 0.35
+	knockback_duration = maxf(knockback_duration, duration)
+	knockback_time_left = maxf(knockback_time_left, duration)
+	if not walkable_regions.is_empty():
+		knockback_regions = walkable_regions.duplicate(true)
+		knockback_bounds_enabled = true
+		knockback_bounds = bounds
+	elif bounds.size.x > 0.0 and bounds.size.y > 0.0:
+		knockback_regions.clear()
+		knockback_bounds = bounds
+		knockback_bounds_enabled = true
+	queue_redraw()
+
+func advance_knockback(delta: float) -> Vector2:
+	var current_impulse: Vector2 = knockback_velocity
+	if knockback_time_left > 0.0:
+		knockback_time_left = maxf(knockback_time_left - delta, 0.0)
+	var damping: float = clampf(delta * 9.0, 0.0, 1.0)
+	knockback_velocity = knockback_velocity.lerp(Vector2.ZERO, damping)
+	if knockback_time_left <= 0.0 and knockback_velocity.length() <= 10.0:
+		knockback_velocity = Vector2.ZERO
+		knockback_duration = 0.0
+		knockback_bounds_enabled = false
+		knockback_regions.clear()
+	return current_impulse
+
+func clamp_to_knockback_bounds() -> void:
+	if not knockback_bounds_enabled:
+		return
+	if not knockback_regions.is_empty():
+		var nearest_point: Vector2 = global_position
+		var nearest_distance_squared: float = INF
+		for region_variant in knockback_regions:
+			var region: Rect2 = Rect2(region_variant)
+			if region.has_point(global_position):
+				return
+			var candidate_point: Vector2 = Vector2(
+				clampf(global_position.x, region.position.x, region.end.x),
+				clampf(global_position.y, region.position.y, region.end.y)
+			)
+			var distance_squared: float = candidate_point.distance_squared_to(global_position)
+			if distance_squared < nearest_distance_squared:
+				nearest_distance_squared = distance_squared
+				nearest_point = candidate_point
+		global_position = nearest_point
+		return
+	global_position = Vector2(
+		clampf(global_position.x, knockback_bounds.position.x, knockback_bounds.end.x),
+		clampf(global_position.y, knockback_bounds.position.y, knockback_bounds.end.y)
+	)
 
 func take_damage(amount: float) -> bool:
 	if dead_started:
@@ -449,8 +525,8 @@ func set_calm_movement_multiplier(multiplier: float) -> void:
 func movement_speed() -> float:
 	var speed: float = move_speed * (combat_move_speed_multiplier if combat_movement_mode else calm_move_speed_multiplier)
 	if carrying_crystal:
-		return speed * crystal_carry_speed_multiplier
-	return speed
+		speed *= crystal_carry_speed_multiplier
+	return speed * knockback_recovery_factor()
 
 func command_room() -> Vector2i:
 	if pending_room == INVALID_ROOM:
@@ -482,21 +558,29 @@ func _physics_process(delta: float) -> void:
 	if permanently_hidden_dead:
 		return
 	if dead_started:
-		velocity = Vector2.ZERO
-		update_sprite_state(Vector2.ZERO)
+		var corpse_impulse: Vector2 = advance_knockback(delta)
+		velocity = corpse_impulse
+		move_and_slide()
+		clamp_to_knockback_bounds()
+		if animated_sprite != null and animated_sprite.animation != "death":
+			animated_sprite.speed_scale = 1.0
+			animated_sprite.play("death")
 		queue_redraw()
 		return
 	attack_effect_left = maxf(attack_effect_left - delta, 0.0)
 	hurt_effect_left = maxf(hurt_effect_left - delta, 0.0)
 	var offset: Vector2 = destination - global_position
+	var desired_velocity: Vector2 = Vector2.ZERO
 	if offset.length() < 4.0:
-		velocity = Vector2.ZERO
 		global_position = destination
 	else:
 		var step: float = minf(movement_speed() * delta, offset.length())
-		velocity = offset.normalized() * step / maxf(delta, 0.001)
+		desired_velocity = offset.normalized() * step / maxf(delta, 0.001)
+	var knockback_impulse: Vector2 = advance_knockback(delta)
+	velocity = desired_velocity + knockback_impulse
 	move_and_slide()
-	update_sprite_state(offset)
+	clamp_to_knockback_bounds()
+	update_sprite_state(offset if offset.length() > 0.0 else knockback_impulse)
 	queue_redraw()
 
 func _draw() -> void:

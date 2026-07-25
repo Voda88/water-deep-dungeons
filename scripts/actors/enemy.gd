@@ -7,42 +7,53 @@ const TYPE_GOBLIN: String = "goblin"
 const TYPE_KOBOLD: String = "kobold"
 const TYPE_GOLEM: String = "golem"
 const TYPE_GOBLIN_SHAMAN: String = "goblin_shaman"
+const TYPE_SKELETON_ARCHER: String = "skeleton_archer"
 const SPRITE_FRAME_SIZE: Vector2i = Vector2i(100, 100)
+const MELEE_IMPACT_FRAME: float = 2.0
+const MELEE_ATTACK_FPS: float = 13.0
+const MELEE_ATTACK_SPEED_SCALE: float = 0.82
 const ENEMY_SPRITE_PROFILES := {
 	TYPE_GOBLIN: {
-		"idle_path": "res://assets/characters/enemies/goblin/Orc_Idle.png",
-		"walk_path": "res://assets/characters/enemies/goblin/Orc_Walk.png",
-		"hurt_path": "res://assets/characters/enemies/goblin/Orc_Hurt.png",
-		"attack_path": "res://assets/characters/enemies/goblin/Orc_Attack01.png",
-		"death_path": "res://assets/characters/enemies/goblin/Orc_Death.png",
+		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc/Orc/Orc_Idle.png",
+		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc/Orc/Orc_Walk.png",
+		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc/Orc/Orc_Hurt.png",
+		"attack_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc/Orc/Orc_Attack01.png",
+		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc/Orc/Orc_Death.png",
 	},
 	TYPE_GOBLIN_SHAMAN: {
-		"idle_path": "res://assets/characters/enemies/goblin_shaman/Warlock_Idle.png",
-		"walk_path": "res://assets/characters/enemies/goblin_shaman/Warlock_Walk.png",
-		"hurt_path": "res://assets/characters/enemies/goblin_shaman/Warlock_Hurt.png",
-		"attack_path": "res://assets/characters/enemies/goblin_shaman/Warlock_Attack02(With magic effects).png",
-		"death_path": "res://assets/characters/enemies/goblin_shaman/Warlock_Death.png",
+		"idle_path": "res://assets/characters/packs/pack02/characters_split_100x100/Warlock/Warlock/Warlock_Idle.png",
+		"walk_path": "res://assets/characters/packs/pack02/characters_split_100x100/Warlock/Warlock/Warlock_Walk.png",
+		"hurt_path": "res://assets/characters/packs/pack02/characters_split_100x100/Warlock/Warlock/Warlock_Hurt.png",
+		"attack_path": "res://assets/characters/packs/pack02/characters_split_100x100/Warlock/Warlock/Warlock_Attack02(With magic effects).png",
+		"death_path": "res://assets/characters/packs/pack02/characters_split_100x100/Warlock/Warlock/Warlock_Death.png",
 	},
 	TYPE_KOBOLD: {
-		"idle_path": "res://assets/characters/enemies/kobold/Hellhound_Idle.png",
-		"walk_path": "res://assets/characters/enemies/kobold/Hellhound_Walk.png",
-		"hurt_path": "res://assets/characters/enemies/kobold/Hellhound_Hurt.png",
-		"attack_path": "res://assets/characters/enemies/kobold/Hellhound_Attack01.png",
-		"death_path": "res://assets/characters/enemies/kobold/Hellhound_Death.png",
+		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Bat/Bat/Bat_Flying.png",
+		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Bat/Bat/Bat_Flying.png",
+		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Bat/Bat/Bat_Hurt.png",
+		"attack_path": "res://assets/characters/packs/pack01/characters_split_100x100/Bat/Bat/Bat_Attack01.png",
+		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Bat/Bat/Bat_Death.png",
 	},
 	TYPE_LIZARDMAN: {
-		"idle_path": "res://assets/characters/enemies/lizardman/Werewolf_Idle.png",
-		"walk_path": "res://assets/characters/enemies/lizardman/Werewolf_Walk.png",
-		"hurt_path": "res://assets/characters/enemies/lizardman/Werewolf_Hurt.png",
-		"attack_path": "res://assets/characters/enemies/lizardman/Werewolf_Attack01.png",
-		"death_path": "res://assets/characters/enemies/lizardman/Werewolf_Death.png",
+		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc rider/Orc rider/Orc rider_Idle.png",
+		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc rider/Orc rider/Orc rider_Walk.png",
+		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc rider/Orc rider/Orc rider_Hurt.png",
+		"attack_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc rider/Orc rider/Orc rider_Attack01.png",
+		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc rider/Orc rider/Orc rider_Death.png",
 	},
 	TYPE_GOLEM: {
-		"idle_path": "res://assets/characters/enemies/golem/Flame Golem_Idle.png",
-		"walk_path": "res://assets/characters/enemies/golem/Flame Golem_Walk.png",
-		"hurt_path": "res://assets/characters/enemies/golem/Flame Golem_Hurt.png",
-		"attack_path": "res://assets/characters/enemies/golem/Flame Golem_Attack01.png",
-		"death_path": "res://assets/characters/enemies/golem/Flame Golem_Death.png",
+		"idle_path": "res://assets/characters/packs/pack02/characters_split_100x100/Flame Golem/Flame Golem/Flame Golem_Idle.png",
+		"walk_path": "res://assets/characters/packs/pack02/characters_split_100x100/Flame Golem/Flame Golem/Flame Golem_Walk.png",
+		"hurt_path": "res://assets/characters/packs/pack02/characters_split_100x100/Flame Golem/Flame Golem/Flame Golem_Hurt.png",
+		"attack_path": "res://assets/characters/packs/pack02/characters_split_100x100/Flame Golem/Flame Golem/Flame Golem_Attack01.png",
+		"death_path": "res://assets/characters/packs/pack02/characters_split_100x100/Flame Golem/Flame Golem/Flame Golem_Death.png",
+	},
+	TYPE_SKELETON_ARCHER: {
+		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Skeleton Archer/Skeleton Archer/Skeleton Archer_Idle.png",
+		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Skeleton Archer/Skeleton Archer/Skeleton Archer_Walk.png",
+		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Skeleton Archer/Skeleton Archer/Skeleton Archer_Hurt.png",
+		"attack_path": "res://assets/characters/packs/pack01/characters_split_100x100/Skeleton Archer/Skeleton Archer/Skeleton Archer_Attack.png",
+		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Skeleton Archer/Skeleton Archer/Skeleton Archer_Death.png",
 	},
 }
 
@@ -75,6 +86,12 @@ var attack_effect_left: float = 0.0
 var hurt_effect_left: float = 0.0
 var visual_facing_left: bool = false
 var death_started: bool = false
+var knockback_velocity: Vector2 = Vector2.ZERO
+var knockback_time_left: float = 0.0
+var knockback_duration: float = 0.0
+var knockback_bounds_enabled: bool = false
+var knockback_bounds: Rect2 = Rect2()
+var knockback_regions: Array = []
 
 func _ready() -> void:
 	current_health = max_health
@@ -153,10 +170,12 @@ func role_scale() -> float:
 			return 2.45
 		TYPE_LIZARDMAN:
 			return 2.15
+		TYPE_KOBOLD:
+			return 1.54
+		TYPE_SKELETON_ARCHER:
+			return 1.88
 		TYPE_GOBLIN_SHAMAN:
 			return 2.05
-		TYPE_KOBOLD:
-			return 1.82
 		_:
 			return 1.92
 
@@ -207,6 +226,71 @@ func set_destination(world_position: Vector2) -> void:
 		return
 	destination = world_position
 
+func melee_impact_delay() -> float:
+	return MELEE_IMPACT_FRAME / maxf(MELEE_ATTACK_FPS * MELEE_ATTACK_SPEED_SCALE, 0.001)
+
+func knockback_recovery_factor() -> float:
+	if knockback_time_left <= 0.0 or knockback_duration <= 0.0:
+		return 1.0
+	return clampf(1.0 - (knockback_time_left / knockback_duration), 0.0, 1.0)
+
+func apply_knockback_impulse(next_velocity: Vector2, duration: float, bounds: Rect2 = Rect2(), walkable_regions: Array = []) -> void:
+	if next_velocity.length() <= 0.001 or duration <= 0.0:
+		return
+	if next_velocity.length() >= knockback_velocity.length():
+		knockback_velocity = next_velocity
+	else:
+		knockback_velocity += next_velocity * 0.35
+	knockback_duration = maxf(knockback_duration, duration)
+	knockback_time_left = maxf(knockback_time_left, duration)
+	if not walkable_regions.is_empty():
+		knockback_regions = walkable_regions.duplicate(true)
+		knockback_bounds_enabled = true
+		knockback_bounds = bounds
+	elif bounds.size.x > 0.0 and bounds.size.y > 0.0:
+		knockback_regions.clear()
+		knockback_bounds = bounds
+		knockback_bounds_enabled = true
+	queue_redraw()
+
+func advance_knockback(delta: float) -> Vector2:
+	var current_impulse: Vector2 = knockback_velocity
+	if knockback_time_left > 0.0:
+		knockback_time_left = maxf(knockback_time_left - delta, 0.0)
+	var damping: float = clampf(delta * 9.0, 0.0, 1.0)
+	knockback_velocity = knockback_velocity.lerp(Vector2.ZERO, damping)
+	if knockback_time_left <= 0.0 and knockback_velocity.length() <= 10.0:
+		knockback_velocity = Vector2.ZERO
+		knockback_duration = 0.0
+		knockback_bounds_enabled = false
+		knockback_regions.clear()
+	return current_impulse
+
+func clamp_to_knockback_bounds() -> void:
+	if not knockback_bounds_enabled:
+		return
+	if not knockback_regions.is_empty():
+		var nearest_point: Vector2 = global_position
+		var nearest_distance_squared: float = INF
+		for region_variant in knockback_regions:
+			var region: Rect2 = Rect2(region_variant)
+			if region.has_point(global_position):
+				return
+			var candidate_point: Vector2 = Vector2(
+				clampf(global_position.x, region.position.x, region.end.x),
+				clampf(global_position.y, region.position.y, region.end.y)
+			)
+			var distance_squared: float = candidate_point.distance_squared_to(global_position)
+			if distance_squared < nearest_distance_squared:
+				nearest_distance_squared = distance_squared
+				nearest_point = candidate_point
+		global_position = nearest_point
+		return
+	global_position = Vector2(
+		clampf(global_position.x, knockback_bounds.position.x, knockback_bounds.end.x),
+		clampf(global_position.y, knockback_bounds.position.y, knockback_bounds.end.y)
+	)
+
 func trigger_attack(target_position: Vector2) -> void:
 	if death_started:
 		return
@@ -234,7 +318,9 @@ func begin_death() -> void:
 		collision_shape.disabled = true
 	collision_layer = 0
 	collision_mask = 0
-	update_sprite_state(Vector2.ZERO)
+	if animated_sprite != null:
+		animated_sprite.speed_scale = 1.0
+		animated_sprite.play("death")
 	queue_redraw()
 
 func _on_animated_sprite_animation_finished() -> void:
@@ -245,43 +331,51 @@ func set_role(role_name: String) -> void:
 	enemy_role = role_name
 	match enemy_role:
 		TYPE_LIZARDMAN:
-			move_speed = 88.0
-			max_health = 84.0
-			attack_damage = 15.0
-			attack_cooldown = 0.8
-			weight = 2.55
+			move_speed = 84.0
+			max_health = 154.0
+			attack_damage = 31.0
+			attack_cooldown = 1.0
+			weight = 3.15
 			melee_reach = 62.0
-			body_color = Color("8ebd63")
+			body_color = Color("8d9e67")
 		TYPE_KOBOLD:
-			move_speed = 54.0
-			max_health = 22.0
-			attack_damage = 5.0
-			attack_cooldown = 0.95
-			weight = 0.92
-			melee_reach = 48.0
-			body_color = Color("d88f57")
+			move_speed = 70.0
+			max_health = 14.0
+			attack_damage = 6.0
+			attack_cooldown = 1.0
+			weight = 0.55
+			melee_reach = 54.0
+			body_color = Color("d0c6c0")
 		TYPE_GOLEM:
 			move_speed = 33.0
-			max_health = 126.0
-			attack_damage = 18.0
-			attack_cooldown = 1.28
+			max_health = 148.0
+			attack_damage = 24.0
+			attack_cooldown = 1.15
 			weight = 5.4
 			melee_reach = 68.0
 			body_color = Color("8a887d")
 		TYPE_GOBLIN_SHAMAN:
 			move_speed = 38.0
-			max_health = 34.0
-			attack_damage = 9.0
-			attack_cooldown = 1.35
+			max_health = 36.0
+			attack_damage = 11.0
+			attack_cooldown = 1.1
 			weight = 1.08
 			melee_reach = 52.0
 			body_color = Color("a16fd5")
+		TYPE_SKELETON_ARCHER:
+			move_speed = 50.0
+			max_health = 26.0
+			attack_damage = 13.0
+			attack_cooldown = 1.0
+			weight = 0.95
+			melee_reach = 52.0
+			body_color = Color("d7decf")
 		_:
 			move_speed = 42.0
-			max_health = 26.0
-			attack_damage = 6.0
-			attack_cooldown = 1.08
-			weight = 1.2
+			max_health = 32.0
+			attack_damage = 10.0
+			attack_cooldown = 1.0
+			weight = 1.28
 			melee_reach = 52.0
 			body_color = Color("7fad5b")
 	current_health = max_health
@@ -306,21 +400,29 @@ func take_damage(amount: float) -> bool:
 
 func _physics_process(delta: float) -> void:
 	if death_started:
-		velocity = Vector2.ZERO
-		update_sprite_state(Vector2.ZERO)
+		var corpse_impulse: Vector2 = advance_knockback(delta)
+		velocity = corpse_impulse
+		move_and_slide()
+		clamp_to_knockback_bounds()
+		if animated_sprite != null and animated_sprite.animation != "death":
+			animated_sprite.speed_scale = 1.0
+			animated_sprite.play("death")
 		queue_redraw()
 		return
 	attack_effect_left = maxf(attack_effect_left - delta, 0.0)
 	hurt_effect_left = maxf(hurt_effect_left - delta, 0.0)
 	var offset: Vector2 = destination - global_position
+	var desired_velocity: Vector2 = Vector2.ZERO
 	if offset.length() < 4.0:
-		velocity = Vector2.ZERO
 		global_position = destination
 	else:
-		var step: float = minf(move_speed * delta, offset.length())
-		velocity = offset.normalized() * step / maxf(delta, 0.001)
+		var step: float = minf(move_speed * knockback_recovery_factor() * delta, offset.length())
+		desired_velocity = offset.normalized() * step / maxf(delta, 0.001)
+	var knockback_impulse: Vector2 = advance_knockback(delta)
+	velocity = desired_velocity + knockback_impulse
 	move_and_slide()
-	update_sprite_state(offset)
+	clamp_to_knockback_bounds()
+	update_sprite_state(offset if offset.length() > 0.0 else knockback_impulse)
 	queue_redraw()
 
 func _draw() -> void:
