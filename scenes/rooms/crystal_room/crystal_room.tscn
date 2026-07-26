@@ -10,8 +10,6 @@ template_id = "crystal_room"
 template_name = "Crystal Grotto"
 room_size = Vector2(540, 350)
 default_minor_slots = 0
-show_backdrop_helpers_in_runtime = false
-show_layout_helpers_in_runtime = false
 preview_crystal = true
 
 [node name="Art" type="Node2D" parent="." unique_id=1628348877]

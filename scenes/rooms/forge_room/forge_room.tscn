@@ -12,8 +12,6 @@ template_name = "Forge"
 room_size = Vector2(540, 350)
 default_minor_slots = 7
 default_major_slots = 1
-show_backdrop_helpers_in_runtime = false
-show_layout_helpers_in_runtime = false
 dark_room_modulate = null
 
 [node name="Art" type="Node2D" parent="." unique_id=464083678]

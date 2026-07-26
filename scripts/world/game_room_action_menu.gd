@@ -1,0 +1,405 @@
+extends RefCounted
+
+static func clear_room_action_hold(game: Node) -> void:
+	game.room_action_hold.clear()
+
+static func clear_room_action_menu_pointer(game: Node) -> void:
+	game.room_action_menu_hold_selection_active = false
+	if game.room_action_menu.is_empty():
+		return
+	game.room_action_menu.erase("pointer_kind")
+	game.room_action_menu.erase("pointer_id")
+	game.room_action_menu.erase("pointer_origin_screen")
+	game.room_action_menu.erase("pointer_screen")
+	game.room_action_menu.erase("pointer_active")
+
+static func room_action_overlay_scale(game: Node) -> float:
+	var viewport_size: Vector2 = game.get_viewport_rect().size
+	return clampf(minf(viewport_size.x, viewport_size.y) / 900.0, 0.84, 1.28)
+
+static func room_action_menu_screen_center(game: Node) -> Vector2:
+	var viewport_size: Vector2 = game.get_viewport_rect().size
+	return viewport_size * 0.5
+
+static func room_action_menu_virtual_pointer_screen_position(game: Node) -> Vector2:
+	var menu_center: Vector2 = room_action_menu_screen_center(game)
+	if game.room_action_menu.is_empty() or not bool(game.room_action_menu.get("pointer_active", false)):
+		return menu_center
+	var origin_screen: Vector2 = Vector2(game.room_action_menu.get("pointer_origin_screen", menu_center))
+	var pointer_screen: Vector2 = Vector2(game.room_action_menu.get("pointer_screen", origin_screen))
+	return menu_center + (pointer_screen - origin_screen)
+
+static func begin_room_action_menu_pointer(game: Node, pointer_kind: String, pointer_id: int, screen_position: Vector2) -> bool:
+	if game.room_action_menu.is_empty():
+		return false
+	game.room_action_menu_hold_selection_active = true
+	game.room_action_menu["pointer_kind"] = pointer_kind
+	game.room_action_menu["pointer_id"] = pointer_id
+	game.room_action_menu["pointer_origin_screen"] = screen_position
+	game.room_action_menu["pointer_screen"] = screen_position
+	game.room_action_menu["pointer_active"] = true
+	game.queue_redraw()
+	return true
+
+static func update_room_action_menu_pointer(game: Node, pointer_kind: String, pointer_id: int, screen_position: Vector2) -> bool:
+	if game.room_action_menu.is_empty() or not bool(game.room_action_menu.get("pointer_active", false)):
+		return false
+	if String(game.room_action_menu.get("pointer_kind", "")) != pointer_kind or int(game.room_action_menu.get("pointer_id", -1)) != pointer_id:
+		return false
+	game.room_action_menu["pointer_screen"] = screen_position
+	game.queue_redraw()
+	return true
+
+static func release_room_action_menu_pointer(game: Node, pointer_kind: String, pointer_id: int, screen_position: Vector2) -> bool:
+	if not update_room_action_menu_pointer(game, pointer_kind, pointer_id, screen_position):
+		return false
+	var pointer_position: Vector2 = room_action_menu_virtual_pointer_screen_position(game)
+	var action_id: String = room_action_button_at_screen_position(game, pointer_position)
+	clear_room_action_menu_pointer(game)
+	if action_id == "":
+		close_room_action_menu(game)
+		game.queue_redraw()
+		return true
+	perform_room_action(game, game.room_action_menu.get("room", game.INVALID_ROOM), action_id)
+	return true
+
+static func focus_room_action_menu(game: Node, room_coord: Vector2i, _center_on_screen: bool) -> void:
+	game.room_action_camera_target = game.room_center(room_coord)
+	game.room_action_camera_target_active = true
+	game.reset_camera_pan_state()
+	game.mark_camera_interaction()
+	game.queue_redraw()
+
+static func close_room_action_menu(game: Node) -> void:
+	game.room_action_menu.clear()
+	clear_room_action_menu_pointer(game)
+	game.cancel_room_action_camera_focus()
+
+static func room_action_target_for_selected_hero(game: Node) -> Vector2i:
+	var hero: Variant = game.selected_hero()
+	if hero == null or not is_instance_valid(hero):
+		return game.INVALID_ROOM
+	if game.opening_hero == hero and game.opening_origin_room != game.INVALID_ROOM and game.rooms.has(game.opening_origin_room) and game.rooms[game.opening_origin_room]["opened"]:
+		return game.opening_origin_room
+	if hero.pending_open_origin_room != game.HERO_INVALID_ROOM and game.rooms.has(hero.pending_open_origin_room) and game.rooms[hero.pending_open_origin_room]["opened"]:
+		return hero.pending_open_origin_room
+	if not hero.move_steps.is_empty():
+		for step_index in range(hero.move_steps.size() - 1, -1, -1):
+			var step: Dictionary = hero.move_steps[step_index]
+			var step_room: Vector2i = step.get("room", game.INVALID_ROOM)
+			if step_room != game.INVALID_ROOM and game.rooms.has(step_room) and game.rooms[step_room]["opened"]:
+				return step_room
+	if hero.pending_room != game.HERO_INVALID_ROOM and game.rooms.has(hero.pending_room) and game.rooms[hero.pending_room]["opened"]:
+		return hero.pending_room
+	if game.rooms.has(hero.current_room) and game.rooms[hero.current_room]["opened"]:
+		return hero.current_room
+	return game.INVALID_ROOM
+
+static func begin_room_action_hold(game: Node, pointer_kind: String, pointer_id: int, screen_position: Vector2) -> void:
+	if not game.room_actions_allowed_for_local_peer():
+		return
+	var room_coord: Vector2i = room_action_target_for_selected_hero(game)
+	if room_coord == game.INVALID_ROOM:
+		clear_room_action_hold(game)
+		return
+	game.room_action_hold = {
+		"pointer_kind": pointer_kind,
+		"pointer_id": pointer_id,
+		"start_screen": screen_position,
+		"current_screen": screen_position,
+		"elapsed": 0.0,
+		"room": room_coord,
+	}
+
+static func advance_room_action_hold(game: Node, delta: float) -> void:
+	if game.room_action_hold.is_empty() or game.inventory_overlay != null and game.inventory_overlay.visible or not game.room_action_menu.is_empty():
+		return
+	game.room_action_hold["elapsed"] = float(game.room_action_hold["elapsed"]) + delta
+	if float(game.room_action_hold["elapsed"]) < game.ROOM_ACTION_HOLD_START_DELAY + game.ROOM_ACTION_HOLD_LOADER_DURATION:
+		return
+	open_room_action_menu(
+		game,
+		game.room_action_hold["room"],
+		game.room_action_hold["current_screen"],
+		true,
+		String(game.room_action_hold.get("pointer_kind", "")),
+		int(game.room_action_hold.get("pointer_id", -1))
+	)
+	clear_room_action_hold(game)
+	game.update_hud()
+
+static func open_room_action_menu(game: Node, room_coord: Vector2i, screen_position: Vector2, hold_selection_active: bool = false, pointer_kind: String = "", pointer_id: int = -1) -> void:
+	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord) or not game.rooms[room_coord]["opened"]:
+		return
+	game.selected_room = room_coord
+	game.build_menu_open = false
+	game.clear_build_mode()
+	game.room_action_menu_hold_selection_active = hold_selection_active
+	game.room_action_menu = {
+		"room": room_coord,
+		"mode": "root",
+		"pointer_kind": pointer_kind,
+		"pointer_id": pointer_id,
+		"pointer_origin_screen": screen_position,
+		"pointer_screen": screen_position,
+		"pointer_active": hold_selection_active,
+	}
+	focus_room_action_menu(game, room_coord, not hold_selection_active)
+	game.status_message = "Room actions for %s." % game.room_title(room_coord)
+	game.queue_redraw()
+
+static func room_action_button_layout(game: Node) -> Array:
+	var mode: String = String(game.room_action_menu.get("mode", "root"))
+	match mode:
+		"build_kind":
+			return [
+				{"id": "build_minor_menu", "label": "Minor", "angle": -3.08, "fill": Color("9bd8ff")},
+				{"id": "build_major_menu", "label": "Major", "angle": -2.42, "fill": Color("f6c983")},
+				{"id": "submenu_back", "label": "Back", "angle": -1.76, "fill": Color("d7dfeb")},
+			]
+		"build_minor":
+			var minor_buttons: Array = []
+			var action_specs: Array = game.available_minor_module_action_specs()
+			var action_angles: Array[float] = [-3.10, -2.72, -2.34, -1.96]
+			for index in range(mini(action_specs.size(), action_angles.size())):
+				var action_spec: Dictionary = action_specs[index]
+				minor_buttons.append({
+					"id": String(action_spec.get("id", "")),
+					"label": String(action_spec.get("label", "")),
+					"angle": action_angles[index],
+					"fill": Color(action_spec.get("fill", Color("89f2ff"))),
+				})
+			minor_buttons.append({"id": "submenu_back_build", "label": "Back", "angle": -1.56, "fill": Color("d7dfeb")})
+			return minor_buttons
+		"build_major":
+			return [
+				{"id": "build_major_food", "label": "Food", "angle": -3.10, "fill": Color("8ee28a")},
+				{"id": "build_major_science", "label": "Arcana", "angle": -2.58, "fill": Color("8bc1ff")},
+				{"id": "build_major_industry", "label": "Materials", "angle": -2.06, "fill": Color("f1c26b")},
+				{"id": "submenu_back_build", "label": "Back", "angle": -1.54, "fill": Color("d7dfeb")},
+			]
+		_:
+			var root_buttons: Array = [
+				{"id": "loot", "label": "Loot", "angle": -3.08, "fill": Color("a6efba")},
+				{"id": "build_menu", "label": "Build", "angle": -2.58, "fill": Color("91d1ff")},
+			]
+			if game.can_start_research_in_room(Vector2i(game.room_action_menu.get("room", game.INVALID_ROOM))):
+				root_buttons.append({"id": "research", "label": "Research", "angle": -2.08, "fill": Color("8bc1ff")})
+				root_buttons.append({"id": "light", "label": "Light", "angle": -1.58, "fill": Color("f3d88f")})
+			else:
+				root_buttons.append({"id": "light", "label": "Light", "angle": -1.92, "fill": Color("f3d88f")})
+			return root_buttons
+
+static func room_action_sector_layout(game: Node) -> Array:
+	var buttons: Array = room_action_button_layout(game)
+	var sectors: Array = []
+	if buttons.is_empty():
+		return sectors
+	for index in range(buttons.size()):
+		var button_data: Dictionary = buttons[index]
+		var center_angle: float = float(button_data.get("angle", 0.0))
+		var start_angle: float = center_angle
+		var end_angle: float = center_angle
+		if buttons.size() == 1:
+			start_angle -= 0.5
+			end_angle += 0.5
+		else:
+			if index == 0:
+				var next_angle: float = float((buttons[index + 1] as Dictionary).get("angle", center_angle))
+				start_angle = center_angle - (next_angle - center_angle) * 0.5
+			else:
+				var prev_angle: float = float((buttons[index - 1] as Dictionary).get("angle", center_angle))
+				start_angle = (prev_angle + center_angle) * 0.5
+			if index == buttons.size() - 1:
+				var prev_angle_last: float = float((buttons[index - 1] as Dictionary).get("angle", center_angle))
+				end_angle = center_angle + (center_angle - prev_angle_last) * 0.5
+			else:
+				var next_angle_mid: float = float((buttons[index + 1] as Dictionary).get("angle", center_angle))
+				end_angle = (center_angle + next_angle_mid) * 0.5
+		var sector_data: Dictionary = button_data.duplicate(true)
+		sector_data["start_angle"] = start_angle
+		sector_data["end_angle"] = end_angle
+		sectors.append(sector_data)
+	return sectors
+
+static func room_action_angle_near_reference(_game: Node, angle: float, reference: float) -> float:
+	return reference + wrapf(angle - reference, -PI, PI)
+
+static func room_action_button_screen_center(game: Node, button_data: Dictionary) -> Vector2:
+	var menu_center: Vector2 = room_action_menu_screen_center(game)
+	var angle: float = float(button_data.get("angle", 0.0))
+	return menu_center + Vector2(cos(angle), sin(angle)) * game.ROOM_ACTION_LABEL_RADIUS * room_action_overlay_scale(game)
+
+static func room_action_button_at_screen_position(game: Node, screen_position: Vector2) -> String:
+	if game.room_action_menu.is_empty():
+		return ""
+	var menu_center: Vector2 = room_action_menu_screen_center(game)
+	var offset: Vector2 = screen_position - menu_center
+	if offset.length() < game.ROOM_ACTION_DEADZONE_RADIUS * room_action_overlay_scale(game):
+		return ""
+	var pointer_angle: float = offset.angle()
+	for sector_data_variant in room_action_sector_layout(game):
+		var sector_data: Dictionary = sector_data_variant
+		var center_angle: float = float(sector_data.get("angle", 0.0))
+		var local_angle: float = room_action_angle_near_reference(game, pointer_angle, center_angle)
+		if local_angle >= float(sector_data.get("start_angle", center_angle)) and local_angle <= float(sector_data.get("end_angle", center_angle)):
+			return String(sector_data.get("id", ""))
+	return ""
+
+static func room_action_sector_points(_game: Node, center: Vector2, inner_radius: float, outer_radius: float, start_angle: float, end_angle: float, segments: int = 18) -> PackedVector2Array:
+	var points: PackedVector2Array = PackedVector2Array()
+	var safe_segments: int = max(segments, 4)
+	for step in range(safe_segments + 1):
+		var t: float = float(step) / float(safe_segments)
+		var angle: float = lerpf(start_angle, end_angle, t)
+		points.append(center + Vector2(cos(angle), sin(angle)) * outer_radius)
+	for step in range(safe_segments, -1, -1):
+		var t: float = float(step) / float(safe_segments)
+		var angle: float = lerpf(start_angle, end_angle, t)
+		points.append(center + Vector2(cos(angle), sin(angle)) * inner_radius)
+	return points
+
+static func handle_room_action_menu_tap(game: Node, screen_position: Vector2) -> void:
+	var action_id: String = room_action_button_at_screen_position(game, screen_position)
+	if action_id == "":
+		close_room_action_menu(game)
+		game.queue_redraw()
+		return
+	perform_room_action(game, game.room_action_menu.get("room", game.INVALID_ROOM), action_id)
+
+static func perform_room_action(game: Node, room_coord: Vector2i, action_id: String) -> void:
+	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
+		return
+	var minor_module_type: String = game.minor_module_type_for_action(action_id)
+	var is_build_action: bool = action_id == "build_menu" or action_id == "build_minor_menu" or action_id == "build_major_menu" or action_id == "build_major_food" or action_id == "build_major_science" or action_id == "build_major_industry" or action_id == "submenu_back_build" or minor_module_type != ""
+	if not is_build_action and not game.room_action_enabled(room_coord, action_id):
+		close_room_action_menu(game)
+		game.status_message = "That action is unavailable for %s." % game.room_title(room_coord)
+		game.update_hud()
+		game.queue_redraw()
+		return
+	game.selected_room = room_coord
+	clear_room_action_menu_pointer(game)
+	match action_id:
+		"build_menu":
+			game.room_action_menu["mode"] = "build_kind"
+			focus_room_action_menu(game, room_coord, true)
+			game.status_message = "Choose a build category for %s." % game.room_title(room_coord)
+			game.update_hud()
+			game.queue_redraw()
+		"build_minor_menu":
+			game.room_action_menu["mode"] = "build_minor"
+			focus_room_action_menu(game, room_coord, true)
+			game.status_message = "Choose a minor module for %s." % game.room_title(room_coord)
+			game.update_hud()
+			game.queue_redraw()
+		"build_major_menu":
+			game.room_action_menu["mode"] = "build_major"
+			focus_room_action_menu(game, room_coord, true)
+			game.status_message = "Choose a major module for %s." % game.room_title(room_coord)
+			game.update_hud()
+			game.queue_redraw()
+		"submenu_back":
+			game.room_action_menu["mode"] = "root"
+			focus_room_action_menu(game, room_coord, true)
+			game.status_message = "Room actions for %s." % game.room_title(room_coord)
+			game.update_hud()
+			game.queue_redraw()
+		"submenu_back_build":
+			game.room_action_menu["mode"] = "build_kind"
+			focus_room_action_menu(game, room_coord, true)
+			game.status_message = "Choose a build category for %s." % game.room_title(room_coord)
+			game.update_hud()
+			game.queue_redraw()
+		"light":
+			close_room_action_menu(game)
+			game.request_room_light(room_coord)
+		"research":
+			close_room_action_menu(game)
+			game.request_room_research(room_coord)
+		"loot":
+			close_room_action_menu(game)
+			game.request_room_loot(room_coord)
+		"build_major_food":
+			close_room_action_menu(game)
+			game.request_room_construction(room_coord, game.MAJOR_MODULE_FOOD)
+		"build_major_science":
+			close_room_action_menu(game)
+			game.request_room_construction(room_coord, game.MAJOR_MODULE_SCIENCE)
+		"build_major_industry":
+			close_room_action_menu(game)
+			game.request_room_construction(room_coord, game.MAJOR_MODULE_INDUSTRY)
+		_:
+			if minor_module_type != "":
+				if game.request_room_construction(room_coord, minor_module_type):
+					var hero_minor: Variant = game.selected_hero()
+					if game.hero_ready_for_room_action(hero_minor, room_coord):
+						game.room_action_menu["mode"] = "build_minor"
+						focus_room_action_menu(game, room_coord, true)
+						game.queue_redraw()
+					else:
+						close_room_action_menu(game)
+				else:
+					close_room_action_menu(game)
+
+static func draw_room_action_hold(game: Node) -> void:
+	if game.room_action_hold.is_empty():
+		return
+	var hold_room: Vector2i = game.room_action_hold.get("room", game.INVALID_ROOM)
+	if hold_room == game.INVALID_ROOM or not game.rooms.has(hold_room):
+		return
+	var hold_elapsed: float = float(game.room_action_hold.get("elapsed", 0.0))
+	if hold_elapsed < game.ROOM_ACTION_HOLD_START_DELAY:
+		return
+	var hold_ratio: float = clampf((hold_elapsed - game.ROOM_ACTION_HOLD_START_DELAY) / maxf(game.ROOM_ACTION_HOLD_LOADER_DURATION, 0.001), 0.0, 1.0)
+	var center: Vector2 = game.room_center(hold_room)
+	var radius: float = (44.0 + 20.0 * hold_ratio) * game.camera.zoom.x
+	game.draw_arc(center, radius, -PI * 0.5, -PI * 0.5 + TAU * hold_ratio, 34, Color("ffe39b"), 6.2 * game.camera.zoom.x, true)
+	game.draw_circle(center, 14.0 * game.camera.zoom.x, Color(1.0, 0.93, 0.68, 0.12 + 0.16 * hold_ratio))
+
+static func draw_room_action_menu(game: Node) -> void:
+	if game.room_action_menu.is_empty():
+		return
+	var menu_center_screen: Vector2 = room_action_menu_screen_center(game)
+	var menu_center_world: Vector2 = game.screen_to_world(menu_center_screen)
+	var pointer_screen: Vector2 = room_action_menu_virtual_pointer_screen_position(game)
+	var pointer_world: Vector2 = game.screen_to_world(pointer_screen)
+	var hovered_action_id: String = room_action_button_at_screen_position(game, pointer_screen) if game.room_action_menu_hold_selection_active else ""
+	var overlay_scale: float = room_action_overlay_scale(game)
+	var menu_radius_world: float = game.ROOM_ACTION_MENU_RADIUS * overlay_scale * game.camera.zoom.x
+	var center_radius_world: float = game.ROOM_ACTION_DEADZONE_RADIUS * overlay_scale * game.camera.zoom.x
+	var sector_inner_radius_world: float = maxf(center_radius_world + 12.0 * overlay_scale * game.camera.zoom.x, 28.0 * overlay_scale * game.camera.zoom.x)
+	var sector_outer_radius_world: float = game.ROOM_ACTION_SECTOR_OUTER_RADIUS * overlay_scale * game.camera.zoom.x
+	game.draw_circle(menu_center_world, center_radius_world, Color("132129"))
+	game.draw_circle(menu_center_world, center_radius_world * 1.9, Color(0.07, 0.14, 0.17, 0.12))
+	game.draw_arc(menu_center_world, menu_radius_world * 0.68, 0.0, TAU, 58, Color("476775"), 2.8 * game.camera.zoom.x, true)
+	if game.room_action_menu_hold_selection_active:
+		game.draw_line(menu_center_world, pointer_world, Color("8fe7ff"), 3.6 * game.camera.zoom.x, true)
+		game.draw_circle(pointer_world, 12.0 * overlay_scale * game.camera.zoom.x, Color("eefbff"))
+		game.draw_circle(pointer_world, 20.0 * overlay_scale * game.camera.zoom.x, Color(0.72, 0.94, 1.0, 0.12))
+	for sector_data_variant in room_action_sector_layout(game):
+		var sector_data: Dictionary = sector_data_variant
+		var button_center_screen: Vector2 = room_action_button_screen_center(game, sector_data)
+		var button_center_world: Vector2 = game.screen_to_world(button_center_screen)
+		var action_id: String = String(sector_data.get("id", ""))
+		var enabled: bool = game.room_action_enabled(game.room_action_menu.get("room", game.INVALID_ROOM), action_id)
+		var fill: Color = sector_data.get("fill", Color("9ed4ff"))
+		if not enabled:
+			fill = fill.darkened(0.5)
+		var highlighted: bool = hovered_action_id == action_id and enabled
+		var outline_color: Color = fill.lightened(0.18) if highlighted else fill
+		var outline_width: float = (4.8 if highlighted else 3.2) * game.camera.zoom.x
+		if not enabled:
+			outline_color = Color("5e6d75")
+		var start_angle: float = float(sector_data.get("start_angle", 0.0))
+		var end_angle: float = float(sector_data.get("end_angle", 0.0))
+		var sector_points: PackedVector2Array = room_action_sector_points(game, menu_center_world, sector_inner_radius_world, sector_outer_radius_world, start_angle, end_angle)
+		game.draw_colored_polygon(sector_points, Color(fill, 0.24 if enabled else 0.12))
+		if highlighted:
+			var highlighted_points: PackedVector2Array = room_action_sector_points(game, menu_center_world, sector_inner_radius_world + 10.0 * overlay_scale * game.camera.zoom.x, sector_outer_radius_world - 10.0 * overlay_scale * game.camera.zoom.x, start_angle, end_angle)
+			game.draw_colored_polygon(highlighted_points, Color(fill.lightened(0.18), 0.28))
+		game.draw_arc(menu_center_world, sector_outer_radius_world, start_angle, end_angle, 18, outline_color, outline_width, true)
+		game.draw_arc(menu_center_world, sector_inner_radius_world, start_angle, end_angle, 18, outline_color, outline_width * 0.85, true)
+		game.draw_line(menu_center_world + Vector2(cos(start_angle), sin(start_angle)) * sector_inner_radius_world, menu_center_world + Vector2(cos(start_angle), sin(start_angle)) * sector_outer_radius_world, outline_color, outline_width * 0.8, true)
+		game.draw_line(menu_center_world + Vector2(cos(end_angle), sin(end_angle)) * sector_inner_radius_world, menu_center_world + Vector2(cos(end_angle), sin(end_angle)) * sector_outer_radius_world, outline_color, outline_width * 0.8, true)
+		game.draw_string(ThemeDB.fallback_font, button_center_world + Vector2(0.0, 8.0) * overlay_scale * game.camera.zoom.x, String(sector_data.get("label", "")), HORIZONTAL_ALIGNMENT_CENTER, 104.0 * overlay_scale * game.camera.zoom.x, int(round(26.0 * overlay_scale * game.camera.zoom.x)), Color("eef8ff"))

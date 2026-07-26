@@ -1,0 +1,1170 @@
+extends RefCounted
+
+static func is_in_bounds(game: Node, room_coord: Vector2i) -> bool:
+	return room_coord.x >= 0 and room_coord.y >= 0 and room_coord.x < game.GRID_SIZE.x and room_coord.y < game.GRID_SIZE.y
+
+static func random_room_offset(game: Node, radius: float) -> Vector2:
+	return Vector2(
+		game.rng.randf_range(-radius, radius),
+		game.rng.randf_range(-radius * 0.55, radius * 0.55)
+	)
+
+static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
+	if reset_resources:
+		game.hero_profiles.clear()
+	else:
+		game.save_hero_profiles_from_nodes()
+	game.clear_inventory_session(false)
+	game.clear_floor_actors()
+	game.rooms.clear()
+	game.room_nav_cache.clear()
+	game.projectiles.clear()
+	game.floating_resource_texts.clear()
+	game.pending_enemy_spawns.clear()
+	game.pending_room_constructions.clear()
+	game.next_enemy_uid = 1
+	game.next_card_uid = 1
+	game.global_item_card_states.clear()
+	game.global_item_passive_timers.clear()
+	game.active_hand_drag.clear()
+	game.hand_card_return_animations.clear()
+	game.pending_melee_attacks.clear()
+	game.active_research.clear()
+	game.build_menu_open = false
+	game.pending_build_type = ""
+	game.opened_rooms = 1
+	game.doors_opened = 0
+	game.wave_index = 0
+	game.exit_room = game.INVALID_ROOM
+	game.crystal_holder = null
+	game.crystal_ground_room = game.crystal_room
+	game.crystal_prompt_visible = false
+	game.crystal_pressure_timer_left = 0.0
+	game.door_wave_auto_heal_pending = false
+	game.door_wave_healing_active = false
+	game.opening_room = game.INVALID_ROOM
+	game.opening_origin_room = game.INVALID_ROOM
+	game.opening_hero = null
+	game.opening_timer_left = 0.0
+	game.opening_heroes.clear()
+	game.room_action_hold.clear()
+	game.room_action_menu.clear()
+	if reset_resources:
+		game.floor_index = 1
+		game.dust = 4
+		game.food = 10
+		game.industry = 14
+		game.science = 0
+		game.crystal_health = 100.0
+		game.minor_module_levels = game.normalized_minor_module_levels(game.initialized_minor_module_levels())
+		game.major_module_levels = game.normalized_major_module_levels(game.initialized_major_module_levels())
+	elif game.minor_module_levels.is_empty():
+		game.minor_module_levels = game.normalized_minor_module_levels(game.initialized_minor_module_levels())
+	elif game.major_module_levels.is_empty():
+		game.major_module_levels = game.normalized_major_module_levels(game.initialized_major_module_levels())
+	game.minor_module_levels = game.normalized_minor_module_levels(game.minor_module_levels)
+	game.major_module_levels = game.normalized_major_module_levels(game.major_module_levels)
+	var minimum_room_count: int = 7
+	var target_room_count: int = 12
+	var layout_generation_attempts: int = 0
+	while layout_generation_attempts < 12:
+		layout_generation_attempts += 1
+		game.rooms.clear()
+		game.room_nav_cache.clear()
+		var crystal_door_dirs: Array = game.crystal_room_door_dirs_for_floor()
+		game.create_room(game.crystal_room, game.ROOM_TEMPLATE_FORGE, crystal_door_dirs, Vector2.ZERO)
+		var crystal: Dictionary = game.rooms[game.crystal_room]
+		crystal["opened"] = true
+		crystal["lit"] = true
+		crystal["permanent_light"] = true
+		crystal["temporary_light_turns"] = 0
+		crystal["wave_torch_until_wave"] = -1
+		crystal["crystal"] = true
+		crystal["minor_slots"] = 0
+		crystal["major_slots"] = 0
+		crystal["major_under_construction"] = false
+		var layout_attempts: int = 0
+		while game.rooms.size() < target_room_count and layout_attempts < 800:
+			layout_attempts += 1
+			var frontier_sockets: Array = game.collect_frontier_sockets()
+			if frontier_sockets.is_empty():
+				break
+			var socket: Dictionary = frontier_sockets[game.rng.randi_range(0, frontier_sockets.size() - 1)]
+			var origin: Vector2i = socket["room"]
+			var direction: Vector2i = socket["direction"]
+			var room_coord: Vector2i = origin + direction
+			var generating_second_room: bool = game.rooms.size() == 1
+			var prefer_dead_end: bool = game.rooms.size() >= 4 and frontier_sockets.size() >= 3 and game.rng.randf() < 0.58
+			var minimum_doors: int = 2 if generating_second_room else 1
+			var blueprint: Dictionary = game.roll_room_blueprint(-direction, generating_second_room, prefer_dead_end, minimum_doors)
+			if blueprint.is_empty():
+				continue
+			var template_id: String = String(blueprint["template_id"])
+			var candidate_center: Vector2 = game.proposed_room_center(origin, template_id, direction)
+			if not game.can_place_room_center(candidate_center, game.room_template_size(template_id)):
+				continue
+			game.create_room(room_coord, template_id, blueprint["door_dirs"], candidate_center)
+			game.connect_rooms(origin, room_coord)
+		if game.rooms.size() >= minimum_room_count:
+			break
+	game.finalize_room_slot_distribution()
+	game.assign_exit_room()
+	game.assign_research_crystals()
+	game.normalize_runtime_rooms_slot_capacity()
+	game.refresh_room_lighting_states()
+	game.refresh_camera_bounds()
+	game.invalidate_static_dungeon_layer()
+
+static func roll_room_template(game: Node) -> String:
+	var roll: float = game.rng.randf()
+	if roll < 0.28:
+		return game.ROOM_TEMPLATE_NOOK
+	if roll < 0.52:
+		return game.ROOM_TEMPLATE_GALLERY
+	if roll < 0.8:
+		return game.ROOM_TEMPLATE_WORKSHOP
+	return game.ROOM_TEMPLATE_FORGE
+
+static func crystal_room_door_dirs_for_floor(game: Node) -> Array:
+	if game.floor_index == 1:
+		return [game.CARDINAL_DIRS[game.rng.randi_range(0, game.CARDINAL_DIRS.size() - 1)]]
+	return game.random_template_doors(game.ROOM_TEMPLATE_FORGE)
+
+static func door_dirs_suffix(game: Node, door_dirs: Array) -> String:
+	var suffix: String = ""
+	var ordered_dirs: Array[Dictionary] = [
+		{"dir": Vector2i.LEFT, "key": "l"},
+		{"dir": Vector2i.RIGHT, "key": "r"},
+		{"dir": Vector2i.UP, "key": "u"},
+		{"dir": Vector2i.DOWN, "key": "d"},
+	]
+	for entry in ordered_dirs:
+		var direction: Vector2i = entry["dir"]
+		if door_dirs.has(direction):
+			suffix += String(entry["key"])
+	return suffix
+
+static func cardinal_dir_key(_game: Node, direction: Vector2i) -> String:
+	match direction:
+		Vector2i.LEFT:
+			return "left"
+		Vector2i.RIGHT:
+			return "right"
+		Vector2i.UP:
+			return "up"
+		Vector2i.DOWN:
+			return "down"
+		_:
+			return ""
+
+static func room_template_base_scene_path(game: Node, template_id: String, crystal_chamber: bool = false) -> String:
+	if crystal_chamber:
+		if game.floor_index == 1:
+			return game.FLOOR1_CRYSTAL_ROOM_SCENE.resource_path
+		return game.CRYSTAL_ROOM_SCENE.resource_path
+	var base_scene: PackedScene = game.ROOM_TEMPLATE_SCENES.get(template_id, game.ROOM_TEMPLATE_SCENES[game.ROOM_TEMPLATE_NOOK])
+	return base_scene.resource_path
+
+static func room_template_scene_path(game: Node, template_id: String, _door_dirs: Array = [], crystal_chamber: bool = false) -> String:
+	return game.room_template_base_scene_path(template_id, crystal_chamber)
+
+static func room_template_scene(game: Node, template_id: String, door_dirs: Array = [], crystal_chamber: bool = false) -> PackedScene:
+	var scene_path: String = game.room_template_scene_path(template_id, door_dirs, crystal_chamber)
+	var scene_resource: Resource = load(scene_path)
+	if scene_resource is PackedScene:
+		return scene_resource
+	var fallback_scene_path: String = game.room_template_base_scene_path(template_id, crystal_chamber)
+	var fallback_resource: Resource = load(fallback_scene_path)
+	return fallback_resource as PackedScene
+
+static func room_template_metadata(game: Node, template_id: String, door_dirs: Array = [], crystal_chamber: bool = false) -> Dictionary:
+	var scene: PackedScene = game.room_template_scene(template_id, door_dirs, crystal_chamber)
+	if scene == null:
+		return {}
+	var scene_path: String = scene.resource_path
+	if game.room_template_metadata_cache.has(scene_path):
+		return Dictionary(game.room_template_metadata_cache[scene_path]).duplicate(true)
+	var instance: Node = scene.instantiate()
+	var metadata: Dictionary = {}
+	if instance != null and instance.has_method("build_template_metadata"):
+		metadata = Dictionary(instance.call("build_template_metadata"))
+	instance.free()
+	if metadata.is_empty():
+		metadata = {
+			"scene_path": scene_path,
+		}
+	game.room_template_metadata_cache[scene_path] = metadata.duplicate(true)
+	return metadata.duplicate(true)
+
+static func shrink_normalized_rect(_game: Node, rect: Rect2, margin: Vector2) -> Rect2:
+	var shrunk_position: Vector2 = rect.position + margin
+	var shrunk_size: Vector2 = rect.size - margin * 2.0
+	return Rect2(
+		shrunk_position,
+		Vector2(
+			maxf(shrunk_size.x, 0.04),
+			maxf(shrunk_size.y, 0.04)
+		)
+	)
+
+static func floor_theme_id_for_floor(game: Node, target_floor_index: int) -> String:
+	if game.FLOOR_THEME_ORDER.is_empty():
+		return game.FLOOR_THEME_CAVERN
+	return game.FLOOR_THEME_ORDER[posmod(target_floor_index - 1, game.FLOOR_THEME_ORDER.size())]
+
+static func current_floor_theme_id(game: Node) -> String:
+	return game.floor_theme_id_for_floor(game.floor_index)
+
+static func pick_room_geometry_id(game: Node, template_id: String, door_dirs: Array, crystal_chamber: bool = false) -> String:
+	if crystal_chamber:
+		return "crystal_grotto"
+	var candidates: Array[String] = [
+		"flooded_cross",
+		"moss_terraces",
+	]
+	var has_horizontal: bool = door_dirs.has(Vector2i.LEFT) or door_dirs.has(Vector2i.RIGHT)
+	var has_vertical: bool = door_dirs.has(Vector2i.UP) or door_dirs.has(Vector2i.DOWN)
+	if has_horizontal:
+		candidates.append("stream_horizontal")
+	if has_vertical:
+		candidates.append("stream_vertical")
+	if template_id == game.ROOM_TEMPLATE_WORKSHOP or template_id == game.ROOM_TEMPLATE_FORGE or door_dirs.size() >= 3:
+		candidates.append("moss_terraces")
+	return candidates[game.rng.randi_range(0, candidates.size() - 1)]
+
+static func build_room_geometry(game: Node, template_id: String, door_dirs: Array, crystal_chamber: bool = false) -> Dictionary:
+	var metadata: Dictionary = game.room_template_metadata(template_id, door_dirs, crystal_chamber)
+	var walkable_regions: Array = []
+	for spec_variant in Array(metadata.get("walkable_region_specs", [])):
+		var spec: Dictionary = spec_variant
+		var required_door_key: String = String(spec.get("required_door_key", ""))
+		if not required_door_key.is_empty():
+			var required_direction: Vector2i = Vector2i.ZERO
+			match required_door_key:
+				"left":
+					required_direction = Vector2i.LEFT
+				"right":
+					required_direction = Vector2i.RIGHT
+				"up":
+					required_direction = Vector2i.UP
+				"down":
+					required_direction = Vector2i.DOWN
+			if required_direction == Vector2i.ZERO or not door_dirs.has(required_direction):
+				continue
+		if spec.has("rect"):
+			walkable_regions.append(Rect2(spec["rect"]))
+	var slot_regions: Array = Array(metadata.get("slot_regions_normalized", []))
+	var geometry_id: String = String(metadata.get("geometry_id", game.pick_room_geometry_id(template_id, door_dirs, crystal_chamber)))
+	var liquid_regions: Array = []
+	var growth_regions: Array = []
+	var obstacle_regions: Array = []
+	return {
+		"geometry_id": geometry_id,
+		"walkable_regions": walkable_regions.duplicate(true),
+		"slot_regions": slot_regions,
+		"liquid_regions": liquid_regions,
+		"growth_regions": growth_regions,
+		"obstacle_regions": obstacle_regions,
+	}
+
+static func normalize_runtime_room_slot_capacity(game: Node, room_coord: Vector2i, room_data: Dictionary) -> Dictionary:
+	var normalized: Dictionary = room_data.duplicate(true)
+	var scene_minor_positions: Array = []
+	var scene_metadata: Dictionary = {}
+	if Array(normalized.get("minor_slot_positions_normalized", [])).is_empty() or (int(normalized.get("minor_slots", 0)) <= 0 and room_coord != game.crystal_room):
+		scene_metadata = game.room_template_metadata(String(normalized.get("profile", game.ROOM_TEMPLATE_NOOK)), Array(normalized.get("door_dirs", [])), room_coord == game.crystal_room)
+		scene_minor_positions = Array(scene_metadata.get("minor_slot_positions_normalized", []))
+		if Array(normalized.get("minor_slot_positions_normalized", [])).is_empty() and not scene_minor_positions.is_empty():
+			normalized["minor_slot_positions_normalized"] = scene_minor_positions.duplicate(true)
+		if not normalized.has("major_slot_normalized") and scene_metadata.has("major_slot_normalized"):
+			normalized["major_slot_normalized"] = Vector2(scene_metadata["major_slot_normalized"])
+	var minor_positions: Array = Array(normalized.get("minor_slot_positions_normalized", []))
+	if not minor_positions.is_empty():
+		normalized["minor_slots"] = maxi(int(normalized.get("minor_slots", 0)), minor_positions.size())
+	return normalized
+
+static func normalize_runtime_rooms_slot_capacity(game: Node) -> void:
+	for room_coord_variant in game.rooms.keys():
+		var room_coord: Vector2i = room_coord_variant
+		game.rooms[room_coord] = game.normalize_runtime_room_slot_capacity(room_coord, Dictionary(game.rooms[room_coord]))
+
+static func create_room(game: Node, room_coord: Vector2i, template_id: String, door_dirs: Array, world_center: Vector2 = Vector2.INF) -> void:
+	var template_metadata: Dictionary = game.room_template_metadata(template_id, door_dirs, room_coord == game.crystal_room)
+	var room_size: Vector2 = Vector2(330.0, 220.0)
+	var minor_slots: int = 2
+	var major_slots: int = 0
+	var template_name: String = "Nook"
+	room_size = Vector2(template_metadata.get("room_size", room_size))
+	minor_slots = int(template_metadata.get("minor_slots", minor_slots))
+	major_slots = int(template_metadata.get("major_slots", major_slots))
+	template_name = String(template_metadata.get("template_name", template_name))
+	var geometry_data: Dictionary = game.build_room_geometry(template_id, door_dirs, room_coord == game.crystal_room)
+	var theme_id: String = game.current_floor_theme_id()
+	var room_data: Dictionary = {
+		"neighbors": [],
+		"center": world_center if world_center != Vector2.INF else game.room_center(room_coord),
+		"opened": false,
+		"lit": false,
+		"permanent_light": false,
+		"temporary_light_turns": 0,
+		"wave_torch_until_wave": -1,
+		"crystal": false,
+		"exit": false,
+		"profile": template_id,
+		"theme_id": theme_id,
+		"template_name": template_name,
+		"door_dirs": door_dirs.duplicate(),
+		"room_scene_path": String(template_metadata.get("scene_path", game.room_template_scene_path(template_id, door_dirs, room_coord == game.crystal_room))),
+		"door_positions_normalized": Dictionary(template_metadata.get("door_positions_normalized", {})).duplicate(true),
+		"geometry_id": String(geometry_data.get("geometry_id", "flooded_cross")),
+		"walkable_regions": Array(geometry_data.get("walkable_regions", [])),
+		"slot_regions": Array(geometry_data.get("slot_regions", [])),
+		"liquid_regions": Array(geometry_data.get("liquid_regions", [])),
+		"growth_regions": Array(geometry_data.get("growth_regions", [])),
+		"obstacle_regions": Array(geometry_data.get("obstacle_regions", [])),
+		"size": room_size,
+		"minor_slots": minor_slots,
+		"major_slots": major_slots,
+		"minor_modules": [],
+		"major_module_type": "",
+		"major_health": 0.0,
+		"major_under_construction": false,
+		"research_crystal": false,
+		"research_crystal_spent": false,
+		"neurostun_time_left": 0.0,
+		"warning_timer_left": 0.0,
+		"ground_items": [],
+	}
+	if template_metadata.has("major_slot_normalized"):
+		room_data["major_slot_normalized"] = Vector2(template_metadata["major_slot_normalized"])
+	room_data["minor_slot_positions_normalized"] = Array(template_metadata.get("minor_slot_positions_normalized", [])).duplicate(true)
+	game.rooms[room_coord] = game.normalize_runtime_room_slot_capacity(room_coord, room_data)
+
+static func room_template_door_options(game: Node, template_id: String) -> Array:
+	match template_id:
+		game.ROOM_TEMPLATE_GALLERY:
+			return [
+				[Vector2i.LEFT, Vector2i.RIGHT],
+				[Vector2i.UP, Vector2i.DOWN],
+				[Vector2i.LEFT, Vector2i.UP],
+				[Vector2i.UP, Vector2i.RIGHT],
+				[Vector2i.RIGHT, Vector2i.DOWN],
+				[Vector2i.DOWN, Vector2i.LEFT],
+			]
+		game.ROOM_TEMPLATE_WORKSHOP:
+			return [
+				[Vector2i.LEFT],
+				[Vector2i.RIGHT],
+				[Vector2i.UP],
+				[Vector2i.DOWN],
+				[Vector2i.LEFT, Vector2i.UP],
+				[Vector2i.UP, Vector2i.RIGHT],
+				[Vector2i.RIGHT, Vector2i.DOWN],
+				[Vector2i.DOWN, Vector2i.LEFT],
+				[Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP],
+				[Vector2i.LEFT, Vector2i.RIGHT, Vector2i.DOWN],
+				[Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT],
+				[Vector2i.UP, Vector2i.DOWN, Vector2i.RIGHT],
+			]
+		game.ROOM_TEMPLATE_FORGE:
+			return [
+				[Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP],
+				[Vector2i.LEFT, Vector2i.RIGHT, Vector2i.DOWN],
+				[Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT],
+				[Vector2i.UP, Vector2i.DOWN, Vector2i.RIGHT],
+				[Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN],
+			]
+		_:
+			return [
+				[Vector2i.LEFT],
+				[Vector2i.RIGHT],
+				[Vector2i.UP],
+				[Vector2i.DOWN],
+			]
+
+static func random_template_doors(game: Node, template_id: String, required_dir: Vector2i = Vector2i(-99, -99)) -> Array:
+	var valid_options: Array = []
+	for option in game.room_template_door_options(template_id):
+		if required_dir == game.INVALID_ROOM or option.has(required_dir):
+			valid_options.append(option)
+	if valid_options.is_empty():
+		return []
+	var chosen: Array = valid_options[game.rng.randi_range(0, valid_options.size() - 1)]
+	return chosen.duplicate()
+
+static func template_can_support_major_slots(game: Node, template_id: String) -> bool:
+	return template_id == game.ROOM_TEMPLATE_WORKSHOP or template_id == game.ROOM_TEMPLATE_FORGE
+
+static func room_blueprint_weight(game: Node, template_id: String, door_dirs: Array, prefer_major: bool = false, prefer_dead_end: bool = false) -> float:
+	var weight: float = 1.0
+	match template_id:
+		game.ROOM_TEMPLATE_NOOK:
+			weight = 3.0
+		game.ROOM_TEMPLATE_GALLERY:
+			weight = 2.1
+		game.ROOM_TEMPLATE_WORKSHOP:
+			weight = 2.2
+		game.ROOM_TEMPLATE_FORGE:
+			weight = 1.15
+		_:
+			weight = 1.0
+	var door_count: int = door_dirs.size()
+	if prefer_dead_end:
+		if door_count <= 1:
+			weight *= 2.45
+		elif door_count == 2:
+			weight *= 1.05
+		else:
+			weight *= 0.58
+	else:
+		if door_count <= 1:
+			weight *= 1.22
+		elif door_count >= 4:
+			weight *= 0.82
+	if prefer_major:
+		if game.template_can_support_major_slots(template_id):
+			weight *= 3.0
+		elif template_id == game.ROOM_TEMPLATE_GALLERY:
+			weight *= 0.55
+		else:
+			weight *= 0.18
+	return weight
+
+static func roll_room_blueprint(game: Node, required_dir: Vector2i, prefer_major: bool = false, prefer_dead_end: bool = false, minimum_doors: int = 1) -> Dictionary:
+	var candidates: Array = []
+	var total_weight: float = 0.0
+	for template_id_variant in [game.ROOM_TEMPLATE_NOOK, game.ROOM_TEMPLATE_GALLERY, game.ROOM_TEMPLATE_WORKSHOP, game.ROOM_TEMPLATE_FORGE]:
+		var template_id: String = String(template_id_variant)
+		for option_variant in game.room_template_door_options(template_id):
+			var door_dirs: Array = Array(option_variant)
+			if (required_dir != game.INVALID_ROOM and not door_dirs.has(required_dir)) or door_dirs.size() < minimum_doors:
+				continue
+			var candidate_weight: float = game.room_blueprint_weight(template_id, door_dirs, prefer_major, prefer_dead_end)
+			if candidate_weight <= 0.0:
+				continue
+			candidates.append({
+				"template_id": template_id,
+				"door_dirs": door_dirs.duplicate(),
+				"weight": candidate_weight,
+			})
+			total_weight += candidate_weight
+	if candidates.is_empty():
+		return {}
+	var roll: float = game.rng.randf() * maxf(total_weight, 0.001)
+	for candidate_variant in candidates:
+		var candidate: Dictionary = candidate_variant
+		roll -= float(candidate.get("weight", 1.0))
+		if roll <= 0.0:
+			return {
+				"template_id": String(candidate.get("template_id", game.ROOM_TEMPLATE_NOOK)),
+				"door_dirs": Array(candidate.get("door_dirs", [])).duplicate(),
+			}
+	var fallback: Dictionary = candidates[candidates.size() - 1]
+	return {
+		"template_id": String(fallback.get("template_id", game.ROOM_TEMPLATE_NOOK)),
+		"door_dirs": Array(fallback.get("door_dirs", [])).duplicate(),
+	}
+
+static func room_template_size(game: Node, template_id: String) -> Vector2:
+	var metadata: Dictionary = game.room_template_metadata(template_id)
+	if metadata.has("room_size"):
+		return Vector2(metadata["room_size"])
+	match template_id:
+		game.ROOM_TEMPLATE_GALLERY:
+			return Vector2(400.0, 250.0)
+		game.ROOM_TEMPLATE_WORKSHOP:
+			return Vector2(490.0, 320.0)
+		game.ROOM_TEMPLATE_FORGE:
+			return Vector2(540.0, 350.0)
+		_:
+			return Vector2(330.0, 220.0)
+
+static func proposed_room_center(game: Node, origin_room: Vector2i, template_id: String, direction: Vector2i) -> Vector2:
+	var origin_size: Vector2 = game.room_size_for(origin_room)
+	var next_size: Vector2 = game.room_template_size(template_id)
+	var offset: Vector2 = Vector2.ZERO
+	if direction.x != 0:
+		offset.x = float(direction.x) * ((origin_size.x + next_size.x) * 0.5 + game.ROOM_DOOR_GAP)
+	if direction.y != 0:
+		offset.y = float(direction.y) * ((origin_size.y + next_size.y) * 0.5 + game.ROOM_DOOR_GAP)
+	return game.room_center(origin_room) + offset
+
+static func can_place_room_center(game: Node, world_center: Vector2, room_size: Vector2) -> bool:
+	var candidate_rect: Rect2 = Rect2(world_center - room_size * 0.5, room_size).grow(game.ROOM_LAYOUT_CLEARANCE)
+	for existing_coord_variant in game.rooms.keys():
+		var existing_coord: Vector2i = existing_coord_variant
+		if candidate_rect.intersects(game.room_rect(existing_coord).grow(game.ROOM_LAYOUT_CLEARANCE)):
+			return false
+	return true
+
+static func collect_frontier_sockets(game: Node) -> Array:
+	var sockets: Array = []
+	for room_coord_variant in game.rooms.keys():
+		var room_coord: Vector2i = room_coord_variant
+		var room: Dictionary = game.rooms[room_coord]
+		for direction_variant in room["door_dirs"]:
+			var direction: Vector2i = direction_variant
+			var candidate: Vector2i = room_coord + direction
+			if not is_in_bounds(game, candidate) or game.rooms.has(candidate):
+				continue
+			sockets.append({
+				"room": room_coord,
+				"direction": direction,
+			})
+	return sockets
+
+static func connect_rooms(game: Node, a: Vector2i, b: Vector2i) -> void:
+	var delta: Vector2i = b - a
+	if not game.rooms[a]["door_dirs"].has(delta) or not game.rooms[b]["door_dirs"].has(-delta):
+		return
+	if not game.rooms[a]["neighbors"].has(b):
+		game.rooms[a]["neighbors"].append(b)
+	if not game.rooms[b]["neighbors"].has(a):
+		game.rooms[b]["neighbors"].append(a)
+
+static func are_neighbors(game: Node, a: Vector2i, b: Vector2i) -> bool:
+	return game.rooms.has(a) and game.rooms[a]["neighbors"].has(b)
+
+static func finalize_room_slot_distribution(game: Node) -> void:
+	var second_room: Vector2i = game.INVALID_ROOM
+	if game.rooms.has(game.crystal_room):
+		var crystal_neighbors: Array = Array(game.rooms[game.crystal_room].get("neighbors", []))
+		if not crystal_neighbors.is_empty():
+			second_room = Vector2i(crystal_neighbors[0])
+	for room_coord_variant in game.rooms.keys():
+		var room_coord: Vector2i = room_coord_variant
+		var room: Dictionary = game.rooms[room_coord]
+		if room_coord == game.crystal_room:
+			room["minor_slots"] = 0
+			room["major_slots"] = 0
+			continue
+		var degree: int = Array(room.get("neighbors", [])).size()
+		match String(room.get("profile", game.ROOM_TEMPLATE_NOOK)):
+			game.ROOM_TEMPLATE_FORGE:
+				room["major_slots"] = 1
+			game.ROOM_TEMPLATE_WORKSHOP:
+				var workshop_major_chance: float = 0.62 if degree <= 1 else 0.44
+				room["major_slots"] = 1 if game.rng.randf() < workshop_major_chance else 0
+			_:
+				room["major_slots"] = 0
+	if second_room != game.INVALID_ROOM and game.rooms.has(second_room):
+		game.rooms[second_room]["major_slots"] = max(1, int(game.rooms[second_room].get("major_slots", 0)))
+
+static func assign_exit_room(game: Node) -> void:
+	var best_path_length: int = -1
+	game.exit_room = game.INVALID_ROOM
+	for room_coord_variant in game.rooms.keys():
+		var room_coord: Vector2i = room_coord_variant
+		game.rooms[room_coord]["exit"] = false
+		if room_coord == game.crystal_room:
+			continue
+		var path: Array[Vector2i] = game.find_path(game.crystal_room, room_coord, false)
+		if path.is_empty():
+			continue
+		if path.size() > best_path_length:
+			best_path_length = path.size()
+			game.exit_room = room_coord
+	if game.exit_room == game.INVALID_ROOM:
+		for neighbor_variant in Array(game.rooms.get(game.crystal_room, {}).get("neighbors", [])):
+			var fallback_room: Vector2i = neighbor_variant
+			if game.rooms.has(fallback_room):
+				game.exit_room = fallback_room
+				break
+	if game.exit_room != game.INVALID_ROOM:
+		game.rooms[game.exit_room]["exit"] = true
+
+static func assign_research_crystals(game: Node) -> void:
+	for room_coord_variant in game.rooms.keys():
+		var room_coord: Vector2i = room_coord_variant
+		game.rooms[room_coord]["research_crystal"] = false
+		game.rooms[room_coord]["research_crystal_spent"] = false
+	var candidates: Array[Vector2i] = []
+	for room_coord_variant in game.rooms.keys():
+		var room_coord: Vector2i = room_coord_variant
+		if room_coord == game.crystal_room:
+			continue
+		var room: Dictionary = game.rooms[room_coord]
+		if int(room.get("major_slots", 0)) <= 0:
+			continue
+		if game.effective_minor_slot_count(room_coord) <= 0:
+			continue
+		candidates.append(room_coord)
+	if candidates.is_empty():
+		return
+	var chosen_room: Vector2i = game.INVALID_ROOM
+	if game.floor_index == 1:
+		for neighbor_variant in Array(game.rooms.get(game.crystal_room, {}).get("neighbors", [])):
+			var neighbor_room: Vector2i = neighbor_variant
+			if candidates.has(neighbor_room):
+				chosen_room = neighbor_room
+				break
+	if chosen_room == game.INVALID_ROOM:
+		chosen_room = candidates[game.rng.randi_range(0, candidates.size() - 1)]
+	if chosen_room != game.INVALID_ROOM and game.rooms.has(chosen_room):
+		game.rooms[chosen_room]["research_crystal"] = true
+
+static func find_path(game: Node, from_room: Vector2i, to_room: Vector2i, only_open_rooms: bool) -> Array[Vector2i]:
+	if from_room == to_room:
+		return [from_room]
+	var frontier: Array[Vector2i] = [from_room]
+	var came_from: Dictionary = {from_room: from_room}
+	while not frontier.is_empty():
+		var current: Vector2i = frontier[0]
+		frontier.remove_at(0)
+		if current == to_room:
+			break
+		for neighbor_variant in game.rooms[current]["neighbors"]:
+			var neighbor: Vector2i = neighbor_variant
+			if only_open_rooms and not game.rooms[neighbor]["opened"]:
+				continue
+			if came_from.has(neighbor):
+				continue
+			frontier.append(neighbor)
+			came_from[neighbor] = current
+	if not came_from.has(to_room):
+		return []
+	var path: Array[Vector2i] = []
+	var cursor: Vector2i = to_room
+	while true:
+		path.append(cursor)
+		if cursor == from_room:
+			break
+		cursor = came_from[cursor]
+	path.reverse()
+	return path
+
+static func room_at_world_position(game: Node, world_position: Vector2) -> Vector2i:
+	for room_coord_variant in game.rooms.keys():
+		var room_coord: Vector2i = room_coord_variant
+		if game.rooms[room_coord]["opened"] and game.room_rect(room_coord).has_point(world_position):
+			return room_coord
+	return game.INVALID_ROOM
+
+static func corridor_room_target_at_position(game: Node, world_position: Vector2, preferred_from_room: Vector2i = Vector2i(-99, -99)) -> Vector2i:
+	var direct_room: Vector2i = game.room_at_world_position(world_position)
+	if direct_room != game.INVALID_ROOM:
+		return direct_room
+	var best_room: Vector2i = game.INVALID_ROOM
+	var best_distance: float = INF
+	for room_coord_variant in game.rooms.keys():
+		var room_coord: Vector2i = room_coord_variant
+		if not game.rooms[room_coord]["opened"]:
+			continue
+		for neighbor_variant in game.rooms[room_coord]["neighbors"]:
+			var neighbor: Vector2i = neighbor_variant
+			if not game.rooms[neighbor]["opened"]:
+				continue
+			if room_coord.x > neighbor.x or (room_coord.x == neighbor.x and room_coord.y > neighbor.y):
+				continue
+			var corridor_target: Dictionary = game.open_corridor_target_for_pair(world_position, room_coord, neighbor, preferred_from_room)
+			if corridor_target.is_empty():
+				continue
+			var corridor_distance: float = float(corridor_target.get("distance", INF))
+			if corridor_distance < best_distance:
+				best_distance = corridor_distance
+				best_room = corridor_target.get("room", game.INVALID_ROOM)
+	return best_room
+
+static func open_corridor_target_for_pair(game: Node, world_position: Vector2, room_a: Vector2i, room_b: Vector2i, preferred_from_room: Vector2i = Vector2i(-99, -99)) -> Dictionary:
+	var delta: Vector2i = room_b - room_a
+	var direction: Vector2 = Vector2(float(delta.x), float(delta.y))
+	if direction == Vector2.ZERO:
+		return {}
+	direction = direction.normalized()
+	var tangent: Vector2 = Vector2(-direction.y, direction.x)
+	var doorway_a: Vector2 = game.doorway_position(room_a, room_b)
+	var doorway_b: Vector2 = game.doorway_position(room_b, room_a)
+	var corridor_depth: float = doorway_a.distance_to(doorway_b)
+	var offset: Vector2 = world_position - doorway_a
+	var forward_distance: float = offset.dot(direction)
+	var lateral_distance: float = absf(offset.dot(tangent))
+	var room_a_half: Vector2 = game.room_size_for(room_a) * 0.5
+	var room_b_half: Vector2 = game.room_size_for(room_b) * 0.5
+	var lateral_limit: float = maxf(room_a_half.y, room_b_half.y) + 34.0 if delta.x != 0 else maxf(room_a_half.x, room_b_half.x) + 34.0
+	if forward_distance < -18.0 or forward_distance > corridor_depth + 18.0 or lateral_distance > lateral_limit:
+		return {}
+	var target_room: Vector2i = game.INVALID_ROOM
+	if preferred_from_room == room_a:
+		target_room = room_b
+	elif preferred_from_room == room_b:
+		target_room = room_a
+	else:
+		target_room = room_b if forward_distance >= corridor_depth * 0.5 else room_a
+	return {
+		"room": target_room,
+		"distance": game.point_distance_to_segment(world_position, doorway_a, doorway_b),
+	}
+
+static func room_is_revealed(game: Node, room_coord: Vector2i) -> bool:
+	return game.rooms.has(room_coord) and game.rooms[room_coord]["opened"]
+
+static func frontier_target_at_position(game: Node, world_position: Vector2) -> Dictionary:
+	var door_target: Dictionary = game.frontier_door_at_position(world_position)
+	if not door_target.is_empty():
+		return door_target
+	var wall_target: Dictionary = game.frontier_wall_target_at_position(world_position)
+	if not wall_target.is_empty():
+		return wall_target
+	for room_coord_variant in game.rooms.keys():
+		var room_coord: Vector2i = room_coord_variant
+		if not game.rooms[room_coord]["opened"]:
+			continue
+		for neighbor_variant in game.rooms[room_coord]["neighbors"]:
+			var neighbor: Vector2i = neighbor_variant
+			if game.rooms[neighbor]["opened"]:
+				continue
+			if game.hidden_room_entry_zone_contains(world_position, room_coord, neighbor):
+				return {
+					"from_room": room_coord,
+					"to_room": neighbor,
+				}
+			var open_doorway: Vector2 = game.doorway_position(room_coord, neighbor)
+			var hidden_doorway: Vector2 = game.doorway_position(neighbor, room_coord)
+			if game.point_distance_to_segment(world_position, open_doorway, hidden_doorway) <= 28.0:
+				return {
+					"from_room": room_coord,
+					"to_room": neighbor,
+				}
+	for room_coord_variant in game.rooms.keys():
+		var room_coord: Vector2i = room_coord_variant
+		if game.rooms[room_coord]["opened"] or not game.room_rect(room_coord).has_point(world_position):
+			continue
+		var opened_neighbors: Array[Vector2i] = []
+		for neighbor_variant in game.rooms[room_coord]["neighbors"]:
+			var neighbor: Vector2i = neighbor_variant
+			if game.rooms[neighbor]["opened"]:
+				opened_neighbors.append(neighbor)
+		if opened_neighbors.is_empty():
+			continue
+		var best_from_room: Vector2i = opened_neighbors[0]
+		var best_distance: float = game.doorway_position(best_from_room, room_coord).distance_to(world_position)
+		for opened_neighbor in opened_neighbors:
+			var doorway_distance: float = game.doorway_position(opened_neighbor, room_coord).distance_to(world_position)
+			if doorway_distance < best_distance:
+				best_distance = doorway_distance
+				best_from_room = opened_neighbor
+		return {
+			"from_room": best_from_room,
+			"to_room": room_coord,
+		}
+	return {}
+
+static func frontier_wall_target_at_position(game: Node, world_position: Vector2) -> Dictionary:
+	var best_target: Dictionary = {}
+	var best_distance: float = INF
+	for room_coord_variant in game.rooms.keys():
+		var room_coord: Vector2i = room_coord_variant
+		if not game.rooms[room_coord]["opened"]:
+			continue
+		var room_rect_value: Rect2 = game.room_rect(room_coord)
+		var room_center_point: Vector2 = room_rect_value.get_center()
+		for neighbor_variant in game.rooms[room_coord]["neighbors"]:
+			var neighbor: Vector2i = neighbor_variant
+			if game.rooms[neighbor]["opened"]:
+				continue
+			var delta: Vector2i = neighbor - room_coord
+			var doorway: Vector2 = game.doorway_position(room_coord, neighbor)
+			var hit_distance: float = INF
+			match delta:
+				Vector2i.RIGHT:
+					var within_x_right: bool = world_position.x >= room_rect_value.end.x - 38.0 and world_position.x <= room_rect_value.end.x + 42.0
+					var within_y_right: bool = absf(world_position.y - doorway.y) <= maxf(room_rect_value.size.y * 0.32, 52.0)
+					if within_x_right and within_y_right:
+						hit_distance = absf(world_position.x - room_rect_value.end.x) + absf(world_position.y - doorway.y) * 0.25
+				Vector2i.LEFT:
+					var within_x_left: bool = world_position.x <= room_rect_value.position.x + 38.0 and world_position.x >= room_rect_value.position.x - 42.0
+					var within_y_left: bool = absf(world_position.y - doorway.y) <= maxf(room_rect_value.size.y * 0.32, 52.0)
+					if within_x_left and within_y_left:
+						hit_distance = absf(world_position.x - room_rect_value.position.x) + absf(world_position.y - doorway.y) * 0.25
+				Vector2i.DOWN:
+					var within_y_down: bool = world_position.y >= room_rect_value.end.y - 38.0 and world_position.y <= room_rect_value.end.y + 42.0
+					var within_x_down: bool = absf(world_position.x - doorway.x) <= maxf(room_rect_value.size.x * 0.32, 52.0)
+					if within_y_down and within_x_down:
+						hit_distance = absf(world_position.y - room_rect_value.end.y) + absf(world_position.x - doorway.x) * 0.25
+				Vector2i.UP:
+					var within_y_up: bool = world_position.y <= room_rect_value.position.y + 38.0 and world_position.y >= room_rect_value.position.y - 42.0
+					var within_x_up: bool = absf(world_position.x - doorway.x) <= maxf(room_rect_value.size.x * 0.32, 52.0)
+					if within_y_up and within_x_up:
+						hit_distance = absf(world_position.y - room_rect_value.position.y) + absf(world_position.x - doorway.x) * 0.25
+			if hit_distance >= INF:
+				continue
+			if room_center_point.distance_to(world_position) > maxf(room_rect_value.size.x, room_rect_value.size.y):
+				continue
+			if hit_distance < best_distance:
+				best_distance = hit_distance
+				best_target = {
+					"from_room": room_coord,
+					"to_room": neighbor,
+				}
+	return best_target
+
+static func frontier_door_at_position(game: Node, world_position: Vector2) -> Dictionary:
+	for room_coord_variant in game.rooms.keys():
+		var room_coord: Vector2i = room_coord_variant
+		if not game.rooms[room_coord]["opened"]:
+			continue
+		for neighbor_variant in game.rooms[room_coord]["neighbors"]:
+			var neighbor: Vector2i = neighbor_variant
+			if game.rooms[neighbor]["opened"]:
+				continue
+			var doorway: Vector2 = game.doorway_position(room_coord, neighbor)
+			var stub_position: Vector2 = doorway + (game.room_center(neighbor) - game.room_center(room_coord)).normalized() * 12.0
+			if stub_position.distance_to(world_position) <= game.FRONTIER_DOOR_RADIUS:
+				return {
+					"from_room": room_coord,
+					"to_room": neighbor,
+				}
+	return {}
+
+static func point_distance_to_segment(_game: Node, point: Vector2, start: Vector2, end: Vector2) -> float:
+	var segment: Vector2 = end - start
+	var segment_length_squared: float = segment.length_squared()
+	if segment_length_squared <= 0.001:
+		return point.distance_to(start)
+	var t: float = clampf((point - start).dot(segment) / segment_length_squared, 0.0, 1.0)
+	var closest_point: Vector2 = start + segment * t
+	return point.distance_to(closest_point)
+
+static func hidden_room_entry_zone_contains(game: Node, world_position: Vector2, from_room: Vector2i, to_room: Vector2i) -> bool:
+	var delta: Vector2i = to_room - from_room
+	var direction: Vector2 = Vector2(float(delta.x), float(delta.y))
+	if direction == Vector2.ZERO:
+		return false
+	direction = direction.normalized()
+	var tangent: Vector2 = Vector2(-direction.y, direction.x)
+	var doorway: Vector2 = game.doorway_position(from_room, to_room)
+	var hidden_doorway: Vector2 = game.doorway_position(to_room, from_room)
+	var corridor_depth: float = doorway.distance_to(hidden_doorway)
+	var offset: Vector2 = world_position - doorway
+	var forward_distance: float = offset.dot(direction)
+	var lateral_distance: float = absf(offset.dot(tangent))
+	var hidden_half: Vector2 = game.room_size_for(to_room) * 0.5
+	var lateral_limit: float = hidden_half.y + 42.0 if delta.x != 0 else hidden_half.x + 42.0
+	var forward_limit: float = corridor_depth + 126.0
+	return forward_distance >= -18.0 and forward_distance <= forward_limit and lateral_distance <= lateral_limit
+
+static func room_center(game: Node, room_coord: Vector2i) -> Vector2:
+	if game.rooms.has(room_coord) and game.rooms[room_coord].has("center"):
+		return Vector2(game.rooms[room_coord]["center"])
+	var offset_x: float = (float(room_coord.x) - float(game.GRID_SIZE.x - 1) * 0.5) * game.ROOM_SPACING.x
+	var offset_y: float = (float(room_coord.y) - float(game.GRID_SIZE.y - 1) * 0.5) * game.ROOM_SPACING.y
+	return Vector2(offset_x, offset_y)
+
+static func room_size_for(game: Node, room_coord: Vector2i) -> Vector2:
+	return game.rooms[room_coord]["size"]
+
+static func room_rect(game: Node, room_coord: Vector2i) -> Rect2:
+	var room_size: Vector2 = game.room_size_for(room_coord)
+	return Rect2(game.room_center(room_coord) - room_size * 0.5, room_size)
+
+static func normalized_rect_to_room(game: Node, room_coord: Vector2i, normalized_rect: Rect2) -> Rect2:
+	var rect: Rect2 = game.room_rect(room_coord)
+	return Rect2(
+		rect.position + Vector2(normalized_rect.position.x * rect.size.x, normalized_rect.position.y * rect.size.y),
+		Vector2(normalized_rect.size.x * rect.size.x, normalized_rect.size.y * rect.size.y)
+	)
+
+static func normalized_point_to_room(game: Node, room_coord: Vector2i, normalized_point: Vector2) -> Vector2:
+	var rect: Rect2 = game.room_rect(room_coord)
+	return rect.position + Vector2(normalized_point.x * rect.size.x, normalized_point.y * rect.size.y)
+
+static func room_layout_regions(game: Node, room_coord: Vector2i, key: String, inset: float = 0.0) -> Array:
+	if not game.rooms.has(room_coord):
+		return []
+	var normalized_regions: Array = Array(game.rooms[room_coord].get(key, []))
+	if normalized_regions.is_empty():
+		var fallback_rect: Rect2 = game.room_rect(room_coord).grow(-maxf(inset, 26.0))
+		return [fallback_rect]
+	var regions: Array = []
+	for rect_variant in normalized_regions:
+		var world_rect: Rect2 = game.normalized_rect_to_room(room_coord, Rect2(rect_variant))
+		if inset > 0.0:
+			var inset_amount: float = minf(inset, minf(world_rect.size.x, world_rect.size.y) * 0.48)
+			world_rect = world_rect.grow(-inset_amount)
+		if world_rect.size.x <= 6.0 or world_rect.size.y <= 6.0:
+			continue
+		regions.append(world_rect)
+	return regions
+
+static func room_walkable_regions(game: Node, room_coord: Vector2i, inset: float = 4.0) -> Array:
+	return game.room_layout_regions(room_coord, "walkable_regions", inset)
+
+static func room_slot_regions(game: Node, room_coord: Vector2i, inset: float = 18.0) -> Array:
+	return game.room_layout_regions(room_coord, "slot_regions", inset)
+
+static func largest_region_rect(_game: Node, regions: Array) -> Rect2:
+	if regions.is_empty():
+		return Rect2()
+	var largest_rect: Rect2 = Rect2(regions[0])
+	var largest_area: float = largest_rect.size.x * largest_rect.size.y
+	for region_variant in regions:
+		var region_rect: Rect2 = Rect2(region_variant)
+		var region_area: float = region_rect.size.x * region_rect.size.y
+		if region_area > largest_area:
+			largest_area = region_area
+			largest_rect = region_rect
+	return largest_rect
+
+static func bounding_rect_for_regions(_game: Node, regions: Array) -> Rect2:
+	if regions.is_empty():
+		return Rect2()
+	var bounds: Rect2 = Rect2(regions[0])
+	var min_point: Vector2 = bounds.position
+	var max_point: Vector2 = bounds.end
+	for region_variant in regions:
+		var region_rect: Rect2 = Rect2(region_variant)
+		min_point.x = minf(min_point.x, region_rect.position.x)
+		min_point.y = minf(min_point.y, region_rect.position.y)
+		max_point.x = maxf(max_point.x, region_rect.end.x)
+		max_point.y = maxf(max_point.y, region_rect.end.y)
+	return Rect2(min_point, max_point - min_point)
+
+static func room_slot_anchor_rect(game: Node, room_coord: Vector2i) -> Rect2:
+	var slot_regions: Array = game.room_slot_regions(room_coord)
+	if not slot_regions.is_empty():
+		return game.bounding_rect_for_regions(slot_regions)
+	var walkable_regions: Array = game.room_walkable_regions(room_coord)
+	if not walkable_regions.is_empty():
+		return game.largest_region_rect(walkable_regions)
+	return game.room_rect(room_coord).grow(-26.0)
+
+static func closest_point_in_rect(_game: Node, world_position: Vector2, rect: Rect2) -> Vector2:
+	return Vector2(
+		clampf(world_position.x, rect.position.x, rect.end.x),
+		clampf(world_position.y, rect.position.y, rect.end.y)
+	)
+
+static func room_walkable_contains_point(game: Node, room_coord: Vector2i, world_position: Vector2, inset: float = 4.0) -> bool:
+	for region_variant in game.room_walkable_regions(room_coord, inset):
+		if Rect2(region_variant).has_point(world_position):
+			return true
+	return false
+
+static func room_walkable_center(game: Node, room_coord: Vector2i) -> Vector2:
+	if not game.rooms.has(room_coord):
+		return game.room_center(room_coord)
+	var walkable_regions: Array = game.room_walkable_regions(room_coord)
+	if walkable_regions.is_empty():
+		return game.room_center(room_coord)
+	var primary_rect: Rect2 = game.largest_region_rect(walkable_regions)
+	return game.closest_point_in_rect(game.room_center(room_coord), primary_rect)
+
+static func doorway_navigation_position(game: Node, from_room: Vector2i, to_room: Vector2i) -> Vector2:
+	var threshold_position: Vector2 = game.doorway_position(from_room, to_room)
+	var walkable_regions: Array = game.room_walkable_regions(from_room, 0.0)
+	if walkable_regions.is_empty():
+		return game.clamp_point_to_room(threshold_position, from_room)
+	var walkable_bounds: Rect2 = game.bounding_rect_for_regions(walkable_regions)
+	var delta: Vector2i = to_room - from_room
+	var edge_padding: float = 10.0
+	if delta.x < 0:
+		return game.clamp_point_to_room(
+			Vector2(
+				walkable_bounds.position.x + edge_padding,
+				clampf(threshold_position.y, walkable_bounds.position.y + edge_padding, walkable_bounds.end.y - edge_padding)
+			),
+			from_room
+		)
+	if delta.x > 0:
+		return game.clamp_point_to_room(
+			Vector2(
+				walkable_bounds.end.x - edge_padding,
+				clampf(threshold_position.y, walkable_bounds.position.y + edge_padding, walkable_bounds.end.y - edge_padding)
+			),
+			from_room
+		)
+	if delta.y < 0:
+		return game.clamp_point_to_room(
+			Vector2(
+				clampf(threshold_position.x, walkable_bounds.position.x + edge_padding, walkable_bounds.end.x - edge_padding),
+				walkable_bounds.position.y + edge_padding
+			),
+			from_room
+		)
+	if delta.y > 0:
+		return game.clamp_point_to_room(
+			Vector2(
+				clampf(threshold_position.x, walkable_bounds.position.x + edge_padding, walkable_bounds.end.x - edge_padding),
+				walkable_bounds.end.y - edge_padding
+			),
+			from_room
+		)
+	return game.clamp_point_to_room(threshold_position, from_room)
+
+static func random_point_in_regions(game: Node, regions: Array) -> Vector2:
+	if regions.is_empty():
+		return Vector2.ZERO
+	var total_area: float = 0.0
+	for region_variant in regions:
+		var region_rect: Rect2 = Rect2(region_variant)
+		total_area += maxf(region_rect.size.x * region_rect.size.y, 1.0)
+	var roll: float = game.rng.randf() * total_area
+	for region_variant in regions:
+		var candidate_rect: Rect2 = Rect2(region_variant)
+		roll -= maxf(candidate_rect.size.x * candidate_rect.size.y, 1.0)
+		if roll > 0.0:
+			continue
+		return Vector2(
+			game.rng.randf_range(candidate_rect.position.x, candidate_rect.end.x),
+			game.rng.randf_range(candidate_rect.position.y, candidate_rect.end.y)
+		)
+	var fallback_rect: Rect2 = Rect2(regions[regions.size() - 1])
+	return fallback_rect.get_center()
+
+static func random_walkable_point(game: Node, room_coord: Vector2i) -> Vector2:
+	var walkable_regions: Array = game.room_walkable_regions(room_coord)
+	if walkable_regions.is_empty():
+		return game.clamp_point_to_room(game.room_center(room_coord), room_coord)
+	return game.random_point_in_regions(walkable_regions)
+
+static func walkable_region_index_for_point(game: Node, room_coord: Vector2i, world_position: Vector2, inset: float = 4.0) -> int:
+	var walkable_regions: Array = game.room_walkable_regions(room_coord, inset)
+	if walkable_regions.is_empty():
+		return -1
+	for region_index in range(walkable_regions.size()):
+		if Rect2(walkable_regions[region_index]).has_point(world_position):
+			return region_index
+	var best_index: int = 0
+	var best_distance_squared: float = INF
+	for region_index in range(walkable_regions.size()):
+		var candidate_point: Vector2 = game.closest_point_in_rect(world_position, Rect2(walkable_regions[region_index]))
+		var distance_squared: float = candidate_point.distance_squared_to(world_position)
+		if distance_squared < best_distance_squared:
+			best_distance_squared = distance_squared
+			best_index = region_index
+	return best_index
+
+static func clear_enemy_room_navigation(_game: Node, enemy: Variant) -> void:
+	if enemy == null or not is_instance_valid(enemy):
+		return
+	if enemy.has_meta("room_nav_waypoint"):
+		enemy.remove_meta("room_nav_waypoint")
+	if enemy.has_meta("room_nav_final"):
+		enemy.remove_meta("room_nav_final")
+
+static func enemy_room_navigation_destination(game: Node, enemy: Variant, room_coord: Vector2i, target_position: Vector2) -> Vector2:
+	var clamped_target: Vector2 = game.clamp_point_to_room(target_position, room_coord)
+	if enemy == null or not is_instance_valid(enemy):
+		return clamped_target
+	var walkable_regions: Array = game.room_walkable_regions(room_coord, 0.0)
+	if walkable_regions.is_empty():
+		return clamped_target
+	var clamped_start: Vector2 = game.clamp_point_to_room(enemy.global_position, room_coord)
+	var start_region_index: int = game.walkable_region_index_for_point(room_coord, clamped_start, 0.0)
+	var target_region_index: int = game.walkable_region_index_for_point(room_coord, clamped_target, 0.0)
+	if start_region_index < 0 or target_region_index < 0 or start_region_index == target_region_index:
+		game.clear_enemy_room_navigation(enemy)
+		return clamped_target
+	var primary_region: Rect2 = game.largest_region_rect(walkable_regions)
+	var start_in_primary: bool = primary_region.has_point(clamped_start)
+	var target_in_primary: bool = primary_region.has_point(clamped_target)
+	game.clear_enemy_room_navigation(enemy)
+	if not start_in_primary:
+		return game.closest_point_in_rect(clamped_start, primary_region)
+	if not target_in_primary:
+		return game.closest_point_in_rect(clamped_target, primary_region)
+	return clamped_target
+
+static func clamp_point_to_room(game: Node, world_position: Vector2, room_coord: Vector2i) -> Vector2:
+	var walkable_regions: Array = game.room_walkable_regions(room_coord)
+	if walkable_regions.is_empty():
+		var padded_rect: Rect2 = game.room_rect(room_coord).grow(-26.0)
+		return Vector2(
+			clampf(world_position.x, padded_rect.position.x, padded_rect.end.x),
+			clampf(world_position.y, padded_rect.position.y, padded_rect.end.y)
+		)
+	var nearest_point: Vector2 = game.room_walkable_center(room_coord)
+	var nearest_distance_squared: float = INF
+	for region_variant in walkable_regions:
+		var candidate_point: Vector2 = game.closest_point_in_rect(world_position, Rect2(region_variant))
+		var distance_squared: float = candidate_point.distance_squared_to(world_position)
+		if distance_squared < nearest_distance_squared:
+			nearest_distance_squared = distance_squared
+			nearest_point = candidate_point
+	return nearest_point
+
+static func doorway_position(game: Node, from_room: Vector2i, to_room: Vector2i) -> Vector2:
+	var delta: Vector2i = to_room - from_room
+	if game.rooms.has(from_room):
+		var door_positions: Dictionary = Dictionary(game.rooms[from_room].get("door_positions_normalized", {}))
+		var direction_key: String = game.cardinal_dir_key(delta)
+		if not direction_key.is_empty() and door_positions.has(direction_key):
+			return game.normalized_point_to_room(from_room, Vector2(door_positions[direction_key]))
+	var room_half: Vector2 = game.room_size_for(from_room) * 0.5
+	var center: Vector2 = game.room_center(from_room)
+	if delta.x != 0:
+		return center + Vector2(float(delta.x) * room_half.x, 0.0)
+	return center + Vector2(0.0, float(delta.y) * room_half.y)
+
+static func major_slot_position(game: Node, room_coord: Vector2i) -> Vector2:
+	if game.rooms.has(room_coord) and game.rooms[room_coord].has("major_slot_normalized"):
+		return game.normalized_point_to_room(room_coord, Vector2(game.rooms[room_coord]["major_slot_normalized"]))
+	var rect: Rect2 = game.room_slot_anchor_rect(room_coord)
+	return rect.position + Vector2(rect.size.x * 0.5, rect.size.y * 0.23)
+
+static func effective_minor_slot_count(game: Node, room_coord: Vector2i) -> int:
+	if not game.rooms.has(room_coord):
+		return 0
+	game.rooms[room_coord] = game.normalize_runtime_room_slot_capacity(room_coord, Dictionary(game.rooms[room_coord]))
+	var room: Dictionary = game.rooms[room_coord]
+	var configured_count: int = maxi(int(room.get("minor_slots", 0)), 0)
+	var normalized_positions: Array = Array(room.get("minor_slot_positions_normalized", []))
+	if normalized_positions.is_empty():
+		return configured_count
+	return maxi(configured_count, normalized_positions.size())
+
+static func minor_slot_positions(game: Node, room_coord: Vector2i) -> Array:
+	if game.rooms.has(room_coord):
+		var normalized_positions: Array = Array(game.rooms[room_coord].get("minor_slot_positions_normalized", []))
+		if not normalized_positions.is_empty():
+			var resolved_positions: Array = []
+			var desired_count: int = mini(game.effective_minor_slot_count(room_coord), normalized_positions.size())
+			for index in range(desired_count):
+				resolved_positions.append(game.normalized_point_to_room(room_coord, Vector2(normalized_positions[index])))
+			return resolved_positions
+	var rect: Rect2 = game.room_slot_anchor_rect(room_coord)
+	var count: int = game.effective_minor_slot_count(room_coord)
+	var offsets: Array[Vector2] = []
+	match count:
+		0:
+			offsets = []
+		2:
+			offsets = [
+				Vector2(-0.24, 0.18),
+				Vector2(0.24, 0.18),
+			]
+		3:
+			offsets = [
+				Vector2(-0.28, 0.02),
+				Vector2(0.0, 0.22),
+				Vector2(0.28, 0.02),
+			]
+		5:
+			offsets = [
+				Vector2(-0.30, -0.14),
+				Vector2(0.0, -0.20),
+				Vector2(0.30, -0.14),
+				Vector2(-0.18, 0.18),
+				Vector2(0.18, 0.18),
+			]
+		7:
+			offsets = [
+				Vector2(-0.34, -0.18),
+				Vector2(0.0, -0.18),
+				Vector2(0.34, -0.18),
+				Vector2(-0.34, 0.06),
+				Vector2(0.0, 0.06),
+				Vector2(0.34, 0.06),
+				Vector2(0.0, 0.30),
+			]
+		_:
+			offsets = [
+				Vector2(-0.26, -0.08),
+				Vector2(0.26, -0.08),
+				Vector2(-0.26, 0.22),
+				Vector2(0.26, 0.22),
+			]
+	var slot_positions: Array = []
+	for offset in offsets:
+		slot_positions.append(rect.get_center() + Vector2(offset.x * rect.size.x, offset.y * rect.size.y))
+	return slot_positions

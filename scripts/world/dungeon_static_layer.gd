@@ -7,16 +7,12 @@ var game = null
 var room_instances: Dictionary = {}
 var room_scene_cache: Dictionary = {}
 
-@onready var walkable_tile_layer: TileMapLayer = $WalkableTileLayer
-
 func configure(next_game) -> void:
 	game = next_game
 	rebuild()
 
 func rebuild() -> void:
 	_sync_room_instances()
-	if walkable_tile_layer != null:
-		walkable_tile_layer.clear()
 	queue_redraw()
 
 func _exit_tree() -> void:

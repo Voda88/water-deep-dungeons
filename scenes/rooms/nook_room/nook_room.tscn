@@ -7,8 +7,6 @@
 
 [node name="NookRoom" type="Node2D" unique_id=32017086]
 script = ExtResource("1")
-show_backdrop_helpers_in_runtime = false
-show_layout_helpers_in_runtime = false
 
 [node name="Art" type="Node2D" parent="." unique_id=890375384]
 

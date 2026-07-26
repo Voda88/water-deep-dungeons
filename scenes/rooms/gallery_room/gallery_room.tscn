@@ -11,8 +11,6 @@ template_id = "gallery"
 template_name = "Gallery"
 room_size = Vector2(400, 250)
 default_minor_slots = 3
-show_backdrop_helpers_in_runtime = false
-show_layout_helpers_in_runtime = false
 
 [node name="Art" type="Node2D" parent="." unique_id=27191506]
 

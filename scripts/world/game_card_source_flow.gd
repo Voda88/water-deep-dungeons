@@ -1,0 +1,371 @@
+extends RefCounted
+
+static func build_hand_card_from_generator(game: Node, hero: Variant, generator: Dictionary, effect_summary: Dictionary) -> Dictionary:
+	var card_def: Dictionary = game.card_definition(String(generator.get("card_id", "")))
+	var item_bonus: Dictionary = Dictionary(generator.get("item_bonus", game.empty_inventory_effect_summary()))
+	var phase: String = String(generator.get("phase_override", card_def.get("phase", "combat")))
+	var target_scope: String = String(generator.get("target_scope_override", card_def.get("target_scope", "same_room")))
+	var expires_after_turns: int = int(card_def.get("expires_after_turns", int(generator.get("expires_after_turns", 0))))
+	var base_stamina_cost: float = float(card_def.get("stamina_cost", 0.0))
+	var description_lines: Array = Array(generator.get("description_lines_override", card_def.get("description_lines", [])))
+	var hand_card: Dictionary = {
+		"uid": game.next_card_uid,
+		"card_id": String(card_def.get("id", "")),
+		"name": String(generator.get("name_override", card_def.get("name", "Card"))),
+		"item_uid": int(generator.get("item_uid", -1)),
+		"item_id": String(generator.get("item_id", "")),
+		"source_type": String(generator.get("source_type", "item")),
+		"source_hero_index": int(generator.get("hero_index", hero.hero_index)),
+		"phase": phase,
+		"target_scope": target_scope,
+		"target_scope_label": game.card_target_scope_label(target_scope),
+		"description_lines": description_lines,
+		"door_interval": int(card_def.get("door_interval", int(generator.get("door_interval", 0)))),
+		"generation_mode": game.resolve_card_generator_mode(generator, card_def),
+		"stamina_cost": maxf(base_stamina_cost * float(effect_summary.get("stamina_cost_mult", 1.0)), 0.0),
+		"requires_line_of_effect": bool(card_def.get("requires_line_of_effect", false)),
+		"damage": float(card_def.get("base_damage", 0.0)) + float(item_bonus.get("card_damage", 0.0)),
+		"projectile_count": int(card_def.get("projectile_count", 1)) + int(item_bonus.get("projectile_count", 0)),
+		"spread": float(card_def.get("spread", 0.0)),
+		"speed": float(card_def.get("speed", 900.0)),
+		"bounces": int(card_def.get("bounces", 0)),
+		"lifetime": float(card_def.get("lifetime", 1.5)),
+		"radius": float(card_def.get("radius", 12.0)),
+		"impact_radius": float(card_def.get("impact_radius", card_def.get("radius", 12.0))),
+		"shield_amount": float(card_def.get("shield_amount", 0.0)),
+		"shield_duration": float(card_def.get("shield_duration", 0.0)),
+		"immunity_duration": float(card_def.get("immunity_duration", 0.0)),
+		"cast_adjacent_hops": int(card_def.get("cast_adjacent_hops", 0)),
+		"color": card_def.get("color", Color("d7efff")),
+		"backstab_multiplier": float(card_def.get("backstab_multiplier", 1.0)) + float(item_bonus.get("dagger_backstab_bonus", 0.0)),
+		"combo_gain": int(card_def.get("combo_gain", 0)),
+		"heal_amount": float(card_def.get("heal_amount", 0.0)),
+		"heal_full": bool(card_def.get("heal_full", false)),
+		"restore_stamina_full": bool(card_def.get("restore_stamina_full", false)),
+		"stamina_restore": float(card_def.get("stamina_restore", 0.0)),
+		"stamina_regen_rate": float(card_def.get("stamina_regen_rate", 0.0)),
+		"stamina_regen_duration": float(card_def.get("stamina_regen_duration", 0.0)),
+		"food_cost": int(card_def.get("food_cost", 0)),
+		"expires_on_doors_opened": game.doors_opened + expires_after_turns if expires_after_turns > 0 else -1,
+		"hero_index": hero.hero_index,
+		"max_stored_cards": game.generator_max_stored_cards(generator, card_def),
+		"reusable": bool(card_def.get("reusable", false)),
+		"generator_key": game.resolve_generator_key(generator, card_def),
+		"consume_item_on_play": bool(generator.get("consume_item_on_play", false)),
+		"consume_item_charges_on_play": int(generator.get("consume_item_charges_on_play", 0)),
+		"learnable_spell_scroll": bool(generator.get("learnable_spell_scroll", false)),
+		"learn_spell_id": String(generator.get("learn_spell_id", card_def.get("id", ""))),
+		"reaction_trigger": String(card_def.get("reaction_trigger", "")),
+		"reaction_enabled": bool(card_def.get("reaction_default_enabled", false)),
+		"auto_cast_on_fatal": bool(card_def.get("auto_cast_on_fatal", false)),
+	}
+	game.next_card_uid += 1
+	return hand_card
+
+static func build_passive_combat_payload(game: Node, passive_ability: Dictionary, effect_summary: Dictionary) -> Dictionary:
+	var card_def: Dictionary = game.card_definition(String(passive_ability.get("card_id", "")))
+	var item_bonus: Dictionary = Dictionary(passive_ability.get("item_bonus", game.empty_inventory_effect_summary()))
+	return {
+		"card_id": String(card_def.get("id", "")),
+		"stamina_cost": maxf(float(card_def.get("stamina_cost", 0.0)) * float(effect_summary.get("stamina_cost_mult", 1.0)), 0.0),
+		"damage": float(card_def.get("base_damage", 0.0)) + float(item_bonus.get("card_damage", 0.0)),
+		"projectile_count": int(card_def.get("projectile_count", 1)) + int(item_bonus.get("projectile_count", 0)),
+		"spread": float(card_def.get("spread", 0.0)),
+		"speed": float(card_def.get("speed", 900.0)),
+		"bounces": int(card_def.get("bounces", 0)),
+		"lifetime": float(card_def.get("lifetime", 1.5)),
+		"radius": float(card_def.get("radius", 12.0)),
+		"color": card_def.get("color", Color("d7efff")),
+		"backstab_multiplier": float(card_def.get("backstab_multiplier", 1.0)) + float(item_bonus.get("dagger_backstab_bonus", 0.0)),
+		"combo_gain": int(card_def.get("combo_gain", 0)),
+	}
+
+static func sync_hero_builtin_card_sources(game: Node, hero: Variant) -> void:
+	if hero == null or not is_instance_valid(hero):
+		return
+	var builtin_generators: Array = game.hero_builtin_card_generators(hero)
+	var valid_keys: Dictionary = {}
+	for generator_variant in builtin_generators:
+		var generator: Dictionary = Dictionary(generator_variant).duplicate(true)
+		var generator_key: String = String(generator.get("generator_key", "hero:%d:%s" % [hero.hero_index, String(generator.get("card_id", ""))]))
+		valid_keys[generator_key] = true
+		var card_def: Dictionary = game.card_definition(String(generator.get("card_id", "")))
+		var effective_interval: int = maxi(1, int(card_def.get("door_interval", int(generator.get("door_interval", 1)))))
+		var persistent_card: bool = bool(generator.get("persistent_card", false))
+		var initial_queued_cards: int = maxi(0, int(generator.get("initial_queued_cards", 0)))
+		var max_stored_cards: int = game.generator_max_stored_cards(generator, card_def)
+		var current_stored_cards: int = game.hero_hand_card_count_for_generator_key(hero, generator_key)
+		if not hero.card_generation_timers.has(generator_key):
+			var starting_queued_cards: int = 0
+			if persistent_card:
+				starting_queued_cards = 1
+			starting_queued_cards = maxi(starting_queued_cards, initial_queued_cards)
+			if max_stored_cards > 0:
+				starting_queued_cards = mini(starting_queued_cards, maxi(0, max_stored_cards - current_stored_cards))
+			hero.card_generation_timers[generator_key] = {
+				"generator": generator,
+				"interval": effective_interval,
+				"remaining_doors": effective_interval,
+				"queued_cards": starting_queued_cards,
+			}
+			continue
+		var state: Dictionary = Dictionary(hero.card_generation_timers.get(generator_key, {})).duplicate(true)
+		state["generator"] = generator
+		state["interval"] = effective_interval
+		state["remaining_doors"] = clampi(int(state.get("remaining_doors", effective_interval)), 1, effective_interval)
+		hero.card_generation_timers[generator_key] = state
+	var stale_keys: Array = []
+	for timer_key_variant in hero.card_generation_timers.keys():
+		var timer_key: String = String(timer_key_variant)
+		if not valid_keys.has(timer_key):
+			stale_keys.append(timer_key)
+	for stale_key_variant in stale_keys:
+		hero.card_generation_timers.erase(String(stale_key_variant))
+
+static func fill_queued_hero_builtin_cards(game: Node, hero: Variant) -> void:
+	if hero == null or not is_instance_valid(hero) or hero.hand_cards.size() >= hero.max_hand_size:
+		return
+	sync_hero_builtin_card_sources(game, hero)
+	for timer_key_variant in hero.card_generation_timers.keys():
+		if hero.hand_cards.size() >= hero.max_hand_size:
+			break
+		var timer_key: String = String(timer_key_variant)
+		var state: Dictionary = Dictionary(hero.card_generation_timers.get(timer_key, {})).duplicate(true)
+		var queued_cards: int = int(state.get("queued_cards", 0))
+		var generator: Dictionary = Dictionary(state.get("generator", {})).duplicate(true)
+		var max_stored_cards: int = game.generator_max_stored_cards(generator)
+		var current_stored_cards: int = game.hero_hand_card_count_for_generator_key(hero, timer_key) + queued_cards
+		if bool(generator.get("persistent_card", false)) and (max_stored_cards <= 0 or current_stored_cards < max_stored_cards):
+			queued_cards = 1
+		while queued_cards > 0 and hero.hand_cards.size() < hero.max_hand_size:
+			hero.hand_cards.append(build_hand_card_from_generator(game, hero, generator, game.empty_inventory_effect_summary()))
+			queued_cards -= 1
+		state["queued_cards"] = queued_cards
+		hero.card_generation_timers[timer_key] = state
+
+static func advance_hero_builtin_door_card_generators(game: Node, door_count: int = 1) -> void:
+	if door_count <= 0:
+		return
+	for hero in game.heroes:
+		if hero == null or not is_instance_valid(hero):
+			continue
+		sync_hero_builtin_card_sources(game, hero)
+		for timer_key_variant in hero.card_generation_timers.keys():
+			var timer_key: String = String(timer_key_variant)
+			var state: Dictionary = Dictionary(hero.card_generation_timers.get(timer_key, {})).duplicate(true)
+			var generator: Dictionary = Dictionary(state.get("generator", {})).duplicate(true)
+			if String(generator.get("generation_mode", game.resolve_card_generator_mode(generator))) != "door_interval":
+				hero.card_generation_timers[timer_key] = state
+				continue
+			var remaining_doors: int = int(state.get("remaining_doors", 1)) - door_count
+			var interval: int = maxi(1, int(state.get("interval", 1)))
+			var queued_cards: int = int(state.get("queued_cards", 0))
+			var max_stored_cards: int = game.generator_max_stored_cards(generator)
+			while remaining_doors <= 0:
+				var current_stored_cards: int = queued_cards + game.hero_hand_card_count_for_generator_key(hero, timer_key)
+				if max_stored_cards <= 0 or current_stored_cards < max_stored_cards:
+					queued_cards += 1
+				remaining_doors += interval
+			state["remaining_doors"] = remaining_doors
+			state["queued_cards"] = queued_cards
+			hero.card_generation_timers[timer_key] = state
+		fill_queued_hero_builtin_cards(game, hero)
+
+static func expire_door_turn_hand_cards(game: Node) -> void:
+	for hero in game.heroes:
+		if hero == null or not is_instance_valid(hero):
+			continue
+		var filtered_hand: Array = []
+		for hand_card_variant in hero.hand_cards:
+			var hand_card: Dictionary = (hand_card_variant as Dictionary).duplicate(true)
+			var expires_on: int = int(hand_card.get("expires_on_doors_opened", -1))
+			if expires_on >= 0 and game.doors_opened >= expires_on:
+				continue
+			filtered_hand.append(hand_card)
+		hero.hand_cards = filtered_hand
+
+static func sync_hero_card_sources(game: Node, hero: Variant, effect_summary: Dictionary = {}) -> void:
+	if hero == null or not is_instance_valid(hero):
+		return
+	var resolved_summary: Dictionary = effect_summary if not effect_summary.is_empty() else game.inventory_effect_summary(hero.inventory_items)
+	var resolved_generators: Array = Array(resolved_summary.get("card_generators", [])).duplicate(true)
+	for spell_generator_variant in game.spellbook_card_generators(hero, resolved_summary):
+		resolved_generators.append((spell_generator_variant as Dictionary).duplicate(true))
+	var initially_exhausted_item_uids: Dictionary = {}
+	for generator_variant in resolved_generators:
+		var generator: Dictionary = generator_variant
+		var key: String = game.resolve_generator_key(generator)
+		var item_bonus: Dictionary = Dictionary(generator.get("item_bonus", {}))
+		var card_def: Dictionary = game.card_definition(String(generator.get("card_id", "")))
+		var generation_mode: String = game.resolve_card_generator_mode(generator, card_def)
+		var base_interval: int = maxi(1, int(card_def.get("door_interval", int(generator.get("door_interval", 1)))))
+		var interval_multiplier: float = float(item_bonus.get("card_charge_mult", 1.0))
+		var effective_interval: int = maxi(1, int(round(float(base_interval) * interval_multiplier)))
+		var exhaust_cards: int = int(generator.get("exhaust_cards", 0))
+		if not game.global_item_card_states.has(key):
+			var initial_state: Dictionary = {
+				"item_uid": int(generator.get("item_uid", -1)),
+				"generation_mode": generation_mode,
+				"remaining_doors": effective_interval,
+				"interval": effective_interval,
+				"queued_cards": 0 if game.hero_hand_card_count_for_generator_key(hero, key) > 0 else 1,
+				"remaining_generations": 0,
+				"allow_orphaned_cards": false,
+			}
+			if generation_mode == "door_interval":
+				initial_state["remaining_generations"] = max(exhaust_cards - 1, 0) if exhaust_cards > 0 else -1
+				if exhaust_cards == 1:
+					initial_state["allow_orphaned_cards"] = true
+					initially_exhausted_item_uids[int(generator.get("item_uid", -1))] = true
+			game.global_item_card_states[key] = initial_state
+		else:
+			var state: Dictionary = Dictionary(game.global_item_card_states.get(key, {})).duplicate(true)
+			state["generation_mode"] = generation_mode
+			state["interval"] = effective_interval
+			if generation_mode == "door_interval":
+				state["remaining_doors"] = clampi(int(state.get("remaining_doors", effective_interval)), 1, effective_interval)
+			else:
+				state["remaining_doors"] = effective_interval
+			game.global_item_card_states[key] = state
+	for exhausted_uid_variant in initially_exhausted_item_uids.keys():
+		game.remove_item_by_uid_from_world(int(exhausted_uid_variant))
+	game.cleanup_global_item_card_states()
+	var valid_item_uids: Dictionary = {}
+	var valid_generator_keys: Dictionary = {}
+	for item_variant in hero.inventory_items:
+		var inventory_item: Dictionary = item_variant as Dictionary
+		var item_uid: int = int(inventory_item.get("uid", -1))
+		valid_item_uids[item_uid] = true
+	for generator_variant in resolved_generators:
+		var generator: Dictionary = generator_variant
+		var generator_key: String = game.resolve_generator_key(generator)
+		valid_generator_keys[generator_key] = true
+	var filtered_hand: Array = []
+	for hand_card_variant in hero.hand_cards:
+		var hand_card: Dictionary = (hand_card_variant as Dictionary).duplicate(true)
+		if String(hand_card.get("source_type", "item")) == "hero_builtin":
+			if int(hand_card.get("source_hero_index", -1)) == hero.hero_index:
+				filtered_hand.append(hand_card)
+			continue
+		var hand_item_uid: int = int(hand_card.get("item_uid", -1))
+		var hand_key: String = String(hand_card.get("generator_key", game.card_generator_key(hand_item_uid, String(hand_card.get("card_id", "")))))
+		if valid_item_uids.has(hand_item_uid):
+			if not valid_generator_keys.has(hand_key):
+				continue
+			filtered_hand.append(hand_card)
+		else:
+			var hand_state: Dictionary = Dictionary(game.global_item_card_states.get(hand_key, {}))
+			if bool(hand_state.get("allow_orphaned_cards", false)):
+				filtered_hand.append(hand_card)
+			elif game.global_item_card_states.has(hand_key):
+				hand_state = Dictionary(game.global_item_card_states.get(hand_key, {})).duplicate(true)
+				hand_state["queued_cards"] = int(hand_state.get("queued_cards", 0)) + 1
+				game.global_item_card_states[hand_key] = hand_state
+	hero.hand_cards = filtered_hand
+	while hero.hand_cards.size() > hero.max_hand_size:
+		hero.hand_cards.pop_back()
+	fill_queued_hand_cards(game, hero, resolved_summary, resolved_generators)
+
+static func sync_hero_passive_combat_sources(game: Node, hero: Variant, effect_summary: Dictionary = {}) -> void:
+	if hero == null or not is_instance_valid(hero):
+		return
+	var resolved_summary: Dictionary = effect_summary if not effect_summary.is_empty() else game.inventory_effect_summary(hero.inventory_items)
+	for passive_variant in Array(resolved_summary.get("combat_passives", [])):
+		var passive_ability: Dictionary = passive_variant
+		var key: String = game.combat_passive_key(int(passive_ability.get("item_uid", -1)), String(passive_ability.get("card_id", "")))
+		var item_bonus: Dictionary = Dictionary(passive_ability.get("item_bonus", {}))
+		var card_def: Dictionary = game.card_definition(String(passive_ability.get("card_id", "")))
+		var base_cooldown: float = float(passive_ability.get("cooldown", card_def.get("test_cooldown", 1.5)))
+		var effective_cooldown: float = maxf(base_cooldown * float(item_bonus.get("card_charge_mult", 1.0)), 0.25)
+		if not game.global_item_passive_timers.has(key):
+			game.global_item_passive_timers[key] = {
+				"item_uid": int(passive_ability.get("item_uid", -1)),
+				"timer_left": effective_cooldown,
+			}
+		else:
+			var passive_state: Dictionary = Dictionary(game.global_item_passive_timers.get(key, {})).duplicate(true)
+			passive_state["timer_left"] = minf(float(passive_state.get("timer_left", effective_cooldown)), effective_cooldown)
+			game.global_item_passive_timers[key] = passive_state
+	var known_item_uids: Dictionary = game.collect_world_item_uids()
+	var stale_keys: Array = []
+	for timer_key_variant in game.global_item_passive_timers.keys():
+		var timer_key: String = String(timer_key_variant)
+		var passive_state: Dictionary = Dictionary(game.global_item_passive_timers.get(timer_key, {}))
+		if not known_item_uids.has(int(passive_state.get("item_uid", -1))):
+			stale_keys.append(timer_key)
+	for stale_key_variant in stale_keys:
+		game.global_item_passive_timers.erase(String(stale_key_variant))
+
+static func fill_queued_hand_cards(game: Node, hero: Variant, effect_summary: Dictionary = {}, precomputed_generators: Array = []) -> void:
+	if hero == null or not is_instance_valid(hero) or hero.hand_cards.size() >= hero.max_hand_size:
+		return
+	var resolved_summary: Dictionary = effect_summary if not effect_summary.is_empty() else game.inventory_effect_summary(hero.inventory_items)
+	var resolved_generators: Array = precomputed_generators.duplicate(true) if not precomputed_generators.is_empty() else Array(resolved_summary.get("card_generators", [])).duplicate(true)
+	if precomputed_generators.is_empty():
+		for spell_generator_variant in game.spellbook_card_generators(hero, resolved_summary):
+			resolved_generators.append((spell_generator_variant as Dictionary).duplicate(true))
+	var generators_by_key: Dictionary = {}
+	for generator_variant in resolved_generators:
+		var generator: Dictionary = generator_variant
+		var generators_key: String = game.resolve_generator_key(generator)
+		generators_by_key[generators_key] = generator
+	for timer_key_variant in game.global_item_card_states.keys():
+		if hero.hand_cards.size() >= hero.max_hand_size:
+			break
+		var timer_key: String = String(timer_key_variant)
+		if not generators_by_key.has(timer_key):
+			continue
+		var state: Dictionary = Dictionary(game.global_item_card_states.get(timer_key, {})).duplicate(true)
+		var queued_cards: int = int(state.get("queued_cards", 0))
+		while queued_cards > 0 and hero.hand_cards.size() < hero.max_hand_size:
+			hero.hand_cards.append(build_hand_card_from_generator(game, hero, Dictionary(generators_by_key[timer_key]), resolved_summary))
+			queued_cards -= 1
+		state["queued_cards"] = queued_cards
+		game.global_item_card_states[timer_key] = state
+	fill_queued_hero_builtin_cards(game, hero)
+
+static func advance_item_door_card_generators(game: Node, door_count: int = 1) -> void:
+	if door_count <= 0:
+		return
+	for hero in game.heroes:
+		if hero == null or not is_instance_valid(hero):
+			continue
+		var effect_summary: Dictionary = game.inventory_effect_summary(hero.inventory_items)
+		var resolved_generators: Array = Array(effect_summary.get("card_generators", [])).duplicate(true)
+		for spell_generator_variant in game.spellbook_card_generators(hero, effect_summary):
+			resolved_generators.append((spell_generator_variant as Dictionary).duplicate(true))
+		sync_hero_card_sources(game, hero, effect_summary)
+		var exhausted_item_uids: Dictionary = {}
+		for generator_variant in resolved_generators:
+			var generator: Dictionary = generator_variant
+			var key: String = game.resolve_generator_key(generator)
+			var state: Dictionary = Dictionary(game.global_item_card_states.get(key, {})).duplicate(true)
+			if state.is_empty():
+				continue
+			if String(state.get("generation_mode", game.resolve_card_generator_mode(generator))) != "door_interval":
+				continue
+			var remaining_doors: int = int(state.get("remaining_doors", 1)) - door_count
+			var interval: int = maxi(1, int(state.get("interval", 1)))
+			var queued_cards: int = int(state.get("queued_cards", 0))
+			var remaining_generations: int = int(state.get("remaining_generations", -1))
+			var max_stored_cards: int = game.generator_max_stored_cards(generator)
+			while remaining_doors <= 0:
+				if remaining_generations == 0:
+					break
+				var current_stored_cards: int = queued_cards + game.hero_hand_card_count_for_generator_key(hero, key)
+				if max_stored_cards <= 0 or current_stored_cards < max_stored_cards:
+					queued_cards += 1
+				if remaining_generations > 0:
+					remaining_generations -= 1
+				remaining_doors += interval
+			state["remaining_doors"] = remaining_doors
+			state["queued_cards"] = queued_cards
+			state["remaining_generations"] = remaining_generations
+			if remaining_generations == 0:
+				state["allow_orphaned_cards"] = true
+				exhausted_item_uids[int(state.get("item_uid", -1))] = true
+			game.global_item_card_states[key] = state
+		for exhausted_uid_variant in exhausted_item_uids.keys():
+			game.remove_item_by_uid_from_world(int(exhausted_uid_variant))
+		fill_queued_hand_cards(game, hero, effect_summary, resolved_generators)
+	game.cleanup_global_item_card_states()
