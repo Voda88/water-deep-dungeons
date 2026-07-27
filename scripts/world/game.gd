@@ -5,34 +5,37 @@ const ENEMY_SCENE: PackedScene = preload("res://scenes/actors/enemy.tscn")
 const INVENTORY_OVERLAY_SCENE: PackedScene = preload("res://scenes/ui/inventory_overlay.tscn")
 const HERO_SCRIPT: GDScript = preload("res://scripts/actors/hero.gd")
 const ENEMY_SCRIPT: GDScript = preload("res://scripts/actors/enemy.gd")
-const GAME_CONTENT_DEFS: GDScript = preload("res://scripts/world/game_content_defs.gd")
-const GAME_MODULE_DEFS: GDScript = preload("res://scripts/world/game_module_defs.gd")
+const GAME_CARD_DEFS: GDScript = preload("res://scripts/content/game_card_defs.gd")
+const GAME_ITEM_DEFS: GDScript = preload("res://scripts/content/game_item_defs.gd")
+const GAME_HERO_DEFS: GDScript = preload("res://scripts/content/game_hero_defs.gd")
+const GAME_ENEMY_DEFS: GDScript = preload("res://scripts/content/game_enemy_defs.gd")
+const GAME_MODULE_DEFS: GDScript = preload("res://scripts/content/game_module_defs.gd")
 const GAME_RESEARCH_FLOW: GDScript = preload("res://scripts/world/game_research_flow.gd")
-const GAME_ROOM_ACTION_MENU: GDScript = preload("res://scripts/world/game_room_action_menu.gd")
+const GAME_ROOM_ACTION_MENU: GDScript = preload("res://scripts/world/ui/game_room_action_menu.gd")
 const GAME_COMMAND_FLOW: GDScript = preload("res://scripts/world/game_command_flow.gd")
-const GAME_MULTIPLAYER_LOBBY: GDScript = preload("res://scripts/world/game_multiplayer_lobby.gd")
-const GAME_NETWORK_SYNC: GDScript = preload("res://scripts/world/game_network_sync.gd")
-const GAME_DUNGEON_BUILDER: GDScript = preload("res://scripts/world/game_dungeon_builder.gd")
+const GAME_MULTIPLAYER_LOBBY: GDScript = preload("res://scripts/world/network/game_multiplayer_lobby.gd")
+const GAME_NETWORK_SYNC: GDScript = preload("res://scripts/world/network/game_network_sync.gd")
+const GAME_DUNGEON_BUILDER: GDScript = preload("res://scripts/world/rooms/game_dungeon_builder.gd")
 const GAME_COMBAT_FLOW: GDScript = preload("res://scripts/world/game_combat_flow.gd")
 const GAME_PATHING_FLOW: GDScript = preload("res://scripts/world/game_pathing_flow.gd")
 const GAME_ENEMY_AI_FLOW: GDScript = preload("res://scripts/world/game_enemy_ai_flow.gd")
-const GAME_CARD_ACTIONS: GDScript = preload("res://scripts/world/game_card_actions.gd")
+const GAME_CARD_ACTIONS: GDScript = preload("res://scripts/world/cards/game_card_actions.gd")
 const GAME_HERO_PROGRESSION_FLOW: GDScript = preload("res://scripts/world/game_hero_progression_flow.gd")
 const GAME_HERO_PROFILE_FLOW: GDScript = preload("res://scripts/world/game_hero_profile_flow.gd")
 const GAME_ACTOR_ROSTER_FLOW: GDScript = preload("res://scripts/world/game_actor_roster_flow.gd")
-const GAME_INVENTORY_OVERLAY_FLOW: GDScript = preload("res://scripts/world/game_inventory_overlay_flow.gd")
-const GAME_INVENTORY_ITEM_FLOW: GDScript = preload("res://scripts/world/game_inventory_item_flow.gd")
-const GAME_CARD_SOURCE_FLOW: GDScript = preload("res://scripts/world/game_card_source_flow.gd")
+const GAME_INVENTORY_OVERLAY_FLOW: GDScript = preload("res://scripts/world/inventory/game_inventory_overlay_flow.gd")
+const GAME_INVENTORY_ITEM_FLOW: GDScript = preload("res://scripts/world/inventory/game_inventory_item_flow.gd")
+const GAME_CARD_SOURCE_FLOW: GDScript = preload("res://scripts/world/cards/game_card_source_flow.gd")
 const GAME_FLOOR_FLOW: GDScript = preload("res://scripts/world/game_floor_flow.gd")
 const GAME_ACTOR_COMBAT_FLOW: GDScript = preload("res://scripts/world/game_actor_combat_flow.gd")
-const GAME_HUD_FLOW: GDScript = preload("res://scripts/world/game_hud_flow.gd")
-const GAME_COMBAT_HAND_UI_FLOW: GDScript = preload("res://scripts/world/game_combat_hand_ui_flow.gd")
+const GAME_HUD_FLOW: GDScript = preload("res://scripts/world/ui/game_hud_flow.gd")
+const GAME_COMBAT_HAND_UI_FLOW: GDScript = preload("res://scripts/world/cards/game_combat_hand_ui_flow.gd")
 const GAME_CONSTRUCTION_FLOW: GDScript = preload("res://scripts/world/game_construction_flow.gd")
 const GAME_WORLD_RENDER_FLOW: GDScript = preload("res://scripts/world/game_world_render_flow.gd")
 const GAME_WORLD_INPUT_FLOW: GDScript = preload("res://scripts/world/game_world_input_flow.gd")
-const GAME_UI_BUTTON_HOLD_FLOW: GDScript = preload("res://scripts/world/game_ui_button_hold_flow.gd")
+const GAME_UI_BUTTON_HOLD_FLOW: GDScript = preload("res://scripts/world/ui/game_ui_button_hold_flow.gd")
 const GAME_CAMERA_FLOW: GDScript = preload("res://scripts/world/game_camera_flow.gd")
-const GAME_RUNTIME_UI_FLOW: GDScript = preload("res://scripts/world/game_runtime_ui_flow.gd")
+const GAME_RUNTIME_UI_FLOW: GDScript = preload("res://scripts/world/ui/game_runtime_ui_flow.gd")
 const GRID_SIZE: Vector2i = Vector2i(7, 7)
 const ROOM_SPACING: Vector2 = Vector2(548.0, 358.0)
 const ROOM_DOOR_GAP: float = 0.0
@@ -67,11 +70,11 @@ const FLOOR_THEME_ORDER: Array[String] = [
 	FLOOR_THEME_FUNGAL,
 	FLOOR_THEME_RUINS,
 ]
-const ENEMY_TYPE_LIZARDMAN: String = "lizardman"
-const ENEMY_TYPE_GOBLIN: String = "goblin"
+const ENEMY_TYPE_ORC_RIDER: String = "orc_rider"
+const ENEMY_TYPE_ORC: String = "orc"
 const ENEMY_TYPE_BAT: String = "bat"
 const ENEMY_TYPE_GOLEM: String = "golem"
-const ENEMY_TYPE_GOBLIN_SHAMAN: String = "goblin_shaman"
+const ENEMY_TYPE_ORC_SHAMAN: String = "orc_shaman"
 const ENEMY_TYPE_SKELETON_ARCHER: String = "skeleton_archer"
 const MINOR_MODULE_TURRET: String = "ballista_turret"
 const MINOR_MODULE_PULSE: String = "tear_gas"
@@ -175,6 +178,7 @@ const CARDINAL_DIRS: Array[Vector2i] = [
 ]
 
 @onready var camera: Camera2D = $Camera2D
+@onready var world_fx_layer: Node2D = $WorldFxLayer
 @onready var static_dungeon_layer = $StaticDungeonLayer
 @onready var actor_layer: Node2D = $ActorLayer
 @onready var enemy_layer: Node2D = $EnemyLayer
@@ -342,6 +346,8 @@ func _ready() -> void:
 	ensure_runtime_ui()
 	if static_dungeon_layer != null:
 		static_dungeon_layer.configure(self)
+	if world_fx_layer != null:
+		world_fx_layer.set("game", self)
 	build_dungeon(true)
 	spawn_heroes()
 	reset_hero_owner_peer_ids()
@@ -405,61 +411,61 @@ func _draw() -> void:
 	GAME_WORLD_RENDER_FLOW._draw(self)
 
 func build_item_defs() -> Dictionary:
-	return GAME_CONTENT_DEFS.build_item_defs()
+	return GAME_ITEM_DEFS.build_item_defs()
 
 func hero_class_definition(class_id: String) -> Dictionary:
-	return GAME_CONTENT_DEFS.hero_class_definition(class_id)
+	return GAME_HERO_DEFS.hero_class_definition(class_id)
 
 func default_learned_spells_for_class(class_id: String) -> Array[String]:
-	return GAME_CONTENT_DEFS.default_learned_spells_for_class(class_id, Callable(self, "card_definition"))
+	return GAME_HERO_DEFS.default_learned_spells_for_class(class_id, Callable(self, "card_definition"))
 
 func default_slotted_spells_for_class(class_id: String) -> Array[String]:
-	return GAME_CONTENT_DEFS.default_slotted_spells_for_class(class_id, Callable(self, "card_definition"))
+	return GAME_HERO_DEFS.default_slotted_spells_for_class(class_id, Callable(self, "card_definition"))
 
 func implemented_spellbook_spells_for_class(class_id: String) -> Array[String]:
-	return GAME_CONTENT_DEFS.implemented_spellbook_spells_for_class(class_id)
+	return GAME_HERO_DEFS.implemented_spellbook_spells_for_class(class_id)
 
 func starting_known_spells_for_class(class_id: String) -> Array[String]:
-	return GAME_CONTENT_DEFS.starting_known_spells_for_class(class_id, Callable(self, "card_definition"))
+	return GAME_HERO_DEFS.starting_known_spells_for_class(class_id, Callable(self, "card_definition"))
 
 func spell_display_name(spell_id: String) -> String:
-	return GAME_CONTENT_DEFS.spell_display_name(spell_id, Callable(self, "card_definition"))
+	return GAME_HERO_DEFS.spell_display_name(spell_id, Callable(self, "card_definition"))
 
 func spell_display_names_joined(spell_ids: Array) -> String:
-	return GAME_CONTENT_DEFS.spell_display_names_joined(spell_ids, Callable(self, "card_definition"))
+	return GAME_HERO_DEFS.spell_display_names_joined(spell_ids, Callable(self, "card_definition"))
 
 func spell_overlay_entry(spell_id: String) -> Dictionary:
-	return GAME_CONTENT_DEFS.spell_overlay_entry(spell_id, Callable(self, "card_definition"))
+	return GAME_HERO_DEFS.spell_overlay_entry(spell_id, Callable(self, "card_definition"))
 
 func spell_overlay_entries(spell_ids: Array) -> Array:
-	return GAME_CONTENT_DEFS.spell_overlay_entries(spell_ids, Callable(self, "card_definition"))
+	return GAME_HERO_DEFS.spell_overlay_entries(spell_ids, Callable(self, "card_definition"))
 
 func spell_focus_item_id_for_class(class_id: String) -> String:
-	return GAME_CONTENT_DEFS.spell_focus_item_id_for_class(class_id)
+	return GAME_HERO_DEFS.spell_focus_item_id_for_class(class_id)
 
 func spell_panel_title_for_class(class_id: String) -> String:
-	return GAME_CONTENT_DEFS.spell_panel_title_for_class(class_id)
+	return GAME_HERO_DEFS.spell_panel_title_for_class(class_id)
 
 func full_caster_spell_slots_for_level(level_value: int) -> Array[int]:
-	return GAME_CONTENT_DEFS.full_caster_spell_slots_for_level(level_value)
+	return GAME_HERO_DEFS.full_caster_spell_slots_for_level(level_value)
 
 func spell_level(spell_id: String) -> int:
-	return GAME_CONTENT_DEFS.spell_level(spell_id, Callable(self, "card_definition"))
+	return GAME_HERO_DEFS.spell_level(spell_id, Callable(self, "card_definition"))
 
 func spell_class_id(spell_id: String) -> String:
-	return GAME_CONTENT_DEFS.spell_class_id(spell_id, Callable(self, "card_definition"))
+	return GAME_HERO_DEFS.spell_class_id(spell_id, Callable(self, "card_definition"))
 
 func spell_slot_counts_for_class_level(class_id: String, level_value: int) -> Array[int]:
-	return GAME_CONTENT_DEFS.spell_slot_counts_for_class_level(class_id, level_value)
+	return GAME_HERO_DEFS.spell_slot_counts_for_class_level(class_id, level_value)
 
 func hero_max_spell_level_for_class_level(class_id: String, level_value: int) -> int:
-	return GAME_CONTENT_DEFS.hero_max_spell_level_for_class_level(class_id, level_value)
+	return GAME_HERO_DEFS.hero_max_spell_level_for_class_level(class_id, level_value)
 
 func spell_slot_capacity_for_class_level(class_id: String, level_value: int) -> int:
-	return GAME_CONTENT_DEFS.spell_slot_capacity_for_class_level(class_id, level_value)
+	return GAME_HERO_DEFS.spell_slot_capacity_for_class_level(class_id, level_value)
 
 func default_hero_class_for_slot(hero_index: int) -> String:
-	return GAME_CONTENT_DEFS.default_hero_class_for_slot(hero_index, HERO_CLASS_ORDER)
+	return GAME_HERO_DEFS.default_hero_class_for_slot(hero_index, HERO_CLASS_ORDER)
 
 func hero_profile_class_id(hero_index: int) -> String:
 	return GAME_HERO_PROFILE_FLOW.hero_profile_class_id(self, hero_index)
@@ -909,16 +915,16 @@ func socket_match_entries(socket_rule: Dictionary) -> Array:
 	return GAME_INVENTORY_ITEM_FLOW.socket_match_entries(self, socket_rule)
 
 func card_definition(card_id: String) -> Dictionary:
-	return GAME_CONTENT_DEFS.runtime_card_definition(self, card_id)
+	return GAME_CARD_DEFS.runtime_card_definition(self, card_id)
 
 func card_target_scope_label(target_scope: String) -> String:
-	return GAME_CONTENT_DEFS.card_target_scope_label(self, target_scope)
+	return GAME_CARD_DEFS.card_target_scope_label(self, target_scope)
 
 func hero_builtin_card_generators(hero: Variant) -> Array:
-	return GAME_CONTENT_DEFS.hero_builtin_card_generators(self, hero)
+	return GAME_HERO_DEFS.hero_builtin_card_generators(self, hero)
 
 func spellbook_card_generators(hero: Variant, effect_summary: Dictionary) -> Array:
-	return GAME_CONTENT_DEFS.spellbook_card_generators(self, hero, effect_summary)
+	return GAME_HERO_DEFS.spellbook_card_generators(self, hero, effect_summary)
 
 func empty_inventory_effect_summary() -> Dictionary:
 	return GAME_INVENTORY_ITEM_FLOW.empty_inventory_effect_summary(self)
@@ -1438,13 +1444,13 @@ func queue_pressure_spawn(room_coord: Vector2i, count: int) -> void:
 	GAME_COMBAT_FLOW.queue_pressure_spawn(self, room_coord, count)
 
 func enemy_pack_size(enemy_type: String) -> int:
-	return GAME_COMBAT_FLOW.enemy_pack_size(self, enemy_type)
+	return GAME_ENEMY_DEFS.enemy_pack_size(enemy_type)
 
 func enemy_wave_point_cost(enemy_type: String) -> int:
-	return GAME_COMBAT_FLOW.enemy_wave_point_cost(self, enemy_type)
+	return GAME_ENEMY_DEFS.enemy_wave_point_cost(enemy_type)
 
 func enemy_spawn_weight(enemy_type: String, pressure_spawn: bool = false) -> float:
-	return GAME_COMBAT_FLOW.enemy_spawn_weight(self, enemy_type, pressure_spawn)
+	return GAME_ENEMY_DEFS.enemy_spawn_weight(enemy_type, pressure_spawn)
 
 func weighted_enemy_type_choice(candidates: Array[String], pressure_spawn: bool = false) -> String:
 	return GAME_COMBAT_FLOW.weighted_enemy_type_choice(self, candidates, pressure_spawn)
@@ -1796,6 +1802,9 @@ func cast_magic_missile_spell(hero: Variant, target_world_position: Vector2, tar
 func cast_misty_step_spell(hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
 	GAME_CARD_ACTIONS.cast_misty_step_spell(self, hero, target_world_position, target_room, hand_card)
 
+func cast_web_spell(hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
+	GAME_CARD_ACTIONS.cast_web_spell(self, hero, target_world_position, target_room, hand_card)
+
 func cast_shield_spell(hero: Variant, hand_card: Dictionary) -> void:
 	GAME_CARD_ACTIONS.cast_shield_spell(self, hero, hand_card)
 
@@ -1804,6 +1813,9 @@ func try_auto_cast_fatal_shield(hero: Variant, incoming_damage: float) -> bool:
 
 func cast_lightning_bolt_spell(hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
 	GAME_CARD_ACTIONS.cast_lightning_bolt_spell(self, hero, target_world_position, target_room, hand_card)
+
+func cast_scorching_ray_spell(hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
+	GAME_CARD_ACTIONS.cast_scorching_ray_spell(self, hero, target_world_position, target_room, hand_card)
 
 func explode_fireball_projectile(projectile: Dictionary) -> void:
 	GAME_CARD_ACTIONS.explode_fireball_projectile(self, projectile)
@@ -1868,11 +1880,20 @@ func spawn_arrow_projectile(origin: Vector2, target: Variant, damage: float, col
 func spawn_laser_projectile(origin: Vector2, target: Variant, damage: float, color: Color = Color("89f2ff"), width: float = 4.0, speed: float = PROJECTILE_SPEED) -> void:
 	GAME_COMBAT_FLOW.spawn_laser_projectile(self, origin, target, damage, color, width, speed)
 
+func spawn_magic_missile_projectile(origin: Vector2, target: Variant, damage: float, color: Color = Color("c18dff"), width: float = 4.8, speed: float = PROJECTILE_SPEED, curve_offset: float = 0.0) -> void:
+	GAME_COMBAT_FLOW.spawn_magic_missile_projectile(self, origin, target, damage, color, width, speed, curve_offset)
+
+func spawn_fire_bolt_projectile(origin: Vector2, target: Variant, damage: float, color: Color = Color("ff8e47"), width: float = 4.4, speed: float = PROJECTILE_SPEED) -> void:
+	GAME_COMBAT_FLOW.spawn_fire_bolt_projectile(self, origin, target, damage, color, width, speed)
+
 func advance_projectiles(delta: float) -> void:
 	GAME_COMBAT_FLOW.advance_projectiles(self, delta)
 
 func draw_projectiles() -> void:
 	GAME_COMBAT_FLOW.draw_projectiles(self)
+
+func draw_projectiles_on_canvas(canvas: CanvasItem) -> void:
+	GAME_COMBAT_FLOW.draw_projectiles(self, canvas)
 
 func nearest_enemy_in_room(room_coord: Vector2i, origin: Vector2, max_range: float) -> Variant:
 	return GAME_COMBAT_FLOW.nearest_enemy_in_room(self, room_coord, origin, max_range)
@@ -2534,8 +2555,3 @@ func _on_exit_button_pressed() -> void:
 
 func _on_restart_button_pressed() -> void:
 	get_tree().reload_current_scene()
-
-
-
-
-

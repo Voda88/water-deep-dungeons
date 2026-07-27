@@ -1,61 +1,19 @@
 extends CharacterBody2D
 class_name DungeonEnemy
 
+const GAME_ENEMY_DEFS: GDScript = preload("res://scripts/content/game_enemy_defs.gd")
+
 const INVALID_ROOM: Vector2i = Vector2i(-99, -99)
-const TYPE_LIZARDMAN: String = "lizardman"
-const TYPE_GOBLIN: String = "goblin"
+const TYPE_ORC_RIDER: String = "orc_rider"
+const TYPE_ORC: String = "orc"
 const TYPE_BAT: String = "bat"
 const TYPE_GOLEM: String = "golem"
-const TYPE_GOBLIN_SHAMAN: String = "goblin_shaman"
+const TYPE_ORC_SHAMAN: String = "orc_shaman"
 const TYPE_SKELETON_ARCHER: String = "skeleton_archer"
 const SPRITE_FRAME_SIZE: Vector2i = Vector2i(100, 100)
 const MELEE_IMPACT_FRAME: float = 2.0
 const MELEE_ATTACK_FPS: float = 13.0
 const MELEE_ATTACK_SPEED_SCALE: float = 0.82
-const ENEMY_SPRITE_PROFILES := {
-	TYPE_GOBLIN: {
-		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc/Orc/Orc_Idle.png",
-		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc/Orc/Orc_Walk.png",
-		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc/Orc/Orc_Hurt.png",
-		"attack_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc/Orc/Orc_Attack01.png",
-		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc/Orc/Orc_Death.png",
-	},
-	TYPE_GOBLIN_SHAMAN: {
-		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Necromancer/Necromancer/Necromancer_Idle.png",
-		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Necromancer/Necromancer/Necromancer_Walk.png",
-		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Necromancer/Necromancer/Necromancer_Hurt.png",
-		"attack_path": "res://assets/characters/packs/pack01/characters_split_100x100/Necromancer/Necromancer/Necromancer_Attack02(With magic effects).png",
-		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Necromancer/Necromancer/Necromancer_DEATH.png",
-	},
-	TYPE_BAT: {
-		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Bat/Bat/Bat_Flying.png",
-		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Bat/Bat/Bat_Flying.png",
-		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Bat/Bat/Bat_Hurt.png",
-		"attack_path": "res://assets/characters/packs/pack01/characters_split_100x100/Bat/Bat/Bat_Attack01.png",
-		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Bat/Bat/Bat_Death.png",
-	},
-	TYPE_LIZARDMAN: {
-		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc rider/Orc rider/Orc rider_Idle.png",
-		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc rider/Orc rider/Orc rider_Walk.png",
-		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc rider/Orc rider/Orc rider_Hurt.png",
-		"attack_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc rider/Orc rider/Orc rider_Attack01.png",
-		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc rider/Orc rider/Orc rider_Death.png",
-	},
-	TYPE_GOLEM: {
-		"idle_path": "res://assets/characters/packs/pack02/characters_split_100x100/Flame Golem/Flame Golem/Flame Golem_Idle.png",
-		"walk_path": "res://assets/characters/packs/pack02/characters_split_100x100/Flame Golem/Flame Golem/Flame Golem_Walk.png",
-		"hurt_path": "res://assets/characters/packs/pack02/characters_split_100x100/Flame Golem/Flame Golem/Flame Golem_Hurt.png",
-		"attack_path": "res://assets/characters/packs/pack02/characters_split_100x100/Flame Golem/Flame Golem/Flame Golem_Attack01.png",
-		"death_path": "res://assets/characters/packs/pack02/characters_split_100x100/Flame Golem/Flame Golem/Flame Golem_Death.png",
-	},
-	TYPE_SKELETON_ARCHER: {
-		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Skeleton Archer/Skeleton Archer/Skeleton Archer_Idle.png",
-		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Skeleton Archer/Skeleton Archer/Skeleton Archer_Walk.png",
-		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Skeleton Archer/Skeleton Archer/Skeleton Archer_Hurt.png",
-		"attack_path": "res://assets/characters/packs/pack01/characters_split_100x100/Skeleton Archer/Skeleton Archer/Skeleton Archer_Attack.png",
-		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Skeleton Archer/Skeleton Archer/Skeleton Archer_Death.png",
-	},
-}
 
 static var enemy_sprite_frames_cache: Dictionary = {}
 
@@ -63,8 +21,8 @@ static var enemy_sprite_frames_cache: Dictionary = {}
 @export var max_health: float = 40.0
 @export var attack_damage: float = 6.0
 @export var attack_cooldown: float = 0.95
+@export var attack_range: float = 70.0
 @export var weight: float = 1.2
-@export var melee_reach: float = 54.0
 
 @onready var animated_sprite: AnimatedSprite2D = $AnimatedSprite2D
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
@@ -80,7 +38,7 @@ var destination: Vector2 = Vector2.ZERO
 var move_steps: Array = []
 var moving_between_rooms: bool = false
 var transit_stage: String = ""
-var enemy_role: String = TYPE_GOBLIN
+var enemy_role: String = TYPE_ORC
 var body_color: Color = Color("ff7764")
 var base_move_speed: float = 60.0
 var situational_speed_multiplier: float = 1.0
@@ -88,6 +46,7 @@ var attack_effect_left: float = 0.0
 var hurt_effect_left: float = 0.0
 var visual_facing_left: bool = false
 var death_started: bool = false
+var rooted_time_left: float = 0.0
 var knockback_velocity: Vector2 = Vector2.ZERO
 var knockback_time_left: float = 0.0
 var knockback_duration: float = 0.0
@@ -117,7 +76,7 @@ static func build_strip_animation(frames: SpriteFrames, animation_name: String, 
 		frames.add_frame(animation_name, atlas)
 
 static func sprite_profile_for_role(role_name: String) -> Dictionary:
-	return ENEMY_SPRITE_PROFILES.get(role_name, ENEMY_SPRITE_PROFILES[TYPE_GOBLIN])
+	return GAME_ENEMY_DEFS.enemy_sprite_profile(role_name)
 
 static func load_sprite_texture(profile: Dictionary, key: String, fallback_key: String) -> Texture2D:
 	var preferred_path: String = String(profile.get(key, ""))
@@ -125,7 +84,7 @@ static func load_sprite_texture(profile: Dictionary, key: String, fallback_key: 
 		var preferred_resource: Resource = load(preferred_path)
 		if preferred_resource is Texture2D:
 			return preferred_resource
-	var fallback_path: String = String(ENEMY_SPRITE_PROFILES[TYPE_GOBLIN].get(fallback_key, ""))
+	var fallback_path: String = String(GAME_ENEMY_DEFS.enemy_sprite_profile(TYPE_ORC).get(fallback_key, ""))
 	var fallback_resource: Resource = load(fallback_path)
 	if fallback_resource is Texture2D:
 		return fallback_resource
@@ -167,20 +126,25 @@ func ensure_sprite_setup() -> void:
 	animated_sprite.play()
 	apply_role_visuals()
 
-func role_scale() -> float:
-	match enemy_role:
-		TYPE_GOLEM:
-			return 2.45
-		TYPE_LIZARDMAN:
-			return 2.15
-		TYPE_BAT:
-			return 1.54
-		TYPE_SKELETON_ARCHER:
-			return 1.88
-		TYPE_GOBLIN_SHAMAN:
-			return 2.05
+func animation_speed_scale_for(animation_name: String) -> float:
+	match animation_name:
+		"walk":
+			return clampf(effective_move_speed() / 48.0, 0.7, 2.1)
+		"attack":
+			return 0.82
 		_:
-			return 1.92
+			return 1.0
+
+func animation_duration(animation_name: String, fallback_duration: float = 0.3) -> float:
+	if animated_sprite == null or animated_sprite.sprite_frames == null or not animated_sprite.sprite_frames.has_animation(animation_name):
+		return fallback_duration
+	var frame_count: int = animated_sprite.sprite_frames.get_frame_count(animation_name)
+	var fps: float = animated_sprite.sprite_frames.get_animation_speed(animation_name)
+	var speed_scale: float = animation_speed_scale_for(animation_name)
+	return maxf(float(frame_count) / maxf(fps * speed_scale, 0.001), 0.08)
+
+func role_scale() -> float:
+	return GAME_ENEMY_DEFS.enemy_role_scale(enemy_role)
 
 func apply_role_visuals() -> void:
 	if animated_sprite == null:
@@ -217,18 +181,22 @@ func update_sprite_state(move_offset: Vector2) -> void:
 		animated_sprite.play(animation_name)
 	elif not animated_sprite.is_playing():
 		animated_sprite.play()
-	if animation_name == "walk":
-		animated_sprite.speed_scale = clampf(effective_move_speed() / 48.0, 0.7, 2.1)
-	elif animation_name == "attack":
-		animated_sprite.speed_scale = 0.82
-	else:
-		animated_sprite.speed_scale = 1.0
+	animated_sprite.speed_scale = animation_speed_scale_for(animation_name)
 
 func effective_move_speed() -> float:
+	if rooted_time_left > 0.0:
+		return 0.0
 	return move_speed * situational_speed_multiplier
 
 func set_situational_speed_multiplier(multiplier: float) -> void:
 	situational_speed_multiplier = clampf(multiplier, 0.15, 2.5)
+
+func apply_root(duration: float) -> void:
+	if duration <= 0.0 or death_started:
+		return
+	rooted_time_left = maxf(rooted_time_left, duration)
+	velocity = Vector2.ZERO
+	queue_redraw()
 
 func set_destination(world_position: Vector2) -> void:
 	if death_started:
@@ -236,7 +204,11 @@ func set_destination(world_position: Vector2) -> void:
 	destination = world_position
 
 func melee_impact_delay() -> float:
-	return MELEE_IMPACT_FRAME / maxf(MELEE_ATTACK_FPS * MELEE_ATTACK_SPEED_SCALE, 0.001)
+	var attack_frames: SpriteFrames = animated_sprite.sprite_frames if animated_sprite != null else null
+	var attack_fps: float = MELEE_ATTACK_FPS
+	if attack_frames != null and attack_frames.has_animation("attack"):
+		attack_fps = attack_frames.get_animation_speed("attack")
+	return MELEE_IMPACT_FRAME / maxf(attack_fps * animation_speed_scale_for("attack"), 0.001)
 
 func knockback_recovery_factor() -> float:
 	if knockback_time_left <= 0.0 or knockback_duration <= 0.0:
@@ -304,7 +276,7 @@ func trigger_attack(target_position: Vector2) -> void:
 	if death_started:
 		return
 	destination = target_position if global_position.distance_to(target_position) <= 48.0 else destination
-	attack_effect_left = maxf(attack_effect_left, 0.28)
+	attack_effect_left = maxf(attack_effect_left, animation_duration("attack", 0.32))
 	update_visual_facing(target_position - global_position)
 	update_sprite_state(destination - global_position)
 
@@ -335,58 +307,23 @@ func begin_death() -> void:
 func _on_animated_sprite_animation_finished() -> void:
 	if death_started and animated_sprite != null and animated_sprite.animation == "death":
 		queue_free()
+	elif animated_sprite != null:
+		match String(animated_sprite.animation):
+			"attack":
+				attack_effect_left = 0.0
+			"hurt":
+				hurt_effect_left = 0.0
 
 func set_role(role_name: String) -> void:
-	enemy_role = TYPE_BAT if role_name == "kobold" else role_name
-	match enemy_role:
-		TYPE_LIZARDMAN:
-			move_speed = 110.0
-			max_health = 208.0
-			attack_damage = 36.0
-			attack_cooldown = 1.0
-			weight = 3.35
-			melee_reach = 78.0
-			body_color = Color("8d9e67")
-		TYPE_BAT:
-			move_speed = 57.0
-			max_health = 34.0
-			attack_damage = 6.0
-			attack_cooldown = 1.0
-			weight = 0.55
-			melee_reach = 78.0
-			body_color = Color("d0c6c0")
-		TYPE_GOLEM:
-			move_speed = 33.0
-			max_health = 148.0
-			attack_damage = 24.0
-			attack_cooldown = 1.15
-			weight = 5.4
-			melee_reach = 80.0
-			body_color = Color("8a887d")
-		TYPE_GOBLIN_SHAMAN:
-			move_speed = 31.0
-			max_health = 34.0
-			attack_damage = 9.0
-			attack_cooldown = 1.0
-			weight = 1.08
-			melee_reach = 78.0
-			body_color = Color("a16fd5")
-		TYPE_SKELETON_ARCHER:
-			move_speed = 42.0
-			max_health = 156.0
-			attack_damage = 13.0
-			attack_cooldown = 1.0
-			weight = 0.95
-			melee_reach = 52.0
-			body_color = Color("d7decf")
-		_:
-			move_speed = 48.0
-			max_health = 34.0
-			attack_damage = 10.0
-			attack_cooldown = 1.0
-			weight = 1.28
-			melee_reach = 70.0
-			body_color = Color("7fad5b")
+	var role_def: Dictionary = GAME_ENEMY_DEFS.enemy_role_definition(role_name)
+	enemy_role = String(role_def.get("id", TYPE_ORC))
+	move_speed = float(role_def.get("move_speed", 48.0))
+	max_health = float(role_def.get("max_health", 34.0))
+	attack_damage = float(role_def.get("attack_damage", 10.0))
+	attack_cooldown = float(role_def.get("attack_cooldown", 1.0))
+	attack_range = float(role_def.get("attack_range", 70.0))
+	weight = float(role_def.get("weight", 1.28))
+	body_color = role_def.get("body_color", Color("7fad5b"))
 	base_move_speed = move_speed
 	situational_speed_multiplier = 1.0
 	current_health = max_health
@@ -422,6 +359,7 @@ func _physics_process(delta: float) -> void:
 		return
 	attack_effect_left = maxf(attack_effect_left - delta, 0.0)
 	hurt_effect_left = maxf(hurt_effect_left - delta, 0.0)
+	rooted_time_left = maxf(rooted_time_left - delta, 0.0)
 	var offset: Vector2 = destination - global_position
 	var desired_velocity: Vector2 = Vector2.ZERO
 	if offset.length() < 4.0:
@@ -440,3 +378,8 @@ func _draw() -> void:
 	var health_ratio: float = clampf(current_health / maxf(max_health, 0.001), 0.0, 1.0)
 	draw_rect(Rect2(Vector2(-18.0, -31.0), Vector2(36.0, 4.0)), Color(0.08, 0.1, 0.11, 0.9), true)
 	draw_rect(Rect2(Vector2(-18.0, -31.0), Vector2(36.0 * health_ratio, 4.0)), Color(0.98, 0.48, 0.42, 0.95), true)
+	if rooted_time_left > 0.0:
+		draw_circle(Vector2(0.0, 2.0), 22.0, Color(0.84, 0.92, 1.0, 0.08))
+		draw_arc(Vector2(0.0, 2.0), 19.0, 0.0, TAU, 20, Color(0.92, 0.98, 1.0, 0.7), 1.8, true)
+		draw_line(Vector2(-13.0, -8.0), Vector2(13.0, 12.0), Color(0.95, 0.98, 1.0, 0.55), 1.5, true)
+		draw_line(Vector2(-13.0, 12.0), Vector2(13.0, -8.0), Color(0.95, 0.98, 1.0, 0.55), 1.5, true)

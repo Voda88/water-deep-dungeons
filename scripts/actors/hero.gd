@@ -39,7 +39,7 @@ const HERO_SPRITE_PROFILES := {
 		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Wizard/Wizard/Wizard_Walk.png",
 		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Wizard/Wizard/Wizard_Hurt.png",
 		"attack_melee_path": "res://assets/characters/packs/pack01/characters_split_100x100/Wizard/Wizard/Wizard_Attack01.png",
-		"attack_ranged_path": "res://assets/characters/packs/pack01/characters_split_100x100/Wizard/Wizard/Wizard_Attack01(With magic effects).png",
+		"attack_ranged_path": "res://assets/characters/packs/pack01/characters_split_100x100/Wizard/Wizard/Wizard_Attack02.png",
 		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Wizard/Wizard/Wizard_Death.png",
 		"portrait_path": "res://assets/characters/packs/pack01/characters_split_100x100/Wizard/Wizard/Wizard_Idle.png",
 	},
@@ -139,6 +139,8 @@ func _ready() -> void:
 	stamina = max_stamina
 	destination = global_position
 	ensure_sprite_setup()
+	if animated_sprite != null and not animated_sprite.animation_finished.is_connected(_on_animated_sprite_animation_finished):
+		animated_sprite.animation_finished.connect(_on_animated_sprite_animation_finished)
 	update_sprite_state(Vector2.ZERO)
 
 static func build_strip_animation(frames: SpriteFrames, animation_name: String, texture: Texture2D, frame_count: int, fps: float, loop: bool) -> void:
@@ -221,10 +223,62 @@ func desired_sprite_animation(move_offset: Vector2) -> String:
 	if hurt_effect_left > 0.0:
 		return "hurt"
 	if attack_effect_left > 0.0:
-		return "attack_melee" if preferred_attack_style == "melee" else "attack_ranged"
+		return attack_animation_name()
 	if velocity.length() > 8.0 or move_offset.length() > 8.0:
 		return "walk"
 	return "idle"
+
+func animation_name_for_style(style: String = "") -> String:
+	var resolved_style: String = style if style != "" else preferred_attack_style
+	if resolved_style == "holy_bolt":
+		return "attack_ranged"
+	if resolved_style == "heal_cast":
+		return "attack_ranged"
+	return "attack_melee" if resolved_style == "melee" else "attack_ranged"
+
+func attack_animation_name() -> String:
+	return animation_name_for_style(attack_style)
+
+func animation_speed_scale_for(animation_name: String) -> float:
+	match animation_name:
+		"walk":
+			return clampf(movement_speed() / maxf(base_move_speed, 1.0), 0.75, 2.2)
+		"attack_melee":
+			return 0.72
+		"attack_ranged":
+			var base_scale: float = 0.92
+			if animated_sprite != null and animated_sprite.sprite_frames != null and animated_sprite.sprite_frames.has_animation(animation_name):
+				var frame_count: int = animated_sprite.sprite_frames.get_frame_count(animation_name)
+				var fps: float = animated_sprite.sprite_frames.get_animation_speed(animation_name)
+				var minimum_scale: float = float(frame_count) / maxf(fps * maxf(attack_cooldown, 0.001), 0.001)
+				return maxf(base_scale, minimum_scale)
+			return base_scale
+		_:
+			return 1.0
+
+func animation_duration(animation_name: String, fallback_duration: float = 0.3) -> float:
+	if animated_sprite == null or animated_sprite.sprite_frames == null or not animated_sprite.sprite_frames.has_animation(animation_name):
+		return fallback_duration
+	var frame_count: int = animated_sprite.sprite_frames.get_frame_count(animation_name)
+	var fps: float = animated_sprite.sprite_frames.get_animation_speed(animation_name)
+	var speed_scale: float = animation_speed_scale_for(animation_name)
+	return maxf(float(frame_count) / maxf(fps * speed_scale, 0.001), 0.08)
+
+func should_play_attack_animation_backwards(animation_name: String) -> bool:
+	if attack_effect_left <= 0.0 or animation_name != "attack_ranged":
+		return false
+	return attack_style == "laser" or attack_style == "fire_bolt" or attack_style == "holy_bolt"
+
+func play_animation_with_current_mode(animation_name: String) -> void:
+	if animated_sprite == null:
+		return
+	var speed_value: float = animation_speed_scale_for(animation_name)
+	if should_play_attack_animation_backwards(animation_name):
+		animated_sprite.speed_scale = 1.0
+		animated_sprite.play(animation_name, -speed_value, true)
+		return
+	animated_sprite.speed_scale = speed_value
+	animated_sprite.play(animation_name)
 
 func update_visual_facing(move_offset: Vector2) -> void:
 	var facing_source: Vector2 = attack_direction if attack_effect_left > 0.0 else (velocity if velocity.length() > 4.0 else move_offset)
@@ -239,17 +293,9 @@ func update_sprite_state(move_offset: Vector2) -> void:
 	update_visual_facing(move_offset)
 	var animation_name: String = desired_sprite_animation(move_offset)
 	if animated_sprite.animation != animation_name:
-		animated_sprite.play(animation_name)
+		play_animation_with_current_mode(animation_name)
 	elif not animated_sprite.is_playing():
-		animated_sprite.play()
-	if animation_name == "walk":
-		animated_sprite.speed_scale = clampf(movement_speed() / maxf(base_move_speed, 1.0), 0.75, 2.2)
-	elif animation_name == "attack_melee":
-		animated_sprite.speed_scale = 0.72
-	elif animation_name == "attack_ranged":
-		animated_sprite.speed_scale = 0.92
-	else:
-		animated_sprite.speed_scale = 1.0
+		play_animation_with_current_mode(animation_name)
 
 func is_dead_state() -> bool:
 	return dead_started
@@ -299,7 +345,11 @@ func set_destination(world_position: Vector2) -> void:
 	destination = world_position
 
 func melee_impact_delay() -> float:
-	return MELEE_IMPACT_FRAME / maxf(MELEE_ATTACK_FPS * MELEE_ATTACK_SPEED_SCALE, 0.001)
+	var attack_frames: SpriteFrames = animated_sprite.sprite_frames if animated_sprite != null else null
+	var attack_fps: float = MELEE_ATTACK_FPS
+	if attack_frames != null and attack_frames.has_animation("attack_melee"):
+		attack_fps = attack_frames.get_animation_speed("attack_melee")
+	return MELEE_IMPACT_FRAME / maxf(attack_fps * animation_speed_scale_for("attack_melee"), 0.001)
 
 func knockback_recovery_factor() -> float:
 	if knockback_time_left <= 0.0 or knockback_duration <= 0.0:
@@ -484,10 +534,20 @@ func trigger_attack(target_position: Vector2, style: String = "laser") -> void:
 	if attack_direction == Vector2.ZERO:
 		attack_direction = Vector2.RIGHT
 	attack_style = style
-	attack_effect_left = 0.32 if style == "melee" else 0.18
+	var animation_name: String = animation_name_for_style(style)
+	attack_effect_left = maxf(attack_effect_left, animation_duration(animation_name, 0.32 if style == "melee" else 0.22))
 	update_visual_facing(target_position - global_position)
 	update_sprite_state(destination - global_position)
 	queue_redraw()
+
+func _on_animated_sprite_animation_finished() -> void:
+	if animated_sprite == null:
+		return
+	match String(animated_sprite.animation):
+		"attack_melee", "attack_ranged":
+			attack_effect_left = 0.0
+		"hurt":
+			hurt_effect_left = 0.0
 
 func configure_archetype(class_id: String, display_name: String, next_move_speed: float, next_max_health: float, next_attack_damage: float, next_attack_range: float, next_attack_cooldown: float, next_attack_style: String, next_weight: float, next_melee_windup_duration: float, next_body_color: Color, next_core_color: Color) -> void:
 	hero_class_id = class_id

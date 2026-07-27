@@ -1,7 +1,7 @@
 extends RefCounted
 
-const GAME_DUNGEON_BUILDER: GDScript = preload("res://scripts/world/game_dungeon_builder.gd")
-const GAME_INVENTORY_ITEM_FLOW: GDScript = preload("res://scripts/world/game_inventory_item_flow.gd")
+const GAME_DUNGEON_BUILDER: GDScript = preload("res://scripts/world/rooms/game_dungeon_builder.gd")
+const GAME_INVENTORY_ITEM_FLOW: GDScript = preload("res://scripts/world/inventory/game_inventory_item_flow.gd")
 
 static func hero_hand_card_index(_game: Node, hero: Variant, card_uid: int) -> int:
 	if hero == null or not is_instance_valid(hero):
@@ -161,46 +161,105 @@ static func room_target_at_world_position(game: Node, world_position: Vector2, p
 		return direct_room
 	return game.corridor_room_target_at_position(world_position, preferred_from_room)
 
+static func default_room_card_world_position(game: Node, room_coord: Vector2i, fallback_world_position: Vector2) -> Vector2:
+	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
+		return fallback_world_position
+	return game.clamp_point_to_room(fallback_world_position, room_coord)
+
+static func room_has_living_hero(game: Node, room_coord: Vector2i) -> bool:
+	for room_hero in game.heroes_in_room(room_coord):
+		if room_hero != null and is_instance_valid(room_hero) and room_hero.current_health > 0.0:
+			return true
+	return false
+
 static func resolve_card_target(game: Node, hero: Variant, hand_card: Dictionary, target_world_position: Vector2) -> Dictionary:
 	if hero == null or not is_instance_valid(hero):
 		return {}
 	var target_scope: String = String(hand_card.get("target_scope", "hero_room"))
+	var preferred_from_room: Vector2i = game.active_hero_room_for_commands(hero)
 	match target_scope:
 		"global":
 			return {
 				"world_position": target_world_position,
 			}
 		"hero":
-			var target_hero: Variant = hero_at_world_position(game, target_world_position, false)
-			if target_hero == null or not is_instance_valid(target_hero):
-				return {}
-			return {
-				"hero": target_hero,
-				"hero_index": target_hero.hero_index,
-				"world_position": target_hero.global_position,
-			}
-		"same_hero":
-			return {
-				"hero": hero,
-				"hero_index": hero.hero_index,
-				"world_position": hero.global_position,
-			}
-		"opened_room":
-			var target_room: Vector2i = room_target_at_world_position(game, target_world_position, game.active_hero_room_for_commands(hero))
-			if target_room == game.INVALID_ROOM or not game.rooms.has(target_room) or not game.rooms[target_room]["opened"]:
+			var target_room: Vector2i = room_target_at_world_position(game, target_world_position, preferred_from_room)
+			if target_room == game.INVALID_ROOM or not game.rooms.has(target_room) or not game.rooms[target_room]["opened"] or not room_has_living_hero(game, target_room):
 				return {}
 			return {
 				"room": target_room,
-				"world_position": game.clamp_point_to_room(target_world_position, target_room),
+				"world_position": default_room_card_world_position(game, target_room, target_world_position),
 			}
-		"same_room", "hero_room":
-			if not game.rooms.has(hero.current_room) or not game.room_rect(hero.current_room).has_point(target_world_position):
+		"same_hero":
+			var self_room: Vector2i = room_target_at_world_position(game, target_world_position, preferred_from_room)
+			if self_room != hero.current_room:
 				return {}
 			return {
 				"room": hero.current_room,
-				"world_position": target_world_position,
+				"world_position": default_room_card_world_position(game, hero.current_room, target_world_position),
+			}
+		"opened_room":
+			var target_room_opened: Vector2i = room_target_at_world_position(game, target_world_position, preferred_from_room)
+			if target_room_opened == game.INVALID_ROOM or not game.rooms.has(target_room_opened) or not game.rooms[target_room_opened]["opened"]:
+				return {}
+			return {
+				"room": target_room_opened,
+				"world_position": default_room_card_world_position(game, target_room_opened, target_world_position),
+			}
+		"same_room", "hero_room":
+			var same_room_target: Vector2i = room_target_at_world_position(game, target_world_position, preferred_from_room)
+			if same_room_target != hero.current_room or not game.rooms.has(hero.current_room):
+				return {}
+			return {
+				"room": hero.current_room,
+				"world_position": default_room_card_world_position(game, hero.current_room, target_world_position),
 			}
 	return {}
+
+static func fallback_room_target_hero(game: Node, source_hero: Variant, room_coord: Vector2i) -> Variant:
+	var preferred_hero: Variant = null
+	for room_hero in game.heroes_in_room(room_coord):
+		if room_hero == null or not is_instance_valid(room_hero) or room_hero.current_health <= 0.0:
+			continue
+		if room_hero == source_hero:
+			return room_hero
+		if preferred_hero == null:
+			preferred_hero = room_hero
+	return preferred_hero
+
+static func most_damaged_hero_in_room(game: Node, room_coord: Vector2i) -> Variant:
+	var best_hero: Variant = null
+	var best_damage_ratio: float = -1.0
+	var best_missing_health: float = -1.0
+	for room_hero in game.heroes_in_room(room_coord):
+		if room_hero == null or not is_instance_valid(room_hero) or room_hero.current_health <= 0.0:
+			continue
+		var max_health: float = maxf(room_hero.max_health, 1.0)
+		var missing_health: float = maxf(max_health - room_hero.current_health, 0.0)
+		if missing_health <= 0.001:
+			continue
+		var damage_ratio: float = missing_health / max_health
+		if best_hero == null or damage_ratio > best_damage_ratio + 0.001 or (absf(damage_ratio - best_damage_ratio) <= 0.001 and missing_health > best_missing_health + 0.001):
+			best_hero = room_hero
+			best_damage_ratio = damage_ratio
+			best_missing_health = missing_health
+	return best_hero
+
+static func room_target_hero_for_card(game: Node, source_hero: Variant, hand_card: Dictionary, target_data: Dictionary) -> Variant:
+	var explicit_hero: Variant = target_data.get("hero", null)
+	if explicit_hero != null and is_instance_valid(explicit_hero) and explicit_hero.current_health > 0.0:
+		return explicit_hero
+	var room_coord: Vector2i = target_data.get("room", game.INVALID_ROOM)
+	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
+		return source_hero if source_hero != null and is_instance_valid(source_hero) and source_hero.current_health > 0.0 else null
+	match String(hand_card.get("card_id", "")):
+		"cure_light_wounds_card", "mend_card":
+			var heal_target: Variant = most_damaged_hero_in_room(game, room_coord)
+			if heal_target != null and is_instance_valid(heal_target):
+				return heal_target
+		"lantern_torch_card":
+			return fallback_room_target_hero(game, source_hero, room_coord)
+	return fallback_room_target_hero(game, source_hero, room_coord)
 
 static func card_cast_candidate_rooms(game: Node, target_room: Vector2i, hand_card: Dictionary) -> Array[Vector2i]:
 	var candidates: Array[Vector2i] = []
@@ -291,11 +350,20 @@ static func card_cast_staging_position(game: Node, cast_room: Vector2i, target_r
 		resolved_target = game.room_walkable_center(target_room)
 	return cross_room_card_cast_staging_position(game, cast_room, target_room, resolved_target)
 
+static func card_can_cast_to_adjacent_room_from_anywhere(game: Node, cast_room: Vector2i, target_room: Vector2i, hand_card: Dictionary) -> bool:
+	if not bool(hand_card.get("adjacent_cast_anywhere", false)):
+		return false
+	if cast_room == game.INVALID_ROOM or target_room == game.INVALID_ROOM:
+		return false
+	return cast_room == target_room or room_has_neighbor(game, cast_room, target_room)
+
 static func card_cast_has_line_of_effect(game: Node, cast_room: Vector2i, target_room: Vector2i, hand_card: Dictionary, target_world_position: Vector2) -> bool:
 	if not bool(hand_card.get("requires_line_of_effect", false)):
 		return true
 	if cast_room == game.INVALID_ROOM or target_room == game.INVALID_ROOM or not game.rooms.has(cast_room) or not game.rooms.has(target_room):
 		return false
+	if card_can_cast_to_adjacent_room_from_anywhere(game, cast_room, target_room, hand_card):
+		return true
 	if cast_room == target_room:
 		return game.room_walkable_contains_point(target_room, game.clamp_point_to_room(target_world_position, target_room), 10.0)
 	return card_cast_staging_position(game, cast_room, target_room, hand_card, target_world_position) != Vector2.INF
@@ -305,12 +373,16 @@ static func hero_ready_for_card_cast(game: Node, hero: Variant, cast_room: Vecto
 		return false
 	if not bool(hand_card.get("requires_line_of_effect", false)):
 		return true
+	if card_can_cast_to_adjacent_room_from_anywhere(game, cast_room, target_room, hand_card):
+		return true
 	if cast_room == target_room or target_room == game.INVALID_ROOM:
 		return true
 	var staging_position: Vector2 = card_cast_staging_position(game, cast_room, target_room, hand_card, target_world_position)
 	return staging_position != Vector2.INF and hero.global_position.distance_to(staging_position) <= 22.0
 
 static func best_card_cast_room(game: Node, from_room: Vector2i, target_room: Vector2i, hand_card: Dictionary, target_world_position: Vector2) -> Vector2i:
+	if card_can_cast_to_adjacent_room_from_anywhere(game, from_room, target_room, hand_card):
+		return from_room
 	var candidates: Array[Vector2i] = card_cast_candidate_rooms(game, target_room, hand_card)
 	if candidates.is_empty():
 		return game.INVALID_ROOM
@@ -394,20 +466,28 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			cast_misty_step_spell(game, hero, target_world_position, teleport_room, hand_card)
 			game.status_message = "%s cast Misty Step." % hero.hero_name
 			return true
+		"web_card":
+			var web_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
+			if web_room == game.INVALID_ROOM or not game.rooms.has(web_room):
+				return false
+			cast_web_spell(game, hero, target_world_position, web_room, hand_card)
+			game.status_message = "%s cast Web." % hero.hero_name
+			return true
 		"shield_card":
 			cast_shield_spell(game, hero, hand_card)
 			game.status_message = "%s cast Shield." % hero.hero_name
 			return true
 		"cure_light_wounds_card":
-			var cleric_target: Variant = target_data.get("hero", hero)
+			var cleric_target: Variant = room_target_hero_for_card(game, hero, hand_card, target_data)
 			if cleric_target == null or not is_instance_valid(cleric_target):
 				return false
 			var previous_cleric_health: float = cleric_target.current_health
 			cleric_target.heal(float(hand_card.get("heal_amount", 36.0)))
-			hero.trigger_attack(cleric_target.global_position, "laser")
+			hero.trigger_attack(cleric_target.global_position, "heal_cast")
 			if cleric_target.current_health <= previous_cleric_health + 0.001:
 				game.status_message = "%s does not need healing." % cleric_target.hero_name
 				return false
+			append_timed_effect_projectile(game, "priest_heal_effect", cleric_target.global_position + Vector2(0.0, -10.0), Color("9fe6b0"), 0.58, 0.58)
 			game.status_message = "%s cast Cure Light Wounds." % hero.hero_name
 			return true
 		"sanctuary_card":
@@ -416,6 +496,7 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 				"shield_duration": float(hand_card.get("shield_duration", 8.0)),
 				"color": hand_card.get("color", Color("e3ff9f")),
 			})
+			append_timed_effect_projectile(game, "priest_attack_effect", hero.global_position, Color(hand_card.get("color", Color("e3ff9f"))), 0.28, 0.28)
 			game.status_message = "%s invoked Sanctuary." % hero.hero_name
 			return true
 		"lightning_bolt_card":
@@ -425,8 +506,15 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			cast_lightning_bolt_spell(game, hero, target_world_position, bolt_room, hand_card)
 			game.status_message = "%s cast Lightning Bolt." % hero.hero_name
 			return true
+		"scorching_ray_card":
+			var ray_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
+			if ray_room == game.INVALID_ROOM or not game.rooms.has(ray_room):
+				return false
+			cast_scorching_ray_spell(game, hero, target_world_position, ray_room, hand_card)
+			game.status_message = "%s cast Scorching Ray." % hero.hero_name
+			return true
 		"lantern_torch_card":
-			var target_hero: Variant = target_data.get("hero", null)
+			var target_hero: Variant = room_target_hero_for_card(game, hero, hand_card, target_data)
 			if target_hero == null or not is_instance_valid(target_hero):
 				return false
 			var created_torch: Dictionary = GAME_INVENTORY_ITEM_FLOW.make_inventory_item(game, "torch")
@@ -449,15 +537,16 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			game.status_message = "%s lit %s through the next wave." % [hero.hero_name, game.room_title(room_coord_torch)]
 			return true
 		"mend_card":
-			var target_hero_mend: Variant = target_data.get("hero", null)
+			var target_hero_mend: Variant = room_target_hero_for_card(game, hero, hand_card, target_data)
 			if target_hero_mend == null or not is_instance_valid(target_hero_mend):
 				return false
 			var previous_health: float = target_hero_mend.current_health
 			target_hero_mend.heal(float(hand_card.get("heal_amount", 35.0)))
-			hero.trigger_attack(target_hero_mend.global_position, "laser")
+			hero.trigger_attack(target_hero_mend.global_position, "heal_cast")
 			if target_hero_mend.current_health <= previous_health + 0.001:
 				game.status_message = "%s is already fully patched up." % target_hero_mend.hero_name
 				return false
+			append_timed_effect_projectile(game, "priest_heal_effect", target_hero_mend.global_position + Vector2(0.0, -10.0), Color("9fe6b0"), 0.58, 0.58)
 			game.status_message = "%s restored %s." % [hero.hero_name, target_hero_mend.hero_name]
 			return true
 		"emergency_snack_card":
@@ -573,6 +662,7 @@ static func cast_fireball_spell(game: Node, hero: Variant, target_world_position
 		"impact_radius": float(hand_card.get("impact_radius", 92.0)),
 		"push_distance": 56.0,
 		"room": target_room,
+		"source_label": "%s's Fireball" % hero.hero_name,
 	})
 
 static func nearest_enemies_in_room(game: Node, room_coord: Vector2i, origin: Vector2, max_count: int) -> Array:
@@ -605,7 +695,17 @@ static func cast_magic_missile_spell(game: Node, hero: Variant, target_world_pos
 		var target_enemy: Variant = missile_targets[missile_index % missile_targets.size()]
 		if target_enemy == null or not is_instance_valid(target_enemy):
 			continue
-		game.spawn_laser_projectile(hero.global_position, target_enemy, float(hand_card.get("damage", hand_card.get("base_damage", 14.0))), hand_card.get("color", Color("9cd7ff")), 4.2, 1480.0)
+		var curve_sign: float = -1.0 if missile_index % 2 == 0 else 1.0
+		var curve_scale: float = 0.58 + float(missile_index) * 0.14
+		game.spawn_magic_missile_projectile(
+			hero.global_position,
+			target_enemy,
+			float(hand_card.get("damage", hand_card.get("base_damage", 14.0))),
+			hand_card.get("color", Color("9cd7ff")),
+			4.8,
+			1180.0,
+			curve_sign * curve_scale
+		)
 
 static func cast_misty_step_spell(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
 	var landing_position: Vector2 = game.clamp_point_to_room(target_world_position, target_room)
@@ -627,6 +727,33 @@ static func cast_misty_step_spell(game: Node, hero: Variant, target_world_positi
 		"width": 4.0,
 	})
 	game.add_resource_floating_text(landing_position, "Step", Color(hand_card.get("color", Color("b89cff"))))
+
+static func cast_web_spell(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
+	var web_position: Vector2 = game.clamp_point_to_room(target_world_position, target_room)
+	var web_radius: float = maxf(float(hand_card.get("impact_radius", 108.0)), 18.0)
+	var rooted_count: int = 0
+	for enemy in game.enemies:
+		if not game.enemy_is_active(enemy) or enemy.current_room != target_room:
+			continue
+		if enemy.global_position.distance_to(web_position) > web_radius:
+			continue
+		var root_duration: float = game.rng.randf_range(float(hand_card.get("web_duration_min", 6.0)), float(hand_card.get("web_duration_max", 12.0)))
+		enemy.apply_root(root_duration)
+		rooted_count += 1
+	hero.trigger_attack(web_position, "laser")
+	game.projectiles.append({
+		"kind": "web_field",
+		"position": web_position,
+		"previous": web_position,
+		"target_position": web_position,
+		"color": hand_card.get("color", Color("c9f0ff")),
+		"radius": web_radius,
+		"impact_radius": web_radius,
+		"lifetime_left": 0.6,
+		"blast_duration": 0.6,
+		"width": 2.5,
+	})
+	game.add_resource_floating_text(web_position, "Web" if rooted_count > 0 else "Miss", Color(hand_card.get("color", Color("c9f0ff"))))
 
 static func cast_shield_spell(game: Node, hero: Variant, hand_card: Dictionary) -> void:
 	var barrier_amount: float = float(hand_card.get("shield_amount", 34.0))
@@ -663,24 +790,210 @@ static func try_auto_cast_fatal_shield(game: Node, hero: Variant, incoming_damag
 	game.status_message = "%s reflexively cast Shield." % hero.hero_name
 	return true
 
+static func apply_spell_damage_to_hero(game: Node, hero: Variant, damage: float, source_label: String) -> bool:
+	if hero == null or not is_instance_valid(hero):
+		return false
+	if try_auto_cast_fatal_shield(game, hero, damage):
+		return false
+	var defeated: bool = hero.take_damage(damage)
+	if defeated:
+		game.finalize_hero_death(hero, source_label)
+	return defeated
+
+static func point_distance_to_polyline(game: Node, points: Array, point: Vector2) -> float:
+	if points.size() < 2:
+		return INF
+	var closest_distance: float = INF
+	for point_index in range(1, points.size()):
+		var segment_start: Vector2 = Vector2(points[point_index - 1])
+		var segment_end: Vector2 = Vector2(points[point_index])
+		closest_distance = minf(closest_distance, game.point_distance_to_segment(point, segment_start, segment_end))
+	return closest_distance
+
+static func damage_modules_in_blast(game: Node, room_coord: Vector2i, center: Vector2, radius: float, damage: float) -> bool:
+	if not game.rooms.has(room_coord):
+		return false
+	var room: Dictionary = game.rooms[room_coord]
+	var changed: bool = false
+	var hit_any: bool = false
+	if String(room.get("major_module_type", "")) != "" and float(room.get("major_health", 0.0)) > 0.0:
+		if game.major_slot_position(room_coord).distance_to(center) <= radius + 18.0:
+			room["major_health"] = maxf(float(room.get("major_health", 0.0)) - damage, 0.0)
+			if float(room["major_health"]) <= 0.0:
+				room["major_module_type"] = ""
+				room["major_under_construction"] = false
+				game.cancel_pending_major_construction(room_coord)
+			changed = true
+			hit_any = true
+	var slot_positions: Array = game.minor_slot_positions(room_coord)
+	for slot_index in range(slot_positions.size() - 1, -1, -1):
+		var module_index: int = game.minor_module_index_for_slot(room_coord, slot_index)
+		if module_index < 0 or module_index >= room["minor_modules"].size():
+			continue
+		if Vector2(slot_positions[slot_index]).distance_to(center) > radius + 14.0:
+			continue
+		var module_data: Dictionary = Dictionary(room["minor_modules"][module_index])
+		module_data["health"] = maxf(float(module_data.get("health", 0.0)) - damage, 0.0)
+		if float(module_data["health"]) <= 0.0:
+			game.cancel_pending_minor_construction(room_coord, int(module_data.get("slot_index", slot_index)))
+			room["minor_modules"].remove_at(module_index)
+		else:
+			room["minor_modules"][module_index] = module_data
+		changed = true
+		hit_any = true
+	if changed:
+		game.rooms[room_coord] = room
+	return hit_any
+
+static func damage_modules_along_polyline(game: Node, room_coord: Vector2i, points: Array, radius: float, damage: float, hit_keys: Dictionary) -> bool:
+	if not game.rooms.has(room_coord) or points.size() < 2:
+		return false
+	var room: Dictionary = game.rooms[room_coord]
+	var changed: bool = false
+	var hit_any: bool = false
+	var room_key: String = "%d:%d" % [room_coord.x, room_coord.y]
+	if String(room.get("major_module_type", "")) != "" and float(room.get("major_health", 0.0)) > 0.0:
+		var major_key: String = "%s:major" % room_key
+		if not hit_keys.has(major_key) and point_distance_to_polyline(game, points, game.major_slot_position(room_coord)) <= radius + 18.0:
+			hit_keys[major_key] = true
+			room["major_health"] = maxf(float(room.get("major_health", 0.0)) - damage, 0.0)
+			if float(room["major_health"]) <= 0.0:
+				room["major_module_type"] = ""
+				room["major_under_construction"] = false
+				game.cancel_pending_major_construction(room_coord)
+			changed = true
+			hit_any = true
+	var slot_positions: Array = game.minor_slot_positions(room_coord)
+	for slot_index in range(slot_positions.size() - 1, -1, -1):
+		var module_index: int = game.minor_module_index_for_slot(room_coord, slot_index)
+		if module_index < 0 or module_index >= room["minor_modules"].size():
+			continue
+		var minor_key: String = "%s:minor:%d" % [room_key, slot_index]
+		if hit_keys.has(minor_key):
+			continue
+		if point_distance_to_polyline(game, points, Vector2(slot_positions[slot_index])) > radius + 14.0:
+			continue
+		hit_keys[minor_key] = true
+		var module_data: Dictionary = Dictionary(room["minor_modules"][module_index])
+		module_data["health"] = maxf(float(module_data.get("health", 0.0)) - damage, 0.0)
+		if float(module_data["health"]) <= 0.0:
+			game.cancel_pending_minor_construction(room_coord, int(module_data.get("slot_index", slot_index)))
+			room["minor_modules"].remove_at(module_index)
+		else:
+			room["minor_modules"][module_index] = module_data
+		changed = true
+		hit_any = true
+	if changed:
+		game.rooms[room_coord] = room
+	return hit_any
+
+static func reflected_direction(direction: Vector2, normal: Vector2) -> Vector2:
+	return direction - 2.0 * direction.dot(normal) * normal
+
+static func next_lightning_bounce(start: Vector2, direction: Vector2, bounds: Rect2) -> Dictionary:
+	if direction == Vector2.ZERO:
+		return {}
+	var best_t: float = INF
+	var hit_normal: Vector2 = Vector2.ZERO
+	if direction.x > 0.001:
+		var t_right: float = (bounds.end.x - start.x) / direction.x
+		var y_right: float = start.y + direction.y * t_right
+		if t_right > 0.001 and y_right >= bounds.position.y - 0.001 and y_right <= bounds.end.y + 0.001 and t_right < best_t:
+			best_t = t_right
+			hit_normal = Vector2.LEFT
+	elif direction.x < -0.001:
+		var t_left: float = (bounds.position.x - start.x) / direction.x
+		var y_left: float = start.y + direction.y * t_left
+		if t_left > 0.001 and y_left >= bounds.position.y - 0.001 and y_left <= bounds.end.y + 0.001 and t_left < best_t:
+			best_t = t_left
+			hit_normal = Vector2.RIGHT
+	if direction.y > 0.001:
+		var t_bottom: float = (bounds.end.y - start.y) / direction.y
+		var x_bottom: float = start.x + direction.x * t_bottom
+		if t_bottom > 0.001 and x_bottom >= bounds.position.x - 0.001 and x_bottom <= bounds.end.x + 0.001 and t_bottom < best_t:
+			best_t = t_bottom
+			hit_normal = Vector2.UP
+	elif direction.y < -0.001:
+		var t_top: float = (bounds.position.y - start.y) / direction.y
+		var x_top: float = start.x + direction.x * t_top
+		if t_top > 0.001 and x_top >= bounds.position.x - 0.001 and x_top <= bounds.end.x + 0.001 and t_top < best_t:
+			best_t = t_top
+			hit_normal = Vector2.DOWN
+	if best_t == INF or hit_normal == Vector2.ZERO:
+		return {}
+	var hit_position: Vector2 = start + direction * best_t
+	return {
+		"position": hit_position,
+		"direction": reflected_direction(direction, hit_normal).normalized(),
+	}
+
+static func build_lightning_bolt_points(game: Node, origin: Vector2, target: Vector2, target_room: Vector2i, bounce_count: int) -> Array:
+	var points: Array = [origin, target]
+	if bounce_count <= 0 or target_room == game.INVALID_ROOM or not game.rooms.has(target_room):
+		return points
+	var bounds: Rect2 = game.room_rect(target_room).grow(-26.0)
+	var current_position: Vector2 = target
+	var direction: Vector2 = (target - origin).normalized()
+	if direction == Vector2.ZERO:
+		direction = Vector2.RIGHT
+	for _bounce_index in range(bounce_count):
+		if not bounds.has_point(current_position):
+			current_position = Vector2(
+				clampf(current_position.x, bounds.position.x + 2.0, bounds.end.x - 2.0),
+				clampf(current_position.y, bounds.position.y + 2.0, bounds.end.y - 2.0)
+			)
+		var bounce_data: Dictionary = next_lightning_bounce(current_position, direction, bounds)
+		if bounce_data.is_empty():
+			break
+		var hit_position: Vector2 = Vector2(bounce_data.get("position", current_position))
+		if hit_position.distance_to(current_position) <= 1.0:
+			break
+		points.append(hit_position)
+		direction = Vector2(bounce_data.get("direction", direction)).normalized()
+		if direction == Vector2.ZERO:
+			break
+		current_position = hit_position + direction * 2.0
+	return points
+
 static func cast_lightning_bolt_spell(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
 	var bolt_origin: Vector2 = hero.global_position
 	var bolt_target: Vector2 = game.clamp_point_to_room(target_world_position, target_room)
 	var bolt_radius: float = maxf(float(hand_card.get("impact_radius", 18.0)), 8.0)
 	var bolt_damage: float = float(hand_card.get("damage", hand_card.get("base_damage", 30.0)))
+	var bounce_count: int = maxi(0, int(hand_card.get("bounce_count", 2)))
+	var bolt_points: Array = build_lightning_bolt_points(game, bolt_origin, bolt_target, target_room, bounce_count)
+	var affected_rooms: Array[Vector2i] = [hero.current_room]
+	if target_room != hero.current_room:
+		affected_rooms.append(target_room)
+	var hit_enemy_uids: Dictionary = {}
 	for enemy in game.enemies:
-		if not game.enemy_is_active(enemy):
+		if not game.enemy_is_active(enemy) or not affected_rooms.has(enemy.current_room):
 			continue
-		if enemy.current_room != hero.current_room and enemy.current_room != target_room:
+		if hit_enemy_uids.has(int(enemy.enemy_uid)):
 			continue
-		if game.point_distance_to_segment(enemy.global_position, bolt_origin, bolt_target) > bolt_radius:
+		if point_distance_to_polyline(game, bolt_points, enemy.global_position) > bolt_radius:
 			continue
+		hit_enemy_uids[int(enemy.enemy_uid)] = true
 		enemy.take_damage(bolt_damage)
+	var hit_hero_indices: Dictionary = {}
+	for room_coord in affected_rooms:
+		for room_hero in game.heroes_in_room(room_coord):
+			if room_hero == null or not is_instance_valid(room_hero) or room_hero == hero:
+				continue
+			if hit_hero_indices.has(int(room_hero.hero_index)):
+				continue
+			if point_distance_to_polyline(game, bolt_points, room_hero.global_position) > bolt_radius:
+				continue
+			hit_hero_indices[int(room_hero.hero_index)] = true
+			apply_spell_damage_to_hero(game, room_hero, bolt_damage, "%s's Lightning Bolt" % hero.hero_name)
+	var hit_module_keys: Dictionary = {}
+	for room_coord in affected_rooms:
+		damage_modules_along_polyline(game, room_coord, bolt_points, bolt_radius, bolt_damage, hit_module_keys)
 	hero.trigger_attack(bolt_target, "laser")
 	game.projectiles.append({
 		"kind": "lightning_bolt",
-		"position": bolt_target,
-		"previous": bolt_origin,
+		"position": Vector2(bolt_points[bolt_points.size() - 1]),
+		"previous": Vector2(bolt_points[0]),
 		"target_position": bolt_target,
 		"color": hand_card.get("color", Color("8bd9ff")),
 		"radius": bolt_radius,
@@ -689,8 +1002,48 @@ static func cast_lightning_bolt_spell(game: Node, hero: Variant, target_world_po
 		"blast_duration": 0.18,
 		"width": 7.0,
 		"room": target_room,
+		"points": bolt_points.duplicate(true),
 	})
 	game.add_resource_floating_text(bolt_target, "Bolt", Color(hand_card.get("color", Color("8bd9ff"))))
+
+static func cast_scorching_ray_spell(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
+	var ray_targets: Array = nearest_enemies_in_room(game, target_room, target_world_position, int(hand_card.get("projectile_count", 3)))
+	if ray_targets.is_empty():
+		game.add_resource_floating_text(target_world_position, "Miss", Color(hand_card.get("color", Color("ffb366"))))
+		return
+	hero.trigger_attack(target_world_position, "laser")
+	var ray_count: int = maxi(1, int(hand_card.get("projectile_count", 3)))
+	for ray_index in range(ray_count):
+		var target_enemy: Variant = ray_targets[ray_index % ray_targets.size()]
+		if target_enemy == null or not is_instance_valid(target_enemy):
+			continue
+		target_enemy.take_damage(float(hand_card.get("damage", hand_card.get("base_damage", 22.0))))
+		game.projectiles.append({
+			"kind": "ghostfire_ray",
+			"position": target_enemy.global_position,
+			"previous": hero.global_position,
+			"target_position": target_enemy.global_position,
+			"color": hand_card.get("color", Color("ffb366")),
+			"radius": 18.0,
+			"impact_radius": 18.0,
+			"lifetime_left": 0.22,
+			"blast_duration": 0.22,
+			"width": 16.0,
+		})
+
+static func append_timed_effect_projectile(game: Node, effect_kind: String, world_position: Vector2, effect_color: Color, lifetime: float, blast_duration: float) -> void:
+	game.projectiles.append({
+		"kind": effect_kind,
+		"position": world_position,
+		"previous": world_position,
+		"target_position": world_position,
+		"color": effect_color,
+		"radius": 28.0,
+		"impact_radius": 28.0,
+		"lifetime_left": lifetime,
+		"blast_duration": blast_duration,
+		"width": 3.0,
+	})
 
 static func explode_fireball_projectile(game: Node, projectile: Dictionary) -> void:
 	var room_coord: Vector2i = projectile.get("room", game.INVALID_ROOM)
@@ -701,6 +1054,7 @@ static func explode_fireball_projectile(game: Node, projectile: Dictionary) -> v
 	var damage: float = float(projectile.get("damage", 42.0))
 	var push_distance: float = float(projectile.get("push_distance", 56.0))
 	var hit_any: bool = false
+	var source_label: String = String(projectile.get("source_label", "Fireball"))
 	for enemy in game.enemies:
 		if not game.enemy_is_active(enemy) or enemy.current_room != room_coord:
 			continue
@@ -716,6 +1070,23 @@ static func explode_fireball_projectile(game: Node, projectile: Dictionary) -> v
 		var pushed_position: Vector2 = game.clamp_point_to_room(enemy.global_position + push_direction * push_distance * (0.35 + distance_ratio * 0.65), room_coord)
 		enemy.global_position = pushed_position
 		enemy.set_destination(pushed_position)
+		hit_any = true
+	for hero in game.heroes_in_room(room_coord):
+		if hero == null or not is_instance_valid(hero):
+			continue
+		var hero_offset: Vector2 = hero.global_position - target_position
+		var hero_distance: float = hero_offset.length()
+		if hero_distance > impact_radius:
+			continue
+		var distance_ratio: float = 1.0 - clampf(hero_distance / maxf(impact_radius, 0.001), 0.0, 1.0)
+		var applied_damage: float = damage * (0.7 + distance_ratio * 0.3)
+		apply_spell_damage_to_hero(game, hero, applied_damage, source_label)
+		var hero_push_direction: Vector2 = hero_offset.normalized() if hero_distance > 0.001 else GAME_DUNGEON_BUILDER.random_room_offset(game, 1.0).normalized()
+		if hero_push_direction == Vector2.ZERO:
+			hero_push_direction = Vector2.RIGHT
+		game.knockback_actor(hero, hero_push_direction, 340.0 * (0.45 + distance_ratio * 0.55), 0.16 + distance_ratio * 0.12, room_coord)
+		hit_any = true
+	if damage_modules_in_blast(game, room_coord, target_position, impact_radius, damage * 0.38):
 		hit_any = true
 	game.projectiles.append({
 		"kind": "fireball_blast",
@@ -775,6 +1146,7 @@ static func explode_enemy_fireball(game: Node, room_coord: Vector2i, target_posi
 		"blast_duration": 0.22,
 		"width": 5.0,
 	})
+	append_timed_effect_projectile(game, "necromancer_attack_effect", target_position, Color("ff8558"), 0.34, 0.34)
 	game.add_resource_floating_text(target_position, "Blast" if hit_any else "Miss", Color("ff8558"))
 	return defeated_heroes
 

@@ -10,15 +10,7 @@ const MAJOR_MODULE_INDUSTRY: String = "industry"
 const BALLISTA_LEVEL_DAMAGE: Array[float] = [9.0, 10.0, 12.0, 14.0]
 
 static func canonical_minor_module_type(module_type: String) -> String:
-	match module_type:
-		"laser_turret":
-			return MINOR_MODULE_TURRET
-		"pulse_turret":
-			return MINOR_MODULE_PULSE
-		"cannon_turret":
-			return MINOR_MODULE_CANNON
-		_:
-			return module_type
+	return module_type
 
 static func minor_module_catalog() -> Array[String]:
 	return [

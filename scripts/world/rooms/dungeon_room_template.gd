@@ -8,8 +8,8 @@ const INNER_WALL_NODE_PATH: NodePath = ^"Art/InnerWall"
 const DUNGEON_TILEMAP_NODE_PATH: NodePath = ^"Art/DungeonTileMap"
 const WATER_TILEMAP_NODE_PATH: NodePath = ^"Art/WaterTileMap"
 const DOOR_ART_ROOT_PATH: NodePath = ^"DoorArt"
-const TEMPLATE_GEOMETRY = preload("res://scripts/world/dungeon_room_template_geometry.gd")
-const TEMPLATE_VISUALS = preload("res://scripts/world/dungeon_room_template_visuals.gd")
+const TEMPLATE_GEOMETRY = preload("res://scripts/world/rooms/dungeon_room_template_geometry.gd")
+const TEMPLATE_VISUALS = preload("res://scripts/world/rooms/dungeon_room_template_visuals.gd")
 
 @export var template_id: String = "nook"
 @export var template_name: String = "Nook"

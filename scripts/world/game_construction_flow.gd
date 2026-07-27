@@ -243,6 +243,7 @@ static func queue_room_construction(game: Node, room_coord: Vector2i, module_typ
 			"cooldown": 0.2,
 			"under_construction": true,
 		})
+	game.rooms[room_coord] = room
 	game.pending_room_constructions.append({
 		"room": room_coord,
 		"module_type": module_type,
@@ -289,6 +290,7 @@ static func apply_construction_progress(game: Node, construction: Dictionary) ->
 	var next_health: float = lerpf(start_health, target_health, progress)
 	if bool(construction.get("is_major", false)):
 		room["major_health"] = next_health
+		game.rooms[room_coord] = room
 		return
 	var slot_index: int = int(construction.get("slot_index", -1))
 	var module_index: int = game.minor_module_index_for_slot(room_coord, slot_index)
@@ -296,6 +298,7 @@ static func apply_construction_progress(game: Node, construction: Dictionary) ->
 		var module_data: Dictionary = Dictionary(room["minor_modules"][module_index])
 		module_data["health"] = next_health
 		room["minor_modules"][module_index] = module_data
+		game.rooms[room_coord] = room
 
 static func finish_room_construction(game: Node, construction: Dictionary) -> void:
 	var room_coord: Vector2i = construction.get("room", game.INVALID_ROOM)
@@ -306,6 +309,7 @@ static func finish_room_construction(game: Node, construction: Dictionary) -> vo
 	if bool(construction.get("is_major", false)):
 		room["major_health"] = game.MAJOR_MODULE_MAX_HEALTH
 		room["major_under_construction"] = false
+		game.rooms[room_coord] = room
 		game.status_message = "%s completed in %s." % [game.build_type_label(module_type), game.room_title(room_coord)]
 		return
 	var slot_index: int = int(construction.get("slot_index", -1))
@@ -317,6 +321,7 @@ static func finish_room_construction(game: Node, construction: Dictionary) -> vo
 		module_data["health"] = game.MINOR_MODULE_MAX_HEALTH
 		module_data["under_construction"] = false
 		room["minor_modules"][module_index] = module_data
+	game.rooms[room_coord] = room
 	game.status_message = "%s completed in %s." % [game.build_type_label(module_type), game.room_title(room_coord)]
 
 static func build_menu_title_text(game: Node) -> String:

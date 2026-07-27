@@ -317,12 +317,13 @@ static func execute_world_command_for_hero(game: Node, hero_index: int, world_po
 	if not frontier_door.is_empty():
 		var from_room: Vector2i = frontier_door["from_room"]
 		var sealed_room: Vector2i = frontier_door["to_room"]
+		var origin_room_path: Array[Vector2i] = [from_room]
 		if update_local_selection:
 			game.selected_room = from_room
 		hero.pending_open_origin_room = from_room
 		hero.pending_open_room = sealed_room
 		if command_room == from_room:
-			game.issue_hero_steps(hero, game.build_steps_for_path([from_room], hero.global_position, game.doorway_navigation_position(from_room, sealed_room)))
+			game.issue_hero_steps(hero, game.build_steps_for_path(origin_room_path, hero.global_position, game.doorway_navigation_position(from_room, sealed_room)))
 		else:
 			var door_path: Array[Vector2i] = game.find_path(command_room, from_room, true)
 			if door_path.is_empty():
@@ -409,7 +410,8 @@ static func request_deferred_room_action_for_hero(game: Node, hero_index: int, r
 	}
 	var target_position: Vector2 = room_action_staging_position(game, room_coord)
 	if command_room == room_coord:
-		game.issue_hero_steps(hero, game.build_steps_for_path([room_coord], hero.global_position, target_position))
+		var room_action_path: Array[Vector2i] = [room_coord]
+		game.issue_hero_steps(hero, game.build_steps_for_path(room_action_path, hero.global_position, target_position))
 	else:
 		var path: Array[Vector2i] = game.find_path(command_room, room_coord, true)
 		if path.size() <= 1:
@@ -454,7 +456,8 @@ static func request_deferred_room_card_for_hero(game: Node, hero_index: int, roo
 			game.queue_redraw()
 			return false
 		if hero.current_room == room_coord and hero.global_position.distance_to(current_position_target) > 22.0:
-			game.issue_hero_steps(hero, game.build_steps_for_path([room_coord], hero.global_position, current_position_target))
+			var room_card_path: Array[Vector2i] = [room_coord]
+			game.issue_hero_steps(hero, game.build_steps_for_path(room_card_path, hero.global_position, current_position_target))
 		else:
 			hero.move_steps.clear()
 	else:

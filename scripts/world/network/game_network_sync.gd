@@ -1,6 +1,6 @@
 extends RefCounted
 
-const GAME_DUNGEON_BUILDER: GDScript = preload("res://scripts/world/game_dungeon_builder.gd")
+const GAME_DUNGEON_BUILDER: GDScript = preload("res://scripts/world/rooms/game_dungeon_builder.gd")
 
 static func peer_can_control_hero(game: Node, peer_id: int, hero_index: int) -> bool:
 	return hero_index >= 0 and hero_index < game.hero_owner_peer_ids.size() and int(game.hero_owner_peer_ids[hero_index]) == peer_id
@@ -89,6 +89,7 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 			"radius": float(projectile.get("radius", 0.0)),
 			"impact_radius": float(projectile.get("impact_radius", 0.0)),
 			"room": projectile.get("room", game.INVALID_ROOM),
+			"points": Array(projectile.get("points", [])).duplicate(true),
 			"lifetime_left": float(projectile.get("lifetime_left", 0.0)),
 			"blast_duration": float(projectile.get("blast_duration", 0.0)),
 			"remaining_bounces": int(projectile.get("remaining_bounces", 0)),
@@ -115,6 +116,7 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 			"enemy_role": enemy.enemy_role,
 			"current_health": enemy.current_health,
 			"attack_cooldown_left": enemy.attack_cooldown_left,
+			"rooted_time_left": enemy.rooted_time_left,
 			"death_started": enemy.death_started,
 		})
 	return {
@@ -317,9 +319,10 @@ static func apply_enemy_snapshots(game: Node, enemy_states: Array) -> void:
 			enemy.enemy_uid = enemy_uid
 			game.enemy_layer.add_child(enemy)
 		existing_by_uid.erase(enemy_uid)
-		enemy.set_role(String(enemy_state.get("enemy_role", game.ENEMY_TYPE_GOBLIN)))
+		enemy.set_role(String(enemy_state.get("enemy_role", game.ENEMY_TYPE_ORC)))
 		enemy.current_health = float(enemy_state.get("current_health", enemy.current_health))
 		enemy.attack_cooldown_left = float(enemy_state.get("attack_cooldown_left", enemy.attack_cooldown_left))
+		enemy.rooted_time_left = float(enemy_state.get("rooted_time_left", enemy.rooted_time_left))
 		enemy.current_room = enemy_state.get("current_room", enemy.current_room)
 		enemy.pending_room = enemy_state.get("pending_room", enemy.pending_room)
 		enemy.previous_room = enemy_state.get("previous_room", enemy.previous_room)

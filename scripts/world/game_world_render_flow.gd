@@ -1,9 +1,11 @@
 extends RefCounted
 
+const EFFECT_FRAME_SIZE: Vector2i = Vector2i(100, 100)
+const NECROMANCER_ATTACK_EFFECT: Texture2D = preload("res://assets/characters/packs/pack01/projectiles/magic/Necromancer_Attack02_Effect.png")
+
 static func _draw(game: Node) -> void:
 	draw_room_overlays(game)
 	draw_active_hand_card_target_preview(game)
-	game.draw_projectiles()
 	draw_floating_resource_texts(game)
 	game.draw_room_action_hold()
 	game.draw_room_action_menu()
@@ -91,6 +93,51 @@ static func screen_rect_to_world_rect(game: Node, screen_rect: Rect2) -> Rect2:
 static func current_view_world_rect(game: Node, padding: float = 0.0) -> Rect2:
 	var world_rect: Rect2 = screen_rect_to_world_rect(game, Rect2(Vector2.ZERO, game.get_viewport_rect().size))
 	return world_rect.abs().grow(padding)
+
+static func effect_frame_count(texture: Texture2D) -> int:
+	if texture == null:
+		return 1
+	return maxi(int(texture.get_width() / float(EFFECT_FRAME_SIZE.x)), 1)
+
+static func animated_effect_frame_index(texture: Texture2D, seconds_per_frame: float = 0.06) -> int:
+	var frame_count: int = effect_frame_count(texture)
+	if frame_count <= 1:
+		return 0
+	return int(floor(float(Time.get_ticks_msec()) / maxf(seconds_per_frame * 1000.0, 1.0))) % frame_count
+
+static func draw_effect_strip(surface: CanvasItem, texture: Texture2D, frame_index: int, world_position: Vector2, draw_size: Vector2, modulate: Color = Color.WHITE) -> void:
+	if texture == null:
+		return
+	var frame_count: int = effect_frame_count(texture)
+	var clamped_index: int = clampi(frame_index, 0, frame_count - 1)
+	var source_rect: Rect2 = Rect2(float(clamped_index * EFFECT_FRAME_SIZE.x), 0.0, float(EFFECT_FRAME_SIZE.x), float(EFFECT_FRAME_SIZE.y))
+	var draw_rect: Rect2 = Rect2(world_position - draw_size * 0.5, draw_size)
+	surface.draw_texture_rect_region(texture, draw_rect, source_rect, modulate, false, true)
+
+static func draw_room_spawn_warning_effects(game: Node, room_coord: Vector2i, view_rect: Rect2) -> void:
+	if NECROMANCER_ATTACK_EFFECT == null:
+		return
+	var effect_frame: int = animated_effect_frame_index(NECROMANCER_ATTACK_EFFECT, 0.052)
+	for pending_spawn_variant in game.pending_enemy_spawns:
+		var pending_spawn: Dictionary = pending_spawn_variant
+		if Vector2i(pending_spawn.get("room", game.INVALID_ROOM)) != room_coord:
+			continue
+		var positions: Array = Array(pending_spawn.get("positions", []))
+		var spawned_count: int = int(pending_spawn.get("spawned", 0))
+		var spawn_interval: float = maxf(float(pending_spawn.get("interval", game.WAVE_STAGGER_ENEMY_INTERVAL)), 0.001)
+		var next_delay: float = maxf(float(pending_spawn.get("delay_left", 0.0)), 0.0)
+		for spawn_index in range(spawned_count, positions.size()):
+			var spawn_position: Vector2 = Vector2(positions[spawn_index])
+			if not view_rect.has_point(spawn_position):
+				continue
+			var index_offset: int = spawn_index - spawned_count
+			var time_until_spawn: float = next_delay + float(index_offset) * spawn_interval
+			var pulse_alpha: float = clampf(0.62 - float(index_offset) * 0.08, 0.16, 0.62)
+			var pulse_wave: float = 0.72 + 0.28 * sin(float(Time.get_ticks_msec()) / 120.0 + float(index_offset) * 0.55)
+			var ring_radius: float = 16.0 + clampf(time_until_spawn * 18.0, 0.0, 22.0)
+			game.draw_circle(spawn_position, ring_radius, Color(1.0, 0.54, 0.36, 0.05 * pulse_wave))
+			game.draw_arc(spawn_position, ring_radius, 0.0, TAU, 28, Color(1.0, 0.66, 0.52, pulse_alpha * pulse_wave), 2.2, true)
+			draw_effect_strip(game, NECROMANCER_ATTACK_EFFECT, effect_frame, spawn_position + Vector2(0.0, -4.0), Vector2(96.0, 96.0), Color(1.0, 0.63, 0.44, pulse_alpha))
 
 static func draw_floating_resource_texts(game: Node) -> void:
 	var view_rect: Rect2 = current_view_world_rect(game, 96.0)
@@ -435,6 +482,7 @@ static func draw_room_overlays(game: Node) -> void:
 		if warning_ratio > 0.0:
 			var inset: float = 12.0 + 8.0 * (1.0 - warning_ratio)
 			game.draw_rect(rect.grow(-inset), Color(1.0, 0.66, 0.52, 0.10 + 0.12 * warning_ratio), false, 4.0)
+			draw_room_spawn_warning_effects(game, room_coord, view_rect)
 		if room["exit"]:
 			var exit_center: Vector2 = rect.get_center() + Vector2(0.0, -12.0)
 			game.draw_circle(exit_center, 18.0, Color("203846"))

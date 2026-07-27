@@ -1,6 +1,6 @@
 extends RefCounted
 
-const GAME_INVENTORY_ITEM_FLOW: GDScript = preload("res://scripts/world/game_inventory_item_flow.gd")
+const GAME_INVENTORY_ITEM_FLOW: GDScript = preload("res://scripts/world/inventory/game_inventory_item_flow.gd")
 
 static func hero_portrait_texture(game: Node, class_id: String) -> Texture2D:
 	if game.hero_portrait_cache.has(class_id):

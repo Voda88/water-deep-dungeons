@@ -1,6 +1,6 @@
 extends RefCounted
 
-const GAME_DUNGEON_BUILDER: GDScript = preload("res://scripts/world/game_dungeon_builder.gd")
+const GAME_DUNGEON_BUILDER: GDScript = preload("res://scripts/world/rooms/game_dungeon_builder.gd")
 
 static func refresh_open_inventory_overlay(game: Node) -> void:
 	if game.inventory_overlay == null or not game.inventory_overlay.visible or game.inventory_session.is_empty():

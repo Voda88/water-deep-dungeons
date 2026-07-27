@@ -1,6 +1,6 @@
 extends RefCounted
 
-const GAME_DUNGEON_BUILDER: GDScript = preload("res://scripts/world/game_dungeon_builder.gd")
+const GAME_DUNGEON_BUILDER: GDScript = preload("res://scripts/world/rooms/game_dungeon_builder.gd")
 
 static func item_size_in_cells(game: Node, item: Dictionary) -> Vector2i:
 	var item_def: Dictionary = game.item_defs.get(String(item.get("item_id", "")), {})
@@ -65,7 +65,9 @@ static func roll_ground_item_id(game: Node) -> String:
 		"scroll_fireball",
 		"scroll_magic_missile",
 		"scroll_misty_step",
+		"scroll_web",
 		"scroll_shield",
+		"scroll_scorching_ray",
 		"scroll_lightning_bolt",
 	]
 	if weighted_item_ids.is_empty():

@@ -42,7 +42,8 @@ static func advance_enemy_routes(game: Node, delta: float) -> void:
 			continue
 		if enemy.move_steps.is_empty() or not game.enemy_move_plan_matches(enemy, target_room, target_position):
 			if enemy.current_room == target_room:
-				game.issue_enemy_steps(enemy, game.build_steps_for_path([target_room], enemy.global_position, target_position))
+				var target_room_path: Array[Vector2i] = [target_room]
+				game.issue_enemy_steps(enemy, game.build_steps_for_path(target_room_path, enemy.global_position, target_position))
 			else:
 				var path: Array[Vector2i] = game.find_path(enemy.current_room, target_room, true)
 				if path.size() <= 1:
@@ -69,22 +70,22 @@ static func target_room_for_enemy(game: Node, enemy: Variant) -> Vector2i:
 	if local_target != null:
 		return hero_room_for_enemy_targeting(game, local_target)
 	match String(enemy.enemy_role):
-		game.ENEMY_TYPE_LIZARDMAN:
-			var lizard_target: Variant = orc_rider_target_hero(game, enemy)
-			if lizard_target == null:
+		game.ENEMY_TYPE_ORC_RIDER:
+			var orc_rider_target: Variant = orc_rider_target_hero(game, enemy)
+			if orc_rider_target == null:
 				return game.crystal_room
-			return hero_room_for_enemy_targeting(game, lizard_target)
+			return hero_room_for_enemy_targeting(game, orc_rider_target)
 		game.ENEMY_TYPE_SKELETON_ARCHER:
 			var archer_target: Variant = skeleton_archer_target_hero(game, enemy)
 			if archer_target == null:
 				return game.crystal_room
 			return hero_room_for_enemy_targeting(game, archer_target)
-		game.ENEMY_TYPE_GOBLIN, game.ENEMY_TYPE_GOBLIN_SHAMAN:
+		game.ENEMY_TYPE_ORC, game.ENEMY_TYPE_ORC_SHAMAN:
 			if enemy.current_room == game.crystal_room and heroes_in_room(game, enemy.current_room).is_empty():
 				return game.crystal_room
-			var goblin_target: Variant = goblin_target_hero(game, enemy)
-			if goblin_target != null:
-				return hero_room_for_enemy_targeting(game, goblin_target)
+			var orc_target: Variant = orc_target_hero(game, enemy)
+			if orc_target != null:
+				return hero_room_for_enemy_targeting(game, orc_target)
 			return game.crystal_room
 		game.ENEMY_TYPE_GOLEM:
 			var major_module_room: Vector2i = preferred_golem_major_module_room(game, enemy)
@@ -114,10 +115,10 @@ static func enemy_target_position(game: Node, enemy: Variant) -> Vector2:
 			return skeleton_archer_goal_position(game, enemy)
 		return local_target.global_position
 	match String(enemy.enemy_role):
-		game.ENEMY_TYPE_LIZARDMAN:
-			var lizard_target: Variant = orc_rider_target_hero(game, enemy)
-			if lizard_target != null:
-				return lizard_target.global_position
+		game.ENEMY_TYPE_ORC_RIDER:
+			var orc_rider_target: Variant = orc_rider_target_hero(game, enemy)
+			if orc_rider_target != null:
+				return orc_rider_target.global_position
 			return game.clamp_point_to_room(enemy.global_position, enemy.current_room)
 		game.ENEMY_TYPE_SKELETON_ARCHER:
 			var archer_target: Variant = skeleton_archer_target_hero(game, enemy)
@@ -126,12 +127,12 @@ static func enemy_target_position(game: Node, enemy: Variant) -> Vector2:
 					return skeleton_archer_goal_position(game, enemy)
 				return archer_target.global_position
 			return game.crystal_world_position()
-		game.ENEMY_TYPE_GOBLIN, game.ENEMY_TYPE_GOBLIN_SHAMAN:
+		game.ENEMY_TYPE_ORC, game.ENEMY_TYPE_ORC_SHAMAN:
 			if enemy.current_room == game.crystal_room and heroes_in_room(game, enemy.current_room).is_empty():
 				return game.crystal_world_position()
-			var goblin_target: Variant = goblin_target_hero(game, enemy)
-			if goblin_target != null:
-				return goblin_target.global_position
+			var orc_target: Variant = orc_target_hero(game, enemy)
+			if orc_target != null:
+				return orc_target.global_position
 			return game.crystal_world_position()
 		game.ENEMY_TYPE_GOLEM:
 			var major_module_room: Vector2i = preferred_golem_major_module_room(game, enemy)
@@ -147,8 +148,10 @@ static func enemy_attack_start_distance(game: Node, enemy: Variant) -> float:
 	if enemy == null or not is_instance_valid(enemy):
 		return 18.0
 	match String(enemy.enemy_role):
-		game.ENEMY_TYPE_LIZARDMAN, game.ENEMY_TYPE_GOBLIN, game.ENEMY_TYPE_GOLEM, game.ENEMY_TYPE_BAT:
-			return maxf(float(enemy.get("melee_reach")), 18.0)
+		game.ENEMY_TYPE_ORC_RIDER, game.ENEMY_TYPE_ORC, game.ENEMY_TYPE_GOLEM, game.ENEMY_TYPE_BAT:
+			return maxf(float(enemy.get("attack_range")), 18.0)
+		game.ENEMY_TYPE_ORC_SHAMAN:
+			return 212.0
 		_:
 			return 18.0
 
@@ -159,10 +162,10 @@ static func melee_attack_resolution_distance(game: Node, attacker: Variant, targ
 	if game.is_hero_actor(attacker):
 		attacker_reach = float(attacker.attack_range)
 	else:
-		attacker_reach = float(attacker.get("melee_reach"))
+		attacker_reach = float(attacker.get("attack_range"))
 	var target_reach: float = 0.0
 	if game.is_enemy_actor(target):
-		target_reach = float(target.get("melee_reach"))
+		target_reach = float(target.get("attack_range"))
 	elif game.is_hero_actor(target) and String(target.preferred_attack_style) == "melee":
 		target_reach = float(target.attack_range)
 	return maxf(attacker_reach, target_reach) + 8.0
@@ -236,12 +239,14 @@ static func local_enemy_override_target(game: Node, enemy: Variant) -> Variant:
 	if room_heroes.is_empty():
 		return null
 	match String(enemy.enemy_role):
-		game.ENEMY_TYPE_LIZARDMAN:
+		game.ENEMY_TYPE_ORC_RIDER:
 			return orc_rider_target_hero(game, enemy)
 		game.ENEMY_TYPE_SKELETON_ARCHER:
 			return skeleton_archer_target_hero(game, enemy)
-		game.ENEMY_TYPE_GOBLIN, game.ENEMY_TYPE_GOBLIN_SHAMAN:
-			return goblin_target_hero(game, enemy)
+		game.ENEMY_TYPE_ORC, game.ENEMY_TYPE_ORC_SHAMAN:
+			return orc_target_hero(game, enemy)
+		game.ENEMY_TYPE_BAT, game.ENEMY_TYPE_GOLEM:
+			return null
 		_:
 			return default_room_hero_target(game, enemy.current_room, enemy.global_position)
 
@@ -327,7 +332,7 @@ static func orc_rider_target_hero(game: Node, enemy: Variant) -> Variant:
 			chosen_distance = distance_value
 	return chosen_hero
 
-static func goblin_target_hero(game: Node, enemy: Variant) -> Variant:
+static func orc_target_hero(game: Node, enemy: Variant) -> Variant:
 	var room_heroes: Array = enemy_room_hero_candidates(game, enemy)
 	if not room_heroes.is_empty():
 		var local_choice: Variant = null
@@ -368,10 +373,8 @@ static func goblin_target_hero(game: Node, enemy: Variant) -> Variant:
 			chosen_distance = distance_value
 	return chosen_hero
 
-static func bat_target_hero(game: Node, enemy: Variant) -> Variant:
-	if enemy == null or not is_instance_valid(enemy):
-		return null
-	return default_room_hero_target(game, enemy.current_room, enemy.global_position)
+static func bat_target_hero(_game: Node, _enemy: Variant) -> Variant:
+	return null
 
 static func golem_target_hero(game: Node, enemy: Variant) -> Variant:
 	if enemy == null or not is_instance_valid(enemy):
@@ -385,7 +388,7 @@ static func enemy_situational_speed_multiplier(game: Node, enemy: Variant) -> fl
 	var has_heroes: bool = room_coord != game.INVALID_ROOM and not heroes_in_room(game, room_coord).is_empty()
 	var multiplier: float = 1.0
 	match String(enemy.enemy_role):
-		game.ENEMY_TYPE_GOBLIN:
+		game.ENEMY_TYPE_ORC:
 			multiplier = 0.72 if has_heroes else 1.0
 		game.ENEMY_TYPE_BAT:
 			multiplier = 0.58 if has_heroes else 1.0
@@ -484,13 +487,13 @@ static func resolve_enemy_attack(game: Node, enemy: Variant) -> void:
 		return
 	var local_target: Variant = local_enemy_override_target(game, enemy)
 	match String(enemy.enemy_role):
-		game.ENEMY_TYPE_LIZARDMAN:
-			var lizard_target: Variant = local_target if local_target != null else orc_rider_target_hero(game, enemy)
-			if lizard_target == null or not hero_is_in_room(game, lizard_target, enemy.current_room):
+		game.ENEMY_TYPE_ORC_RIDER:
+			var orc_rider_target: Variant = local_target if local_target != null else orc_rider_target_hero(game, enemy)
+			if orc_rider_target == null or not hero_is_in_room(game, orc_rider_target, enemy.current_room):
 				return
-			enemy.trigger_attack(lizard_target.global_position)
-			game.queue_pending_melee_attack(enemy, lizard_target, enemy.attack_damage, enemy.melee_impact_delay(), "An orc rider")
-			game.status_message = "An orc rider lunges at %s." % lizard_target.hero_name
+			enemy.trigger_attack(orc_rider_target.global_position)
+			game.queue_pending_melee_attack(enemy, orc_rider_target, enemy.attack_damage, enemy.melee_impact_delay(), "An orc rider")
+			game.status_message = "An orc rider lunges at %s." % orc_rider_target.hero_name
 		game.ENEMY_TYPE_SKELETON_ARCHER:
 			var archer_target: Variant = local_target if local_target != null else skeleton_archer_target_hero(game, enemy)
 			if archer_target != null and hero_is_in_room(game, archer_target, enemy.current_room):
@@ -503,12 +506,12 @@ static func resolve_enemy_attack(game: Node, enemy: Variant) -> void:
 				game.status_message = "Skeleton archers are peppering the crystal."
 			else:
 				return
-		game.ENEMY_TYPE_GOBLIN:
-			var goblin_target: Variant = local_target if local_target != null else goblin_target_hero(game, enemy)
-			if goblin_target != null and hero_is_in_room(game, goblin_target, enemy.current_room):
-				enemy.trigger_attack(goblin_target.global_position)
-				game.queue_pending_melee_attack(enemy, goblin_target, enemy.attack_damage, enemy.melee_impact_delay(), "Orcs")
-				game.status_message = "Orcs are swarming %s." % goblin_target.hero_name
+		game.ENEMY_TYPE_ORC:
+			var orc_target: Variant = local_target if local_target != null else orc_target_hero(game, enemy)
+			if orc_target != null and hero_is_in_room(game, orc_target, enemy.current_room):
+				enemy.trigger_attack(orc_target.global_position)
+				game.queue_pending_melee_attack(enemy, orc_target, enemy.attack_damage, enemy.melee_impact_delay(), "Orcs")
+				game.status_message = "Orcs are swarming %s." % orc_target.hero_name
 			elif enemy.current_room == game.crystal_room:
 				enemy.trigger_attack(game.room_center(game.crystal_room))
 				game.crystal_health = maxf(game.crystal_health - enemy.attack_damage, 0.0)
@@ -539,10 +542,10 @@ static func resolve_enemy_attack(game: Node, enemy: Variant) -> void:
 					game.status_message = "A golem is pounding the crystal."
 				else:
 					return
-		game.ENEMY_TYPE_GOBLIN_SHAMAN:
+		game.ENEMY_TYPE_ORC_SHAMAN:
 			var room_targets: Array = heroes_in_room(game, enemy.current_room)
 			if not room_targets.is_empty():
-				var blast_target: Variant = local_target if local_target != null else goblin_target_hero(game, enemy)
+				var blast_target: Variant = local_target if local_target != null else orc_target_hero(game, enemy)
 				var blast_position: Vector2 = blast_target.global_position if blast_target != null else game.room_walkable_center(enemy.current_room)
 				enemy.trigger_attack(blast_position)
 				var defeated_heroes: Array[String] = game.explode_enemy_fireball(enemy.current_room, blast_position, enemy.attack_damage, 68.0, 360.0, "An orc shaman")

@@ -1,9 +1,9 @@
 [gd_scene format=4 uid="uid://cbskhwl4ojgy6"]
 
-[ext_resource type="Script" uid="uid://cgt17m4bbov2" path="res://scripts/world/dungeon_room_template.gd" id="1"]
-[ext_resource type="TileSet" uid="uid://b24un31beqe8f" path="res://resources/dungeon_walkable_tileset.tres" id="2"]
-[ext_resource type="TileSet" uid="uid://0ewn5vre8qgh" path="res://resources/tilesets/cavern_water_chunk_main.tres" id="3"]
-[ext_resource type="PackedScene" uid="uid://cqmv4faocdoco" path="res://scenes/world/room_door_art.tscn" id="4"]
+[ext_resource type="Script" path="res://scripts/world/rooms/dungeon_room_template.gd" id="1"]
+[ext_resource type="TileSet" path="res://resources/dungeon_walkable_tileset.tres" id="2"]
+[ext_resource type="TileSet" path="res://resources/tilesets/cavern_water_chunk_main.tres" id="3"]
+[ext_resource type="PackedScene" path="res://scenes/world/room_door_art.tscn" id="4"]
 
 [node name="GalleryRoom" type="Node2D" unique_id=1418535635]
 script = ExtResource("1")
