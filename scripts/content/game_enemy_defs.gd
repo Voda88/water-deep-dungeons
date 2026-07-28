@@ -30,11 +30,11 @@ const ENEMY_SPRITE_PROFILES := {
 		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Bat/Bat/Bat_Death.png",
 	},
 	TYPE_ORC_RIDER: {
-		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc rider/Orc rider/Orc rider_Idle.png",
-		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc rider/Orc rider/Orc rider_Walk.png",
-		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc rider/Orc rider/Orc rider_Hurt.png",
-		"attack_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc rider/Orc rider/Orc rider_Attack02.png",
-		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc rider/Orc rider/Orc rider_Death.png",
+		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Armored Orc/Armored Orc/Armored Orc_Idle.png",
+		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Armored Orc/Armored Orc/Armored Orc_Walk.png",
+		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Armored Orc/Armored Orc/Armored Orc_Hurt.png",
+		"attack_path": "res://assets/characters/packs/pack01/characters_split_100x100/Armored Orc/Armored Orc/Armored Orc_Attack02.png",
+		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Armored Orc/Armored Orc/Armored Orc_Death.png",
 	},
 	TYPE_GOLEM: {
 		"idle_path": "res://assets/characters/packs/pack02/characters_split_100x100/Flame Golem/Flame Golem/Flame Golem_Idle.png",

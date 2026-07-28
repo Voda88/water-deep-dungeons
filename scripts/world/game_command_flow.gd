@@ -41,9 +41,10 @@ static func execute_room_merchant_buy_for_hero(game: Node, hero: Variant, room_c
 		game.update_hud()
 		return false
 	var offer: Dictionary = Dictionary(stock[offer_index]).duplicate(true)
+	var offer_kind: String = GAME_INVENTORY_ITEM_FLOW.merchant_offer_kind(offer)
 	var item: Dictionary = Dictionary(offer.get("item", {})).duplicate(true)
 	var item_name: String = GAME_INVENTORY_ITEM_FLOW.merchant_offer_item_name(game, offer)
-	var price: int = int(offer.get("price", GAME_INVENTORY_ITEM_FLOW.merchant_item_full_price(game, item)))
+	var price: int = GAME_INVENTORY_ITEM_FLOW.merchant_offer_price(game, offer)
 	var resource_id: String = GAME_INVENTORY_ITEM_FLOW.merchant_resource_id_for_room(game, room_coord)
 	var resource_label: String = GAME_INVENTORY_ITEM_FLOW.merchant_resource_label(game, resource_id)
 	if resource_id == "":
@@ -54,17 +55,36 @@ static func execute_room_merchant_buy_for_hero(game: Node, hero: Variant, room_c
 		game.status_message = "Need %d %s to buy %s." % [price, resource_label, item_name]
 		game.update_hud()
 		return false
-	if not game.add_item_to_hero_inventory(hero, item):
-		game.status_message = "%s has no inventory space for %s." % [hero.hero_name, item_name]
-		game.update_hud()
-		return false
+	if offer_kind == "major_upgrade":
+		var module_type: String = String(offer.get("module_type", ""))
+		var target_level: int = clampi(int(offer.get("target_level", 2)), 1, 4)
+		if not game.is_major_module_type(module_type):
+			game.status_message = "That upgrade offer is invalid."
+			game.update_hud()
+			return false
+		if game.major_module_level(module_type) >= target_level:
+			game.status_message = "%s is already at that level." % game.research_display_name(module_type)
+			game.update_hud()
+			return false
+	else:
+		if not game.add_item_to_hero_inventory(hero, item):
+			game.status_message = "%s has no inventory space for %s." % [hero.hero_name, item_name]
+			game.update_hud()
+			return false
 	if not GAME_INVENTORY_ITEM_FLOW.merchant_spend_resource(game, resource_id, price):
 		game.status_message = "Could not spend %s for that purchase." % resource_label
 		game.update_hud()
 		return false
+	if offer_kind == "major_upgrade":
+		var upgrade_module_type: String = String(offer.get("module_type", ""))
+		var upgrade_target_level: int = clampi(int(offer.get("target_level", 2)), 1, 4)
+		game.major_module_levels[upgrade_module_type] = upgrade_target_level
 	stock.remove_at(offer_index)
 	room["merchant_stock"] = stock
-	game.status_message = "%s bought %s for %d %s." % [hero.hero_name, item_name, price, resource_label]
+	if offer_kind == "major_upgrade":
+		game.status_message = "%s bought %s for %d %s." % [hero.hero_name, GAME_INVENTORY_ITEM_FLOW.merchant_offer_display_name(game, offer), price, resource_label]
+	else:
+		game.status_message = "%s bought %s for %d %s." % [hero.hero_name, item_name, price, resource_label]
 	game.update_hud()
 	game.queue_redraw()
 	return true
@@ -868,6 +888,10 @@ static func room_action_enabled(game: Node, room_coord: Vector2i, action_id: Str
 		return game.can_open_build_for_room(room_coord) and game.minor_module_unlocked(minor_module_type)
 	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
 		return false
+	var crystal_carry_available_here: bool = game.crystal_holder == null \
+		and game.crystal_ground_room == room_coord \
+		and game.is_exit_discovered() \
+		and bool(game.rooms[room_coord].get("opened", false))
 	var selected_hero: Variant = game.selected_hero()
 	var merchant_here: bool = GAME_INVENTORY_ITEM_FLOW.room_has_merchant(game, room_coord)
 	if merchant_here:
@@ -885,11 +909,15 @@ static func room_action_enabled(game: Node, room_coord: Vector2i, action_id: Str
 		if offer_index < 0:
 			return false
 		var offer: Dictionary = Dictionary(Array(room.get("merchant_stock", []))[offer_index])
-		var item: Dictionary = Dictionary(offer.get("item", {}))
 		var resource_id: String = GAME_INVENTORY_ITEM_FLOW.merchant_resource_id_for_room(game, room_coord)
-		var price: int = int(offer.get("price", GAME_INVENTORY_ITEM_FLOW.merchant_item_full_price(game, item)))
+		var price: int = GAME_INVENTORY_ITEM_FLOW.merchant_offer_price(game, offer)
 		if GAME_INVENTORY_ITEM_FLOW.merchant_resource_amount(game, resource_id) < price:
 			return false
+		if GAME_INVENTORY_ITEM_FLOW.merchant_offer_kind(offer) == "major_upgrade":
+			var module_type: String = String(offer.get("module_type", ""))
+			var target_level: int = int(offer.get("target_level", 1))
+			return game.is_major_module_type(module_type) and target_level > game.major_module_level(module_type)
+		var item: Dictionary = Dictionary(offer.get("item", {}))
 		return game.find_first_inventory_item_anchor(selected_hero, item) != game.INVALID_ROOM
 	if action_id.begins_with("merchant_sell_item_"):
 		if not merchant_here or selected_hero == null or not is_instance_valid(selected_hero):
@@ -945,6 +973,8 @@ static func room_action_enabled(game: Node, room_coord: Vector2i, action_id: Str
 			return true
 		"merchant_menu":
 			return merchant_here
+		"crystal_carry_menu", "crystal_carry_confirm_action", "crystal_carry_back":
+			return crystal_carry_available_here
 		"merchant_buy_menu", "merchant_sell_menu", "merchant_buyback_menu", "merchant_back", "merchant_page_prev", "merchant_page_next", "merchant_none":
 			return merchant_here
 		"trade_menu", "trade_back", "trade_resource_back", "trade_none":

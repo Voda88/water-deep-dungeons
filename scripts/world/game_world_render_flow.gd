@@ -3,9 +3,12 @@ extends RefCounted
 const EFFECT_FRAME_SIZE: Vector2i = Vector2i(100, 100)
 const NECROMANCER_ATTACK_EFFECT: Texture2D = preload("res://assets/characters/packs/pack01/projectiles/magic/Necromancer_Sumon_Effect.png")
 const LOOT_CHEST_TEXTURE: Texture2D = preload("res://assets/dungeon/tileset/doors_lever_chest_animation.png")
+const MERCHANT_DEMONESS_IDLE_TEXTURE: Texture2D = preload("res://assets/characters/packs/pack02/characters_split_100x100/Demoness_A/Demoness_A/Demoness_A_Idle.png")
 const LOOT_CHEST_FRAME_SIZE: Vector2i = Vector2i(32, 32)
 const LOOT_CHEST_FRAME_ORIGIN: Vector2i = Vector2i(0, 128)
 const LOOT_CHEST_ANIM_FRAME_COUNT: int = 5
+const MERCHANT_FRAME_SIZE: Vector2i = Vector2i(100, 100)
+const MERCHANT_DRAW_SIZE: Vector2 = Vector2(124.0, 124.0)
 const PROJECTILE_AIM_PREVIEW_CARD_IDS: Dictionary = {
 	"fireball_card": true,
 	"magic_missile_card": true,
@@ -375,6 +378,26 @@ static func draw_room_loot_chest(game: Node, room_coord: Vector2i, room: Diction
 		game.draw_rect(Rect2(chest_position + Vector2(-12.0, -2.0), Vector2(24.0, 16.0)), Color("f3d79e"), false, 2.0)
 	game.draw_string(ThemeDB.fallback_font, chest_position + Vector2(-14.0, 32.0), "Loot x%d" % item_count, HORIZONTAL_ALIGNMENT_LEFT, 52.0, 12, Color("fff0c7" if lit else "d7be8d"))
 
+static func draw_room_merchant_visual(game: Node, room_coord: Vector2i, room: Dictionary, lit: bool) -> void:
+	if String(room.get("merchant_theme", "")) == "":
+		return
+	if MERCHANT_DEMONESS_IDLE_TEXTURE == null:
+		return
+	var merchant_position: Vector2 = game.merchant_world_position(room_coord)
+	var frame_count: int = maxi(int(MERCHANT_DEMONESS_IDLE_TEXTURE.get_width() / maxf(float(MERCHANT_FRAME_SIZE.x), 1.0)), 1)
+	var frame_index: int = 0
+	if frame_count > 1:
+		frame_index = int(floor(float(Time.get_ticks_msec()) / 120.0)) % frame_count
+	var source_rect: Rect2 = Rect2(float(frame_index * MERCHANT_FRAME_SIZE.x), 0.0, float(MERCHANT_FRAME_SIZE.x), float(MERCHANT_FRAME_SIZE.y))
+	var draw_rect: Rect2 = Rect2(merchant_position + Vector2(-MERCHANT_DRAW_SIZE.x * 0.5, -MERCHANT_DRAW_SIZE.y + 30.0), MERCHANT_DRAW_SIZE)
+	var shadow_center: Vector2 = merchant_position + Vector2(0.0, 10.0)
+	game.draw_circle(shadow_center, 18.0, Color(0.03, 0.03, 0.04, 0.42 if lit else 0.30))
+	var sprite_tint: Color = Color.WHITE if lit else Color(0.73, 0.78, 0.82, 0.88)
+	game.draw_texture_rect_region(MERCHANT_DEMONESS_IDLE_TEXTURE, draw_rect, source_rect, sprite_tint, false, true)
+	var ring_color: Color = Color("8dd8ff") if lit else Color("80a1ba")
+	game.draw_arc(shadow_center, 24.0, 0.0, TAU, 32, Color(ring_color.r, ring_color.g, ring_color.b, 0.86), 2.2, true)
+	game.draw_string(ThemeDB.fallback_font, shadow_center + Vector2(-30.0, -30.0), "Merchant", HORIZONTAL_ALIGNMENT_LEFT, 68.0, 13, Color("eaf6ff"))
+
 static func room_wave_torch_waves_left(game: Node, room: Dictionary) -> int:
 	var expiry_wave: int = int(room.get("wave_torch_until_wave", -1))
 	if expiry_wave < 0:
@@ -660,6 +683,7 @@ static func draw_room_overlays(game: Node) -> void:
 				game.draw_circle(slot_position, 8.0, Color("b3efff", 0.18))
 				game.draw_arc(slot_position, 14.0, -PI * 0.5, -PI * 0.5 + TAU * pending_ratio_minor, 24, Color("8df6ff"), 2.5, true)
 		draw_room_loot_chest(game, room_coord, room, bool(room.get("lit", false)))
+		draw_room_merchant_visual(game, room_coord, room, bool(room.get("lit", false)))
 		if room_coord == game.opening_origin_room:
 			var progress_ratio: float = 1.0 - (game.opening_timer_left / game.DOOR_OPEN_DURATION)
 			game.draw_rect(rect, Color(1.0, 1.0, 1.0, 0.08), true)

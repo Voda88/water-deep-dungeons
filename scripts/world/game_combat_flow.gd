@@ -1,12 +1,16 @@
 extends RefCounted
 
 const GAME_ENEMY_DEFS: GDScript = preload("res://scripts/content/game_enemy_defs.gd")
+const GAME_INVENTORY_ITEM_FLOW: GDScript = preload("res://scripts/world/inventory/game_inventory_item_flow.gd")
 const EFFECT_FRAME_SIZE: Vector2i = Vector2i(100, 100)
 const WIZARD_FIRE_BOLT_EFFECT: Texture2D = preload("res://assets/characters/packs/pack01/projectiles/magic/Wizard_Attack02_Effect.png")
 const NECROMANCER_ATTACK_EFFECT: Texture2D = preload("res://assets/characters/packs/pack01/projectiles/magic/Necromancer_Attack02_Effect.png")
 const PRIEST_HEAL_EFFECT: Texture2D = preload("res://assets/characters/packs/pack01/projectiles/magic/Priest_Heal_effect.png")
 const PRIEST_ATTACK_EFFECT: Texture2D = preload("res://assets/characters/packs/pack01/projectiles/magic/Priest_Attack_effect.png")
 const GHOSTFIRE_BEAM_EFFECT: Texture2D = preload("res://assets/characters/packs/pack02/projectiles/Ghostfire_Beam.png")
+const FLOOR_ENEMY_TYPE_COUNT: int = 4
+const MIN_PREWARM_ENEMIES_PER_TYPE: int = 4
+const BASE_PREWARM_TOTAL: int = 24
 
 static func launch_wave(game: Node, entered_room: Vector2i) -> void:
 	var dark_rooms: Array[Vector2i] = []
@@ -58,6 +62,7 @@ static func queue_wave_spawn(game: Node, room_coord: Vector2i, wave_points: int,
 	var spawn_positions: Array = build_spawn_positions(game, room_coord, spawn_plan.size())
 	game.pending_enemy_spawns.append({
 		"room": room_coord,
+		"spawn_source": "door_wave",
 		"remaining": spawn_plan.size(),
 		"delay_left": room_delay,
 		"interval": game.WAVE_STAGGER_ENEMY_INTERVAL,
@@ -67,12 +72,31 @@ static func queue_wave_spawn(game: Node, room_coord: Vector2i, wave_points: int,
 		"positions": spawn_positions,
 	})
 
+static func apply_pressure_spawn_backoff_to_other_rooms(game: Node, pending_spawns: Array, source_index: int, source_room: Vector2i) -> void:
+	var extra_delay: float = maxf(game.CRYSTAL_PRESSURE_OTHER_ROOM_DELAY_PER_SPAWN, 0.0)
+	if extra_delay <= 0.0:
+		return
+	for pending_index in range(pending_spawns.size()):
+		if pending_index == source_index:
+			continue
+		var other_spawn: Dictionary = pending_spawns[pending_index]
+		if String(other_spawn.get("spawn_source", "")) != "crystal_pressure":
+			continue
+		if int(other_spawn.get("remaining", 0)) <= 0:
+			continue
+		var other_room: Vector2i = Vector2i(other_spawn.get("room", game.INVALID_ROOM))
+		if other_room == source_room:
+			continue
+		other_spawn["delay_left"] = float(other_spawn.get("delay_left", 0.0)) + extra_delay
+		pending_spawns[pending_index] = other_spawn
+
 static func advance_pending_enemy_spawns(game: Node, delta: float) -> void:
 	for room_coord_variant in game.rooms.keys():
 		var room_coord: Vector2i = room_coord_variant
 		game.rooms[room_coord]["warning_timer_left"] = maxf(float(game.rooms[room_coord].get("warning_timer_left", 0.0)) - delta, 0.0)
-	var active_spawns: Array = []
-	for pending_spawn in game.pending_enemy_spawns:
+	var pending_spawns: Array = game.pending_enemy_spawns
+	for pending_index in range(pending_spawns.size()):
+		var pending_spawn: Dictionary = pending_spawns[pending_index]
 		pending_spawn["delay_left"] = float(pending_spawn["delay_left"]) - delta
 		while int(pending_spawn["remaining"]) > 0 and float(pending_spawn["delay_left"]) <= 0.0:
 			var plan: Array = Array(pending_spawn.get("plan", []))
@@ -84,10 +108,16 @@ static func advance_pending_enemy_spawns(game: Node, delta: float) -> void:
 			if spawn_index >= 0 and spawn_index < positions.size():
 				spawn_position = Vector2(positions[spawn_index])
 			spawn_wave_enemy_at(game, Vector2i(pending_spawn["room"]), String(plan[spawn_index]), spawn_position)
+			if String(pending_spawn.get("spawn_source", "")) == "crystal_pressure":
+				apply_pressure_spawn_backoff_to_other_rooms(game, pending_spawns, pending_index, Vector2i(pending_spawn["room"]))
 			pending_spawn["spawned"] = int(pending_spawn["spawned"]) + 1
 			pending_spawn["remaining"] = int(pending_spawn["remaining"]) - 1
 			pending_spawn["delay_left"] = float(pending_spawn["delay_left"]) + float(pending_spawn["interval"])
-		if int(pending_spawn["remaining"]) > 0:
+		pending_spawns[pending_index] = pending_spawn
+	var active_spawns: Array = []
+	for pending_spawn_variant in pending_spawns:
+		var pending_spawn: Dictionary = pending_spawn_variant
+		if int(pending_spawn.get("remaining", 0)) > 0:
 			active_spawns.append(pending_spawn)
 	game.pending_enemy_spawns = active_spawns
 
@@ -97,10 +127,9 @@ static func advance_crystal_pressure(game: Node, delta: float) -> void:
 	game.crystal_pressure_timer_left = maxf(game.crystal_pressure_timer_left - delta, 0.0)
 	if game.crystal_pressure_timer_left > 0.0:
 		return
-	game.crystal_pressure_timer_left = game.CRYSTAL_PRESSURE_INTERVAL
 	trigger_crystal_pressure(game)
 
-static func trigger_crystal_pressure(game: Node) -> void:
+static func dark_rooms_for_crystal_pressure(game: Node) -> Array[Vector2i]:
 	var dark_rooms: Array[Vector2i] = []
 	for room_coord_variant in game.rooms.keys():
 		var room_coord: Vector2i = room_coord_variant
@@ -108,10 +137,23 @@ static func trigger_crystal_pressure(game: Node) -> void:
 		if room_coord == game.crystal_room or not room["opened"] or room["lit"]:
 			continue
 		dark_rooms.append(room_coord)
+	return dark_rooms
+
+static func crystal_pressure_interval_for_dark_room_count(game: Node, dark_room_count: int) -> float:
+	var count: int = maxi(dark_room_count, 1)
+	return game.CRYSTAL_PRESSURE_INTERVAL_PER_DARK_ROOM * float(count)
+
+static func crystal_pressure_interval_for_current_dark_rooms(game: Node) -> float:
+	return crystal_pressure_interval_for_dark_room_count(game, dark_rooms_for_crystal_pressure(game).size())
+
+static func trigger_crystal_pressure(game: Node) -> void:
+	var dark_rooms: Array[Vector2i] = dark_rooms_for_crystal_pressure(game)
 	if dark_rooms.is_empty():
+		game.crystal_pressure_timer_left = crystal_pressure_interval_for_dark_room_count(game, 1)
 		return
 	for room_coord in dark_rooms:
 		queue_pressure_spawn(game, room_coord, game.CRYSTAL_PRESSURE_ENEMIES_PER_ROOM + int(floor(float(max(game.floor_index - 1, 0)) / 2.0)))
+	game.crystal_pressure_timer_left = crystal_pressure_interval_for_dark_room_count(game, dark_rooms.size())
 	game.status_message = "The crystal agitates %d dark room%s." % [dark_rooms.size(), "" if dark_rooms.size() == 1 else "s"]
 	game.update_hud()
 
@@ -125,6 +167,7 @@ static func queue_pressure_spawn(game: Node, room_coord: Vector2i, count: int) -
 	var spawn_positions: Array = build_spawn_positions(game, room_coord, spawn_plan.size())
 	game.pending_enemy_spawns.append({
 		"room": room_coord,
+		"spawn_source": "crystal_pressure",
 		"remaining": spawn_plan.size(),
 		"delay_left": game.CRYSTAL_PRESSURE_WARNING_DURATION,
 		"interval": game.WAVE_STAGGER_ENEMY_INTERVAL,
@@ -156,17 +199,127 @@ static func weighted_enemy_type_choice(game: Node, candidates: Array[String], pr
 			return enemy_type
 	return candidates[candidates.size() - 1]
 
+static func enemy_spawn_candidates_for_floor(game: Node) -> Array[String]:
+	var floor_candidates: Array[String] = []
+	for enemy_type_variant in Array(game.floor_enemy_spawn_types):
+		var enemy_type: String = String(enemy_type_variant)
+		if GAME_ENEMY_DEFS.enemy_available_on_floor(enemy_type, game.floor_index):
+			floor_candidates.append(enemy_type)
+	if not floor_candidates.is_empty():
+		return floor_candidates
+	for enemy_type_variant in GAME_ENEMY_DEFS.enemy_spawn_order():
+		var fallback_type: String = String(enemy_type_variant)
+		if GAME_ENEMY_DEFS.enemy_available_on_floor(fallback_type, game.floor_index):
+			floor_candidates.append(fallback_type)
+	if floor_candidates.is_empty():
+		floor_candidates = [game.ENEMY_TYPE_ORC]
+	return floor_candidates
+
+static func prepare_floor_enemy_spawn_types(game: Node) -> void:
+	var available_types: Array[String] = []
+	for enemy_type_variant in GAME_ENEMY_DEFS.enemy_spawn_order():
+		var enemy_type: String = String(enemy_type_variant)
+		if GAME_ENEMY_DEFS.enemy_available_on_floor(enemy_type, game.floor_index):
+			available_types.append(enemy_type)
+	if available_types.is_empty():
+		game.floor_enemy_spawn_types = [game.ENEMY_TYPE_ORC]
+		return
+	var target_count: int = mini(FLOOR_ENEMY_TYPE_COUNT, available_types.size())
+	var mutable_available: Array[String] = available_types.duplicate(true)
+	var chosen_types: Array[String] = []
+	while chosen_types.size() < target_count and not mutable_available.is_empty():
+		var chosen_index: int = game.rng.randi_range(0, mutable_available.size() - 1)
+		chosen_types.append(mutable_available[chosen_index])
+		mutable_available.remove_at(chosen_index)
+	if chosen_types.is_empty():
+		chosen_types = [available_types[0]]
+	game.floor_enemy_spawn_types = chosen_types
+
+static func prewarm_enemy_pool_for_floor(game: Node) -> void:
+	if game.enemy_layer == null:
+		return
+	var spawn_types: Array[String] = enemy_spawn_candidates_for_floor(game)
+	if spawn_types.is_empty():
+		return
+	var rooms_excluding_crystal: int = maxi(game.rooms.size() - 1, 1)
+	var pressure_per_room: int = game.CRYSTAL_PRESSURE_ENEMIES_PER_ROOM + int(floor(float(maxi(game.floor_index - 1, 0)) / 2.0))
+	var desired_total: int = maxi(BASE_PREWARM_TOTAL, rooms_excluding_crystal * pressure_per_room + 8)
+	var per_type_target: int = maxi(MIN_PREWARM_ENEMIES_PER_TYPE, int(ceil(float(desired_total) / float(spawn_types.size()))))
+	var available_counts: Dictionary = {}
+	var compacted_pool: Array = []
+	for enemy_type in spawn_types:
+		available_counts[enemy_type] = 0
+	for pooled_enemy_variant in Array(game.enemy_pool_available):
+		var pooled_enemy: Variant = pooled_enemy_variant
+		if pooled_enemy == null or not is_instance_valid(pooled_enemy):
+			continue
+		compacted_pool.append(pooled_enemy)
+		var pooled_role: String = String(pooled_enemy.enemy_role)
+		if available_counts.has(pooled_role):
+			available_counts[pooled_role] = int(available_counts[pooled_role]) + 1
+	game.enemy_pool_available = compacted_pool
+	for enemy_type in spawn_types:
+		var missing_count: int = maxi(0, per_type_target - int(available_counts.get(enemy_type, 0)))
+		for _index in range(missing_count):
+			var pooled_enemy: Variant = game.ENEMY_SCENE.instantiate()
+			game.enemy_layer.add_child(pooled_enemy)
+			if pooled_enemy.has_method("set_pool_managed"):
+				pooled_enemy.set_pool_managed(true)
+			pooled_enemy.set_role(enemy_type)
+			if pooled_enemy.has_method("deactivate_for_pool"):
+				pooled_enemy.deactivate_for_pool()
+			game.enemy_pool_available.append(pooled_enemy)
+
+static func acquire_enemy_from_pool(game: Node, enemy_type: String) -> Variant:
+	while not game.enemy_pool_available.is_empty():
+		var pooled_enemy: Variant = game.enemy_pool_available.pop_back()
+		if pooled_enemy != null and is_instance_valid(pooled_enemy):
+			if pooled_enemy.has_method("set_pool_managed"):
+				pooled_enemy.set_pool_managed(true)
+			if pooled_enemy.get_parent() == null and game.enemy_layer != null:
+				game.enemy_layer.add_child(pooled_enemy)
+			return pooled_enemy
+	var enemy: Variant = game.ENEMY_SCENE.instantiate()
+	if game.enemy_layer != null:
+		game.enemy_layer.add_child(enemy)
+	if enemy.has_method("set_pool_managed"):
+		enemy.set_pool_managed(true)
+	enemy.set_role(enemy_type)
+	return enemy
+
+static func release_enemy_to_pool(game: Node, enemy: Variant) -> void:
+	if enemy == null or not is_instance_valid(enemy):
+		return
+	if game.enemy_pool_available.has(enemy):
+		return
+	if enemy.has_method("set_pool_managed"):
+		enemy.set_pool_managed(true)
+	if enemy.has_method("deactivate_for_pool"):
+		enemy.deactivate_for_pool()
+	else:
+		enemy.visible = false
+		enemy.set_physics_process(false)
+	game.enemy_pool_available.append(enemy)
+
 static func build_enemy_spawn_plan(game: Node, budget: int, pressure_spawn: bool = false) -> Array[String]:
 	var remaining: int = maxi(1, budget)
 	var plan: Array[String] = []
+	var floor_spawn_candidates: Array[String] = enemy_spawn_candidates_for_floor(game)
 	while remaining > 0:
 		var candidates: Array[String] = []
-		for enemy_type_variant in GAME_ENEMY_DEFS.enemy_spawn_order():
+		for enemy_type_variant in floor_spawn_candidates:
 			var enemy_type: String = String(enemy_type_variant)
 			if not GAME_ENEMY_DEFS.enemy_available_on_floor(enemy_type, game.floor_index):
 				continue
 			if enemy_wave_point_cost(game, enemy_type) <= remaining:
 				candidates.append(enemy_type)
+		if candidates.is_empty():
+			for fallback_enemy_type_variant in GAME_ENEMY_DEFS.enemy_spawn_order():
+				var fallback_enemy_type: String = String(fallback_enemy_type_variant)
+				if not GAME_ENEMY_DEFS.enemy_available_on_floor(fallback_enemy_type, game.floor_index):
+					continue
+				if enemy_wave_point_cost(game, fallback_enemy_type) <= remaining:
+					candidates.append(fallback_enemy_type)
 		if candidates.is_empty():
 			candidates = [game.ENEMY_TYPE_ORC]
 		var chosen_type: String = weighted_enemy_type_choice(game, candidates, pressure_spawn)
@@ -191,20 +344,23 @@ static func spawn_wave_enemy(game: Node, room_coord: Vector2i, enemy_type: Strin
 	spawn_wave_enemy_at(game, room_coord, enemy_type, Vector2.INF)
 
 static func spawn_wave_enemy_at(game: Node, room_coord: Vector2i, enemy_type: String, spawn_position_hint: Vector2 = Vector2.INF) -> void:
-	var enemy: Variant = game.ENEMY_SCENE.instantiate()
-	game.enemy_layer.add_child(enemy)
-	enemy.enemy_uid = game.next_enemy_uid
+	var enemy: Variant = acquire_enemy_from_pool(game, enemy_type)
+	var enemy_uid: int = game.next_enemy_uid
 	game.next_enemy_uid += 1
 	var spawn_position: Vector2 = spawn_position_hint
 	if spawn_position == Vector2.INF:
 		spawn_position = game.random_walkable_point(room_coord)
-	enemy.global_position = spawn_position
-	enemy.reset_physics_interpolation()
-	enemy.set_role(enemy_type)
-	enemy.current_room = room_coord
-	enemy.previous_room = room_coord
-	enemy.next_room = room_coord
-	enemy.set_destination(spawn_position)
+	if enemy.has_method("activate_from_pool"):
+		enemy.activate_from_pool(enemy_uid, enemy_type, room_coord, spawn_position)
+	else:
+		enemy.enemy_uid = enemy_uid
+		enemy.global_position = spawn_position
+		enemy.reset_physics_interpolation()
+		enemy.set_role(enemy_type)
+		enemy.current_room = room_coord
+		enemy.previous_room = room_coord
+		enemy.next_room = room_coord
+		enemy.set_destination(spawn_position)
 	game.enemies.append(enemy)
 
 static func projectile_numeric_pierce(projectile: Dictionary) -> int:
@@ -413,6 +569,7 @@ static func process_modules(game: Node, delta: float) -> void:
 			match module_type:
 				game.MINOR_MODULE_PULSE:
 					var gas_hit: bool = false
+					var gas_slow_duration: float = 1.4 + float(clampi(game.minor_module_level(module_type), 1, 4)) * 0.2
 					for enemy in game.enemies:
 						if not enemy_is_targetable_by_module(game, enemy, room_coord):
 							continue
@@ -424,6 +581,7 @@ static func process_modules(game: Node, delta: float) -> void:
 						enemy.take_damage(game.minor_module_damage(module_type), module_impact_direction)
 						gas_hit = true
 					if gas_hit:
+						room["neurostun_time_left"] = maxf(float(room.get("neurostun_time_left", 0.0)), gas_slow_duration)
 						module_data["cooldown"] = game.minor_module_cooldown(module_type)
 						game.projectiles.append({
 							"kind": "gas_pulse",
@@ -438,27 +596,75 @@ static func process_modules(game: Node, delta: float) -> void:
 							"width": 3.0,
 						})
 				game.MINOR_MODULE_CANNON:
-					var slow_target: Variant = nearest_enemy_for_module(game, room_coord, slot_position, 620.0)
-					if slow_target != null:
+					var mortar_target: Variant = nearest_enemy_for_module(game, room_coord, slot_position, 620.0)
+					if mortar_target != null:
 						module_data["cooldown"] = game.minor_module_cooldown(module_type)
-						room["neurostun_time_left"] = maxf(float(room.get("neurostun_time_left", 0.0)), 1.0 + float(game.minor_module_level(module_type)) * 0.12)
+						var splash_center: Vector2 = mortar_target.global_position
+						var splash_radius: float = 56.0 + float(clampi(game.minor_module_level(module_type), 1, 4)) * 8.0
+						for splash_enemy in game.enemies:
+							if not enemy_is_targetable_by_module(game, splash_enemy, room_coord):
+								continue
+							if splash_enemy.global_position.distance_to(splash_center) > splash_radius:
+								continue
+							var splash_direction: Vector2 = (splash_enemy.global_position - splash_center).normalized()
+							if splash_direction == Vector2.ZERO:
+								splash_direction = (splash_enemy.global_position - slot_position).normalized()
+							if splash_direction == Vector2.ZERO:
+								splash_direction = Vector2.RIGHT
+							splash_enemy.take_damage(game.minor_module_damage(module_type), splash_direction)
 						game.projectiles.append({
 							"kind": "gas_pulse",
-							"position": slot_position,
-							"previous": slot_position,
-							"target_position": slot_position,
+							"position": splash_center,
+							"previous": splash_center,
+							"target_position": splash_center,
 							"color": game.minor_module_color(module_type),
-							"radius": 88.0,
-							"impact_radius": 88.0,
-							"lifetime_left": 0.2,
-							"blast_duration": 0.2,
-							"width": 2.0,
+							"radius": splash_radius,
+							"impact_radius": splash_radius,
+							"lifetime_left": 0.24,
+							"blast_duration": 0.24,
+							"width": 3.0,
 						})
 				game.MINOR_MODULE_KIP:
-					var kip_target: Variant = strongest_enemy_for_module(game, room_coord, slot_position, 620.0)
-					if kip_target != null:
+					var arcana_target: Variant = strongest_enemy_for_module(game, room_coord, slot_position, 620.0)
+					if arcana_target != null:
 						module_data["cooldown"] = game.minor_module_cooldown(module_type)
-						spawn_arrow_projectile(game, slot_position, kip_target, game.minor_module_damage(module_type), game.minor_module_color(module_type), game.minor_module_projectile_width(module_type), game.minor_module_projectile_speed(module_type))
+						spawn_laser_projectile(game, slot_position, arcana_target, game.minor_module_damage(module_type), game.minor_module_color(module_type), game.minor_module_projectile_width(module_type), game.minor_module_projectile_speed(module_type))
+				game.MINOR_MODULE_CONVERSION:
+					var conversion_target: Variant = strongest_enemy_for_module(game, room_coord, slot_position, 620.0)
+					if conversion_target != null:
+						module_data["cooldown"] = game.minor_module_cooldown(module_type)
+						var conversion_center: Vector2 = conversion_target.global_position
+						var conversion_direction: Vector2 = (conversion_target.global_position - slot_position).normalized()
+						if conversion_direction == Vector2.ZERO:
+							conversion_direction = Vector2.RIGHT
+						conversion_target.take_damage(maxf(float(conversion_target.current_health) + 4.0, 1.0), conversion_direction)
+						var betrayal_radius: float = 72.0 + float(clampi(game.minor_module_level(module_type), 1, 4)) * 8.0
+						for betrayal_enemy in game.enemies:
+							if betrayal_enemy == conversion_target:
+								continue
+							if not enemy_is_targetable_by_module(game, betrayal_enemy, room_coord):
+								continue
+							if betrayal_enemy.global_position.distance_to(conversion_center) > betrayal_radius:
+								continue
+							var betrayal_direction: Vector2 = (betrayal_enemy.global_position - conversion_center).normalized()
+							if betrayal_direction == Vector2.ZERO:
+								betrayal_direction = Vector2.RIGHT
+							betrayal_enemy.take_damage(game.minor_module_damage(module_type), betrayal_direction)
+						game.add_resource_floating_text(conversion_center + Vector2(0.0, -22.0), "Converted", Color("8effc4"))
+						game.projectiles.append({
+							"kind": "gas_pulse",
+							"position": conversion_center,
+							"previous": conversion_center,
+							"target_position": conversion_center,
+							"color": game.minor_module_color(module_type),
+							"radius": betrayal_radius,
+							"impact_radius": betrayal_radius,
+							"lifetime_left": 0.3,
+							"blast_duration": 0.3,
+							"width": 2.6,
+						})
+				game.MINOR_MODULE_BOUNTY_INDUSTRY, game.MINOR_MODULE_BOUNTY_FOOD, game.MINOR_MODULE_BOUNTY_SCIENCE:
+					pass
 				_:
 					var turret_target: Variant = nearest_enemy_for_module(game, room_coord, slot_position, 620.0)
 					if turret_target == null:
@@ -1066,11 +1272,84 @@ static func strongest_enemy_for_module(game: Node, room_coord: Vector2i, origin:
 			chosen_distance = distance_value
 	return chosen_enemy
 
+static func add_resource_amount(game: Node, resource_id: String, amount: int) -> void:
+	if amount <= 0:
+		return
+	match resource_id:
+		"food":
+			game.food += amount
+		"industry":
+			game.industry += amount
+		"science":
+			game.science += amount
+
+static func try_apply_minor_module_kill_rewards(game: Node, enemy: Variant) -> void:
+	if enemy == null or not is_instance_valid(enemy):
+		return
+	if enemy.has_meta("minor_module_kill_rewards_resolved"):
+		return
+	enemy.set_meta("minor_module_kill_rewards_resolved", true)
+	var room_coord: Vector2i = enemy.current_room
+	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
+		room_coord = enemy.previous_room
+	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
+		return
+	var room: Dictionary = game.rooms[room_coord]
+	if not bool(room.get("opened", false)) or not bool(room.get("lit", false)):
+		return
+	var payout_by_resource: Dictionary = {}
+	var changed_modules: bool = false
+	for module_index in range(room["minor_modules"].size()):
+		var module_data: Dictionary = Dictionary(room["minor_modules"][module_index])
+		if float(module_data.get("health", 0.0)) <= 0.0 or bool(module_data.get("under_construction", false)):
+			continue
+		var module_type: String = game.canonical_minor_module_type(String(module_data.get("type", "")))
+		var resource_id: String = game.minor_module_bounty_resource_id(module_type)
+		if resource_id == "":
+			continue
+		var kills_required: int = maxi(game.minor_module_bounty_kills_required(module_type), 1)
+		var kill_counter: int = int(module_data.get("bounty_kills", 0)) + 1
+		var payout_count: int = kill_counter / kills_required
+		module_data["bounty_kills"] = kill_counter % kills_required
+		room["minor_modules"][module_index] = module_data
+		changed_modules = true
+		if payout_count <= 0:
+			continue
+		add_resource_amount(game, resource_id, payout_count)
+		payout_by_resource[resource_id] = int(payout_by_resource.get(resource_id, 0)) + payout_count
+	if changed_modules:
+		game.rooms[room_coord] = room
+	if payout_by_resource.is_empty():
+		return
+	var popup_offset_x: float = -20.0
+	for resource_variant in payout_by_resource.keys():
+		var payout_resource: String = String(resource_variant)
+		var payout_amount: int = int(payout_by_resource[payout_resource])
+		var popup_color: Color = Color("f3d88f")
+		match payout_resource:
+			"food":
+				popup_color = Color("9ee28b")
+			"industry":
+				popup_color = Color("f1c26b")
+			"science":
+				popup_color = Color("8bc1ff")
+		game.add_resource_floating_text(
+			enemy.global_position + Vector2(popup_offset_x, -34.0),
+			"+%d %s" % [payout_amount, GAME_INVENTORY_ITEM_FLOW.merchant_resource_label(game, payout_resource)],
+			popup_color
+		)
+		popup_offset_x += 26.0
+
 static func cleanup_enemies(game: Node) -> void:
 	var alive_enemies: Array = []
 	for enemy in game.enemies:
-		if is_instance_valid(enemy):
-			if enemy.current_health <= 0.0:
-				try_spawn_enemy_dust_drop(game, enemy)
-			alive_enemies.append(enemy)
+		if not is_instance_valid(enemy):
+			continue
+		if enemy.current_health <= 0.0:
+			try_spawn_enemy_dust_drop(game, enemy)
+			try_apply_minor_module_kill_rewards(game, enemy)
+		if enemy.has_method("ready_for_pool_recycle") and enemy.ready_for_pool_recycle():
+			release_enemy_to_pool(game, enemy)
+			continue
+		alive_enemies.append(enemy)
 	game.enemies = alive_enemies

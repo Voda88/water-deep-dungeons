@@ -226,12 +226,22 @@ static func room_action_button_layout(game: Node) -> Array:
 	var mode: String = String(game.room_action_menu.get("mode", "root"))
 	var room_coord: Vector2i = Vector2i(game.room_action_menu.get("room", game.INVALID_ROOM))
 	var selected_hero: Variant = game.selected_hero()
+	var crystal_carry_available_here: bool = game.crystal_holder == null \
+		and game.crystal_ground_room == room_coord \
+		and game.is_exit_discovered() \
+		and game.rooms.has(room_coord) \
+		and bool(game.rooms[room_coord].get("opened", false))
 	var merchant_here: bool = GAME_INVENTORY_ITEM_FLOW.room_has_merchant(game, room_coord)
 	if merchant_here:
 		GAME_INVENTORY_ITEM_FLOW.ensure_room_merchant_state(game, room_coord)
 	var merchant_resource_id: String = GAME_INVENTORY_ITEM_FLOW.merchant_resource_id_for_room(game, room_coord)
 	var merchant_resource_short: String = merchant_resource_short_label(merchant_resource_id)
 	match mode:
+		"crystal_carry_confirm":
+			return with_spread_angles([
+				{"id": "crystal_carry_confirm_action", "label": "Confirm Carry", "fill": Color("f7bd87")},
+				{"id": "crystal_carry_back", "label": "Back", "fill": Color("d7dfeb")},
+			], -2.92, -1.68)
 		"build_kind":
 			return with_spread_angles([
 				{"id": "build_minor_menu", "label": "Minor", "angle": -3.08, "fill": Color("9bd8ff")},
@@ -241,17 +251,15 @@ static func room_action_button_layout(game: Node) -> Array:
 		"build_minor":
 			var minor_buttons: Array = []
 			var action_specs: Array = game.available_minor_module_action_specs()
-			var action_angles: Array[float] = [-3.10, -2.72, -2.34, -1.96]
-			for index in range(mini(action_specs.size(), action_angles.size())):
-				var action_spec: Dictionary = action_specs[index]
+			for action_spec_variant in action_specs:
+				var action_spec: Dictionary = action_spec_variant
 				minor_buttons.append({
 					"id": String(action_spec.get("id", "")),
 					"label": String(action_spec.get("label", "")),
-					"angle": action_angles[index],
 					"fill": Color(action_spec.get("fill", Color("89f2ff"))),
 				})
-			minor_buttons.append({"id": "submenu_back_build", "label": "Back", "angle": -1.56, "fill": Color("d7dfeb")})
-			return with_spread_angles(minor_buttons)
+			minor_buttons.append({"id": "submenu_back_build", "label": "Back", "fill": Color("d7dfeb")})
+			return with_spread_angles(minor_buttons, -3.10, -1.52)
 		"build_major":
 			return with_spread_angles([
 				{"id": "build_major_food", "label": "Food", "angle": -3.10, "fill": Color("8ee28a")},
@@ -270,13 +278,11 @@ static func room_action_button_layout(game: Node) -> Array:
 			var buy_entries: Array = []
 			for offer_variant in Array(game.rooms.get(room_coord, {}).get("merchant_stock", [])):
 				var offer: Dictionary = Dictionary(offer_variant)
-				var item_data: Dictionary = Dictionary(offer.get("item", {}))
-				var item_id: String = String(item_data.get("item_id", ""))
-				var item_short: String = short_item_label(game, item_id)
-				var price: int = int(offer.get("price", GAME_INVENTORY_ITEM_FLOW.merchant_item_full_price(game, item_data)))
+				var offer_short: String = GAME_INVENTORY_ITEM_FLOW.merchant_offer_short_label(game, offer)
+				var price: int = GAME_INVENTORY_ITEM_FLOW.merchant_offer_price(game, offer)
 				buy_entries.append({
 					"id": "merchant_buy_offer_%d" % int(offer.get("offer_uid", -1)),
-					"label": "%s %d%s" % [item_short, price, merchant_resource_short],
+					"label": "%s %d%s" % [offer_short, price, merchant_resource_short],
 					"fill": Color("a6efba"),
 				})
 			return paged_merchant_buttons(game, buy_entries, "merchant_page", "No offers", "merchant_root")
@@ -351,9 +357,11 @@ static func room_action_button_layout(game: Node) -> Array:
 				root_buttons.append({"id": "research", "label": "Research", "fill": Color("8bc1ff")})
 			else:
 				pass
-			root_buttons.append({"id": "light", "label": light_label, "fill": Color("f3d88f")})
 			if merchant_here:
 				root_buttons.append({"id": "merchant_menu", "label": "Merchant", "fill": Color("d8c1ff")})
+			if crystal_carry_available_here:
+				root_buttons.append({"id": "crystal_carry_menu", "label": "Carry Crystal", "fill": Color("c6a0ff")})
+			root_buttons.append({"id": "light", "label": light_label, "fill": Color("f3d88f")})
 			if game.heroes_in_room(room_coord).size() > 1:
 				root_buttons.append({"id": "trade_menu", "label": "Trade", "fill": Color("9bd8ff")})
 			return with_spread_angles(root_buttons)
@@ -480,15 +488,11 @@ static func perform_room_action(game: Node, room_coord: Vector2i, action_id: Str
 			game.update_hud()
 			game.queue_redraw()
 		"merchant_menu":
-			game.room_action_menu["mode"] = "merchant_root"
-			game.room_action_menu["merchant_page"] = 0
-			focus_room_action_menu(game, room_coord, true)
-			game.status_message = "%s set up shop in %s." % [
-				GAME_INVENTORY_ITEM_FLOW.merchant_theme_display_name(game, GAME_INVENTORY_ITEM_FLOW.merchant_theme_for_room(game, room_coord)),
-				game.room_title(room_coord),
-			]
-			game.update_hud()
-			game.queue_redraw()
+			close_room_action_menu(game)
+			if not game.open_room_merchant_overlay(room_coord):
+				game.status_message = "No merchant is available in %s." % game.room_title(room_coord)
+				game.update_hud()
+				game.queue_redraw()
 		"merchant_buy_menu":
 			game.room_action_menu["mode"] = "merchant_buy"
 			game.room_action_menu["merchant_page"] = 0
@@ -509,6 +513,24 @@ static func perform_room_action(game: Node, room_coord: Vector2i, action_id: Str
 			focus_room_action_menu(game, room_coord, true)
 			game.update_hud()
 			game.queue_redraw()
+		"crystal_carry_menu":
+			game.room_action_menu["mode"] = "crystal_carry_confirm"
+			focus_room_action_menu(game, room_coord, true)
+			if game.selected_hero() != null and is_instance_valid(game.selected_hero()):
+				game.status_message = "Confirm carrying the crystal with %s." % game.selected_hero().hero_name
+			else:
+				game.status_message = "Confirm carrying the crystal."
+			game.update_hud()
+			game.queue_redraw()
+		"crystal_carry_back":
+			game.room_action_menu["mode"] = "root"
+			focus_room_action_menu(game, room_coord, true)
+			game.status_message = "Room actions for %s." % game.room_title(room_coord)
+			game.update_hud()
+			game.queue_redraw()
+		"crystal_carry_confirm_action":
+			close_room_action_menu(game)
+			game._on_crystal_action_button_pressed()
 		"merchant_page_prev":
 			game.room_action_menu["merchant_page"] = max(0, int(game.room_action_menu.get("merchant_page", 0)) - 1)
 			game.queue_redraw()

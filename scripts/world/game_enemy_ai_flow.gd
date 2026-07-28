@@ -595,8 +595,8 @@ static func resolve_enemy_attack(game: Node, enemy: Variant) -> void:
 			if orc_rider_target == null or not hero_is_in_room(game, orc_rider_target, enemy.current_room):
 				return
 			enemy.trigger_attack(orc_rider_target.global_position)
-			game.queue_pending_melee_attack(enemy, orc_rider_target, enemy.attack_damage, enemy.melee_impact_delay(), "An orc rider")
-			game.status_message = "An orc rider lunges at %s." % orc_rider_target.hero_name
+			game.queue_pending_melee_attack(enemy, orc_rider_target, enemy.attack_damage, enemy.melee_impact_delay(), "An armored orc")
+			game.status_message = "An armored orc lunges at %s." % orc_rider_target.hero_name
 		game.ENEMY_TYPE_SKELETON_ARCHER:
 			var archer_target: Variant = local_target if local_target != null else skeleton_archer_target_hero(game, enemy)
 			if archer_target != null and hero_is_in_room(game, archer_target, enemy.current_room):

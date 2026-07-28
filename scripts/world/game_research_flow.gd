@@ -4,31 +4,47 @@ const GAME_FLOOR_FLOW: GDScript = preload("res://scripts/world/game_floor_flow.g
 
 static func research_option_cost(game: Node, module_type: String, next_level: int, is_major: bool) -> int:
 	if is_major:
-		return [0, 14, 22, 30][clampi(next_level - 1, 0, 3)]
+		return game.major_module_upgrade_cost(next_level)
 	match game.canonical_minor_module_type(module_type):
 		game.MINOR_MODULE_TURRET:
-			return game.BALLISTA_LEVEL_SCIENCE_COST[clampi(next_level - 1, 0, game.BALLISTA_LEVEL_SCIENCE_COST.size() - 1)]
+			return game.minor_module_research_cost(module_type, next_level)
 		game.MINOR_MODULE_PULSE:
-			return [12, 18, 24, 30][clampi(next_level - 1, 0, 3)]
+			return game.minor_module_research_cost(module_type, next_level)
 		game.MINOR_MODULE_CANNON:
-			return [11, 17, 23, 29][clampi(next_level - 1, 0, 3)]
+			return game.minor_module_research_cost(module_type, next_level)
 		game.MINOR_MODULE_KIP:
-			return [13, 20, 27, 34][clampi(next_level - 1, 0, 3)]
+			return game.minor_module_research_cost(module_type, next_level)
+		game.MINOR_MODULE_CONVERSION:
+			return game.minor_module_research_cost(module_type, next_level)
+		game.MINOR_MODULE_BOUNTY_INDUSTRY:
+			return game.minor_module_research_cost(module_type, next_level)
+		game.MINOR_MODULE_BOUNTY_FOOD:
+			return game.minor_module_research_cost(module_type, next_level)
+		game.MINOR_MODULE_BOUNTY_SCIENCE:
+			return game.minor_module_research_cost(module_type, next_level)
 		_:
-			return 12
+			return game.minor_module_research_cost(module_type, next_level)
 
 static func research_option_description(game: Node, module_type: String, next_level: int, is_major: bool) -> String:
 	if is_major:
-		return "Upgrade to level %d.\nEach online %s yields more per door." % [next_level, game.research_display_name(module_type).to_lower()]
+		return "Upgrade to level %d.\nEach online %s yields %d per door." % [next_level, game.research_display_name(module_type).to_lower(), game.major_module_door_yield(next_level)]
 	match game.canonical_minor_module_type(module_type):
 		game.MINOR_MODULE_TURRET:
 			return "Unlocks or upgrades the arrow turret.\nLevel %d: %d damage, 0.5s cooldown." % [next_level, int(game.BALLISTA_LEVEL_DAMAGE[clampi(next_level - 1, 0, 3)])]
 		game.MINOR_MODULE_PULSE:
-			return "Room-wide gas pulse.\nLevel %d increases damage over time." % next_level
+			return "Blight gas pulse.\nLevel %d increases room-wide damage over time and slow uptime." % next_level
 		game.MINOR_MODULE_CANNON:
-			return "Room-wide neurostun pulse.\nLevel %d strengthens the slow field." % next_level
+			return "Runeburst mortar shell.\nLevel %d increases splash damage and cadence." % next_level
 		game.MINOR_MODULE_KIP:
-			return "Heavy single-target cannon.\nLevel %d increases burst damage." % next_level
+			return "Arcana turret beam.\nLevel %d increases single-target burst damage." % next_level
+		game.MINOR_MODULE_CONVERSION:
+			return "Soulbind conversion spire.\nLevel %d converts one enemy and splashes nearby foes." % next_level
+		game.MINOR_MODULE_BOUNTY_INDUSTRY:
+			return "Salvage sigil.\nEarn materials every few enemy kills in the room; level %d lowers the kill requirement." % next_level
+		game.MINOR_MODULE_BOUNTY_FOOD:
+			return "Provision sigil.\nEarn food every few enemy kills in the room; level %d lowers the kill requirement." % next_level
+		game.MINOR_MODULE_BOUNTY_SCIENCE:
+			return "Sage sigil.\nEarn arcana every few enemy kills in the room; level %d lowers the kill requirement." % next_level
 		_:
 			return "Research level %d." % next_level
 
@@ -79,18 +95,40 @@ static func research_option_stats_text(game: Node, option: Dictionary) -> String
 	var next_level: int = int(option.get("next_level", 1))
 	var current_level: int = max(next_level - 1, 0)
 	if bool(option.get("is_major", false)):
-		return "Current level %d -> %d\nDoor income bonus increases by 1 for each new level." % [current_level, next_level]
+		var current_yield: int = game.major_module_door_yield(current_level)
+		var next_yield: int = game.major_module_door_yield(next_level)
+		return "Current level %d -> %d\nPer-module door yield %d -> %d." % [current_level, next_level, current_yield, next_yield]
 	match game.canonical_minor_module_type(module_type):
 		game.MINOR_MODULE_TURRET:
 			var next_damage: int = int(game.BALLISTA_LEVEL_DAMAGE[clampi(next_level - 1, 0, game.BALLISTA_LEVEL_DAMAGE.size() - 1)])
 			var next_dps: int = int(round(float(next_damage) / 0.5))
 			return "Current level %d -> %d\nAttack Power %d\nAttack Cooldown 0.5\nDPS %d" % [current_level, next_level, next_damage, next_dps]
 		game.MINOR_MODULE_PULSE:
-			return "Current level %d -> %d\nRoom-wide gas pulse\nPer tick damage %d\nCooldown %.1fs" % [current_level, next_level, int(game.minor_module_damage(module_type)), game.minor_module_cooldown(module_type)]
+			var pulse_level: int = clampi(next_level, 1, 4)
+			var pulse_damage: float = 1.0 + float(pulse_level) * 0.7
+			var pulse_slow_duration: float = 1.4 + float(pulse_level) * 0.2
+			var pulse_cooldown: float = 1.1 - float(pulse_level - 1) * 0.08
+			return "Current level %d -> %d\nRoom-wide blight gas\nPer tick damage %.1f\nSlow field %.1fs\nCooldown %.2fs" % [current_level, next_level, pulse_damage, pulse_slow_duration, pulse_cooldown]
 		game.MINOR_MODULE_CANNON:
-			return "Current level %d -> %d\nApplies room-wide slow\nPulse cooldown %.1fs\nSlow duration %.1fs" % [current_level, next_level, game.minor_module_cooldown(module_type), 1.0 + float(game.minor_module_level(module_type)) * 0.12]
+			var mortar_level: int = clampi(next_level, 1, 4)
+			var mortar_damage: float = 8.0 + float(mortar_level - 1) * 3.0
+			var mortar_cooldown: float = 1.45 - float(mortar_level - 1) * 0.12
+			return "Current level %d -> %d\nRuneburst splash shell\nSplash damage %.1f\nCooldown %.2fs" % [current_level, next_level, mortar_damage, mortar_cooldown]
 		game.MINOR_MODULE_KIP:
-			return "Current level %d -> %d\nHeavy single-target shot\nDamage %d\nCooldown %.2fs" % [current_level, next_level, int(game.minor_module_damage(module_type)), game.minor_module_cooldown(module_type)]
+			var arcana_level: int = clampi(next_level, 1, 4)
+			var arcana_damage: float = 16.0 + float(arcana_level - 1) * 5.0
+			var arcana_cooldown: float = 1.15 - float(arcana_level - 1) * 0.1
+			return "Current level %d -> %d\nArcana beam turret\nDamage %d\nCooldown %.2fs" % [current_level, next_level, int(arcana_damage), arcana_cooldown]
+		game.MINOR_MODULE_CONVERSION:
+			var conversion_level: int = clampi(next_level, 1, 4)
+			var conversion_damage: float = 6.0 + float(conversion_level - 1) * 2.0
+			var conversion_cooldown: float = 3.4 - float(conversion_level - 1) * 0.35
+			return "Current level %d -> %d\nConverts one enemy on proc\nSplash damage %d\nCooldown %.2fs" % [current_level, next_level, int(conversion_damage), conversion_cooldown]
+		game.MINOR_MODULE_BOUNTY_INDUSTRY, game.MINOR_MODULE_BOUNTY_FOOD, game.MINOR_MODULE_BOUNTY_SCIENCE:
+			var resource_label: String = game.merchant_resource_label(game.minor_module_bounty_resource_id(module_type))
+			var threshold_by_level: Array[int] = [6, 5, 4, 3]
+			var threshold: int = threshold_by_level[clampi(next_level - 1, 0, threshold_by_level.size() - 1)]
+			return "Current level %d -> %d\nPassive bounty module\n+1 %s every %d kills in room" % [current_level, next_level, resource_label, threshold]
 		_:
 			return "Current level %d -> %d" % [current_level, next_level]
 
@@ -162,8 +200,9 @@ static func refresh_research_overlay(game: Node) -> void:
 		if game.research_start_button != null:
 			game.research_start_button.disabled = true
 	if game.research_reroll_button != null:
-		game.research_reroll_button.disabled = game.science < game.RESEARCH_REROLL_COST
-		game.research_reroll_button.text = "Reroll (%d Arc)" % game.RESEARCH_REROLL_COST
+			var reroll_cost: int = game.research_reroll_cost()
+			game.research_reroll_button.disabled = game.science < reroll_cost
+			game.research_reroll_button.text = "Reroll (%d Arc)" % reroll_cost
 
 static func open_research_overlay(game: Node, room_coord: Vector2i) -> void:
 	if game.research_overlay == null or not game.room_has_research_crystal(room_coord):
@@ -245,11 +284,13 @@ static func _on_research_start_button_pressed(game: Node) -> void:
 static func _on_research_reroll_button_pressed(game: Node) -> void:
 	if game.research_overlay_open_room == game.INVALID_ROOM:
 		return
-	if game.science < game.RESEARCH_REROLL_COST:
+	var reroll_cost: int = game.research_reroll_cost()
+	if game.science < reroll_cost:
 		game.status_message = "Not enough arcana to reroll."
 		game.update_hud()
 		return
-	game.science -= game.RESEARCH_REROLL_COST
+	game.science -= reroll_cost
+	game.research_reroll_count += 1
 	game.research_offer_choices = roll_research_offer_choices(game)
 	game.research_selected_index = 0 if not game.research_offer_choices.is_empty() else -1
 	game.status_message = "Research options rerolled."

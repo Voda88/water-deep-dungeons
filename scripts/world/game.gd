@@ -3,6 +3,7 @@ extends Node2D
 const HERO_SCENE: PackedScene = preload("res://scenes/actors/hero.tscn")
 const ENEMY_SCENE: PackedScene = preload("res://scenes/actors/enemy.tscn")
 const INVENTORY_OVERLAY_SCENE: PackedScene = preload("res://scenes/ui/inventory_overlay.tscn")
+const MERCHANT_OVERLAY_SCENE: PackedScene = preload("res://scenes/ui/merchant_overlay.tscn")
 const HERO_SCRIPT: GDScript = preload("res://scripts/actors/hero.gd")
 const ENEMY_SCRIPT: GDScript = preload("res://scripts/actors/enemy.gd")
 const GAME_CARD_DEFS: GDScript = preload("res://scripts/content/game_card_defs.gd")
@@ -24,6 +25,7 @@ const GAME_HERO_PROGRESSION_FLOW: GDScript = preload("res://scripts/world/game_h
 const GAME_HERO_PROFILE_FLOW: GDScript = preload("res://scripts/world/game_hero_profile_flow.gd")
 const GAME_ACTOR_ROSTER_FLOW: GDScript = preload("res://scripts/world/game_actor_roster_flow.gd")
 const GAME_INVENTORY_OVERLAY_FLOW: GDScript = preload("res://scripts/world/inventory/game_inventory_overlay_flow.gd")
+const GAME_MERCHANT_OVERLAY_FLOW: GDScript = preload("res://scripts/world/inventory/game_merchant_overlay_flow.gd")
 const GAME_INVENTORY_ITEM_FLOW: GDScript = preload("res://scripts/world/inventory/game_inventory_item_flow.gd")
 const GAME_CARD_SOURCE_FLOW: GDScript = preload("res://scripts/world/cards/game_card_source_flow.gd")
 const GAME_FLOOR_FLOW: GDScript = preload("res://scripts/world/game_floor_flow.gd")
@@ -36,6 +38,7 @@ const GAME_WORLD_INPUT_FLOW: GDScript = preload("res://scripts/world/game_world_
 const GAME_UI_BUTTON_HOLD_FLOW: GDScript = preload("res://scripts/world/ui/game_ui_button_hold_flow.gd")
 const GAME_CAMERA_FLOW: GDScript = preload("res://scripts/world/game_camera_flow.gd")
 const GAME_RUNTIME_UI_FLOW: GDScript = preload("res://scripts/world/ui/game_runtime_ui_flow.gd")
+const GAME_CHECKPOINT_FLOW: GDScript = preload("res://scripts/world/game_checkpoint_flow.gd")
 const GRID_SIZE: Vector2i = Vector2i(7, 7)
 const ROOM_SPACING: Vector2 = Vector2(548.0, 358.0)
 const ROOM_DOOR_GAP: float = 0.0
@@ -80,6 +83,10 @@ const MINOR_MODULE_TURRET: String = "ballista_turret"
 const MINOR_MODULE_PULSE: String = "tear_gas"
 const MINOR_MODULE_CANNON: String = "neurostun_array"
 const MINOR_MODULE_KIP: String = "kip_cannon"
+const MINOR_MODULE_CONVERSION: String = "conversion_turret"
+const MINOR_MODULE_BOUNTY_INDUSTRY: String = "bounty_materials"
+const MINOR_MODULE_BOUNTY_FOOD: String = "bounty_food"
+const MINOR_MODULE_BOUNTY_SCIENCE: String = "bounty_arcana"
 const MAJOR_MODULE_FOOD: String = "food"
 const MAJOR_MODULE_SCIENCE: String = "science"
 const MAJOR_MODULE_INDUSTRY: String = "industry"
@@ -87,7 +94,8 @@ const MAJOR_MODULE_COST: int = 14
 const MINOR_MODULE_MAX_HEALTH: float = 80.0
 const MAJOR_MODULE_MAX_HEALTH: float = 180.0
 const PROJECTILE_SPEED: float = 950.0
-const RESEARCH_REROLL_COST: int = 4
+const RESEARCH_REROLL_BASE_COST: int = 10
+const RESEARCH_REROLL_COST_STEP: int = 5
 const BALLISTA_LEVEL_DAMAGE: Array[float] = [9.0, 10.0, 12.0, 14.0]
 const BALLISTA_LEVEL_SCIENCE_COST: Array[int] = [0, 17, 23, 31]
 const HERO_COUNT: int = 4
@@ -112,9 +120,9 @@ const INVENTORY_BASE_SIZE: Vector2i = Vector2i(2, 2)
 const DOOR_REWARD_FOOD_BASE: int = 4
 const DOOR_REWARD_INDUSTRY_BASE: int = 4
 const DOOR_REWARD_SCIENCE_BASE: int = 4
-const DOOR_REWARD_FOOD_MODULE: int = 2
+const DOOR_REWARD_FOOD_MODULE: int = 3
 const DOOR_REWARD_INDUSTRY_MODULE: int = 3
-const DOOR_REWARD_SCIENCE_MODULE: int = 2
+const DOOR_REWARD_SCIENCE_MODULE: int = 3
 const ROOM_LIGHT_DUST_COST: int = 10
 const ROOM_OPEN_DUST_CHANCE: float = 0.5
 const ROOM_OPEN_DUST_MIN: int = 2
@@ -124,8 +132,10 @@ const WAVE_WARNING_DURATION: float = 1.0
 const WAVE_STAGGER_ROOM_INTERVAL: float = 2.0
 const WAVE_STAGGER_ENEMY_INTERVAL: float = 0.1
 const CRYSTAL_PRESSURE_INTERVAL: float = 6.0
+const CRYSTAL_PRESSURE_INTERVAL_PER_DARK_ROOM: float = 10.0
 const CRYSTAL_PRESSURE_WARNING_DURATION: float = 0.65
 const CRYSTAL_PRESSURE_ENEMIES_PER_ROOM: int = 3
+const CRYSTAL_PRESSURE_OTHER_ROOM_DELAY_PER_SPAWN: float = 2.0
 const ROOM_ACTION_HOLD_START_DELAY: float = 0.2
 const ROOM_ACTION_HOLD_LOADER_DURATION: float = 0.1
 const ROOM_ACTION_SUBMENU_HOLD_DURATION: float = 0.17
@@ -135,6 +145,7 @@ const ROOM_ACTION_BUTTON_RADIUS: float = 66.0
 const ROOM_ACTION_DEADZONE_RADIUS: float = 16.0
 const ROOM_ACTION_SECTOR_OUTER_RADIUS: float = 252.0
 const ROOM_ACTION_LABEL_RADIUS: float = 168.0
+const MERCHANT_INTERACT_RADIUS: float = 44.0
 const DOOR_WAVE_POINTS: int = 2
 const GROUND_ITEM_DRAW_SCALE: float = 17.0
 const GROUND_ITEM_PICK_MIN_SIZE: float = 46.0
@@ -216,6 +227,8 @@ var hero_profiles: Array = []
 var rooms: Dictionary = {}
 var heroes: Array = []
 var enemies: Array = []
+var enemy_pool_available: Array = []
+var floor_enemy_spawn_types: Array[String] = []
 var projectiles: Array = []
 var floating_resource_texts: Array = []
 var pending_enemy_spawns: Array = []
@@ -264,6 +277,8 @@ var hero_select_panel: PanelContainer = null
 var hero_select_title_label: Label = null
 var hero_select_cards: Dictionary = {}
 var hero_select_start_button: Button = null
+var hero_select_new_game_button: Button = null
+var hero_select_load_game_button: Button = null
 var hero_select_toggle_button: Button = null
 var hero_select_active_index: int = 0
 var hero_select_detail_portrait: TextureRect = null
@@ -280,6 +295,7 @@ var network_join_button: Button = null
 var network_disconnect_button: Button = null
 var network_status_label: Label = null
 var hero_owner_peer_ids: Array = []
+var rejoin_claimable_hero_indices: Array[int] = []
 var lobby_peer_ready: Dictionary = {}
 var lobby_game_started: bool = false
 var network_snapshot_timer: float = 0.0
@@ -292,6 +308,7 @@ var crystal_action_button: Button = null
 var exit_button: Button = null
 var hero_buttons: Array = []
 var inventory_overlay: Variant = null
+var merchant_overlay: Variant = null
 var research_overlay: ColorRect = null
 var research_panel: PanelContainer = null
 var research_title_label: Label = null
@@ -308,6 +325,7 @@ var research_offer_choices: Array = []
 var research_selected_index: int = -1
 var active_research: Dictionary = {}
 var inventory_session: Dictionary = {}
+var merchant_session: Dictionary = {}
 var room_action_hold: Dictionary = {}
 var room_action_menu: Dictionary = {}
 var room_action_menu_hold_selection_active: bool = false
@@ -334,6 +352,7 @@ var hero_portrait_cache: Dictionary = {}
 var pending_melee_attacks: Array = []
 var minor_module_levels: Dictionary = {}
 var major_module_levels: Dictionary = {}
+var research_reroll_count: int = 0
 
 func _ready() -> void:
 	rng.randomize()
@@ -584,6 +603,12 @@ func _on_hero_select_class_pressed(hero_index: int, class_id: String) -> void:
 func _on_hero_select_start_button_pressed() -> void:
 	GAME_MULTIPLAYER_LOBBY.on_hero_select_start_button_pressed(self)
 
+func _on_hero_select_new_game_button_pressed() -> void:
+	GAME_MULTIPLAYER_LOBBY.on_hero_select_new_game_button_pressed(self)
+
+func _on_hero_select_load_game_button_pressed() -> void:
+	GAME_MULTIPLAYER_LOBBY.on_hero_select_load_game_button_pressed(self)
+
 func redistribute_multiplayer_hero_owners() -> void:
 	GAME_MULTIPLAYER_LOBBY.redistribute_multiplayer_hero_owners(self)
 
@@ -623,8 +648,23 @@ func _on_network_disconnect_button_pressed() -> void:
 func ensure_runtime_ui() -> void:
 	GAME_RUNTIME_UI_FLOW.ensure_runtime_ui(self)
 
+func checkpoint_exists() -> bool:
+	return GAME_CHECKPOINT_FLOW.checkpoint_exists(self)
+
+func save_checkpoint(reason: String = "", show_feedback: bool = false) -> bool:
+	return GAME_CHECKPOINT_FLOW.save_checkpoint(self, reason, show_feedback)
+
+func load_checkpoint(show_feedback: bool = true) -> bool:
+	return GAME_CHECKPOINT_FLOW.load_checkpoint(self, show_feedback)
+
+func start_new_game() -> void:
+	GAME_CHECKPOINT_FLOW.start_new_game(self)
+
 func research_option_cost(module_type: String, next_level: int, is_major: bool) -> int:
 	return GAME_RESEARCH_FLOW.research_option_cost(self, module_type, next_level, is_major)
+
+func research_reroll_cost() -> int:
+	return RESEARCH_REROLL_BASE_COST + maxi(research_reroll_count, 0) * RESEARCH_REROLL_COST_STEP
 
 func research_option_description(module_type: String, next_level: int, is_major: bool) -> String:
 	return GAME_RESEARCH_FLOW.research_option_description(self, module_type, next_level, is_major)
@@ -1067,6 +1107,40 @@ func open_room_loot_inventory(hero: Variant, room_coord: Vector2i) -> void:
 func open_hero_inventory(hero: Variant, room_coord: Vector2i = INVALID_ROOM) -> void:
 	GAME_INVENTORY_OVERLAY_FLOW.open_hero_inventory(self, hero, room_coord)
 
+func open_room_merchant_overlay(room_coord: Vector2i) -> bool:
+	return GAME_MERCHANT_OVERLAY_FLOW.open_room_merchant_overlay(self, room_coord)
+
+func close_merchant_overlay() -> void:
+	GAME_MERCHANT_OVERLAY_FLOW.close_merchant_overlay(self)
+
+func room_has_merchant(room_coord: Vector2i) -> bool:
+	return GAME_INVENTORY_ITEM_FLOW.room_has_merchant(self, room_coord)
+
+func merchant_world_position(room_coord: Vector2i) -> Vector2:
+	var anchor: Vector2 = room_walkable_center(room_coord) + Vector2(0.0, 28.0)
+	if rooms.has(room_coord):
+		anchor = clamp_point_to_room(anchor, room_coord)
+	return anchor
+
+func merchant_room_at_world_position(world_position: Vector2) -> Vector2i:
+	for room_coord_variant in rooms.keys():
+		var room_coord: Vector2i = room_coord_variant
+		if not bool(rooms[room_coord].get("opened", false)):
+			continue
+		if not room_has_merchant(room_coord):
+			continue
+		if merchant_world_position(room_coord).distance_to(world_position) <= MERCHANT_INTERACT_RADIUS:
+			return room_coord
+	return INVALID_ROOM
+
+func try_open_merchant_overlay_at_position(world_position: Vector2) -> bool:
+	if merchant_overlay != null and merchant_overlay.visible:
+		return false
+	var room_coord: Vector2i = merchant_room_at_world_position(world_position)
+	if room_coord == INVALID_ROOM:
+		return false
+	return open_room_merchant_overlay(room_coord)
+
 func clear_inventory_session(_commit_pending_item: bool) -> void:
 	GAME_INVENTORY_OVERLAY_FLOW.clear_inventory_session(self, _commit_pending_item)
 
@@ -1477,6 +1551,9 @@ func advance_crystal_pressure(delta: float) -> void:
 func trigger_crystal_pressure() -> void:
 	GAME_COMBAT_FLOW.trigger_crystal_pressure(self)
 
+func crystal_pressure_interval_for_current_dark_rooms() -> float:
+	return GAME_COMBAT_FLOW.crystal_pressure_interval_for_current_dark_rooms(self)
+
 func queue_pressure_spawn(room_coord: Vector2i, count: int) -> void:
 	GAME_COMBAT_FLOW.queue_pressure_spawn(self, room_coord, count)
 
@@ -1494,6 +1571,15 @@ func weighted_enemy_type_choice(candidates: Array[String], pressure_spawn: bool 
 
 func build_enemy_spawn_plan(budget: int, pressure_spawn: bool = false) -> Array[String]:
 	return GAME_COMBAT_FLOW.build_enemy_spawn_plan(self, budget, pressure_spawn)
+
+func prepare_floor_enemy_spawn_types() -> void:
+	GAME_COMBAT_FLOW.prepare_floor_enemy_spawn_types(self)
+
+func prewarm_enemy_pool_for_floor() -> void:
+	GAME_COMBAT_FLOW.prewarm_enemy_pool_for_floor(self)
+
+func release_enemy_to_pool(enemy: Variant) -> void:
+	GAME_COMBAT_FLOW.release_enemy_to_pool(self, enemy)
 
 func spawn_wave(room_coord: Vector2i, count: int) -> void:
 	GAME_COMBAT_FLOW.spawn_wave(self, room_coord, count)
@@ -2218,6 +2304,9 @@ func update_hud() -> void:
 func refresh_open_inventory_overlay() -> void:
 	GAME_INVENTORY_OVERLAY_FLOW.refresh_open_inventory_overlay(self)
 
+func refresh_open_merchant_overlay() -> void:
+	GAME_MERCHANT_OVERLAY_FLOW.refresh_open_merchant_overlay(self)
+
 func selected_calm_speed_multiplier() -> float:
 	return GAME_HUD_FLOW.selected_calm_speed_multiplier(self)
 
@@ -2334,7 +2423,25 @@ func is_major_module_type(module_type: String) -> bool:
 	return GAME_MODULE_DEFS.is_major_module_type(module_type)
 
 func minor_module_cost(module_type: String) -> int:
-	return GAME_MODULE_DEFS.minor_module_cost(module_type)
+	return GAME_MODULE_DEFS.minor_module_cost(module_type, minor_module_levels)
+
+func minor_module_base_cost(module_type: String) -> int:
+	return GAME_MODULE_DEFS.minor_module_base_cost(module_type)
+
+func minor_module_research_cost(module_type: String, next_level: int) -> int:
+	return GAME_MODULE_DEFS.minor_module_research_cost(module_type, next_level)
+
+func major_module_upgrade_cost(next_level: int) -> int:
+	return GAME_MODULE_DEFS.major_module_upgrade_cost(next_level)
+
+func major_module_door_yield(level: int) -> int:
+	return GAME_MODULE_DEFS.major_module_door_yield(level)
+
+func minor_module_bounty_resource_id(module_type: String) -> String:
+	return GAME_MODULE_DEFS.minor_module_bounty_resource_id(module_type)
+
+func minor_module_bounty_kills_required(module_type: String) -> int:
+	return GAME_MODULE_DEFS.minor_module_bounty_kills_required(module_type, minor_module_levels)
 
 func minor_module_damage(module_type: String) -> float:
 	return GAME_MODULE_DEFS.minor_module_damage(module_type, minor_module_levels)
@@ -2505,6 +2612,7 @@ func _on_inventory_button_pressed() -> void:
 		return
 	clear_room_action_hold()
 	close_room_action_menu()
+	close_merchant_overlay()
 	open_hero_inventory(hero)
 	status_message = "Inventory open for %s." % hero.hero_name
 	update_hud()
@@ -2542,6 +2650,18 @@ func _on_inventory_spellbook_slots_changed(slotted_spells: Array) -> void:
 func _on_inventory_item_dropped(item: Dictionary) -> void:
 	GAME_INVENTORY_OVERLAY_FLOW._on_inventory_item_dropped(self, item)
 
+func _on_merchant_overlay_close_requested() -> void:
+	GAME_MERCHANT_OVERLAY_FLOW._on_merchant_overlay_close_requested(self)
+
+func _on_merchant_overlay_buy_requested(offer_uid: int) -> void:
+	GAME_MERCHANT_OVERLAY_FLOW._on_merchant_overlay_buy_requested(self, offer_uid)
+
+func _on_merchant_overlay_sell_requested(item_uid: int) -> void:
+	GAME_MERCHANT_OVERLAY_FLOW._on_merchant_overlay_sell_requested(self, item_uid)
+
+func _on_merchant_overlay_buyback_requested(offer_uid: int) -> void:
+	GAME_MERCHANT_OVERLAY_FLOW._on_merchant_overlay_buyback_requested(self, offer_uid)
+
 func _on_crystal_action_button_pressed() -> void:
 	if not can_selected_hero_pick_up_crystal():
 		status_message = "Move the selected hero onto the crystal first."
@@ -2557,7 +2677,7 @@ func _on_crystal_action_button_pressed() -> void:
 	crystal_holder.carrying_crystal = true
 	crystal_ground_room = INVALID_ROOM
 	crystal_prompt_visible = false
-	crystal_pressure_timer_left = CRYSTAL_PRESSURE_INTERVAL
+	crystal_pressure_timer_left = crystal_pressure_interval_for_current_dark_rooms()
 	status_message = "%s picked up the crystal. Dark rooms will keep spawning." % hero.hero_name
 	update_hud()
 	queue_redraw()

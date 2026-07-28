@@ -172,7 +172,7 @@ static func open_room(game: Node, room_coord: Vector2i) -> void:
 				merchant_name = "arcana merchant"
 			"dust":
 				merchant_name = "dust merchant"
-		game.status_message += " A %s has set up in this room." % merchant_name
+		game.status_message += " A %s has set up in this room. Use room actions to trade." % merchant_name
 	if completed_research_title != "":
 		game.status_message += " Research complete: %s." % completed_research_title
 
@@ -188,13 +188,13 @@ static func calculate_door_rewards(game: Node) -> Dictionary:
 		match String(room["major_module_type"]):
 			game.MAJOR_MODULE_FOOD:
 				if float(room["major_health"]) > 0.0 and not bool(room.get("major_under_construction", false)):
-					food_reward += game.DOOR_REWARD_FOOD_MODULE + max(game.major_module_level(game.MAJOR_MODULE_FOOD) - 1, 0)
+					food_reward += game.major_module_door_yield(game.major_module_level(game.MAJOR_MODULE_FOOD))
 			game.MAJOR_MODULE_SCIENCE:
 				if float(room["major_health"]) > 0.0 and not bool(room.get("major_under_construction", false)):
-					science_reward += game.DOOR_REWARD_SCIENCE_MODULE + max(game.major_module_level(game.MAJOR_MODULE_SCIENCE) - 1, 0)
+					science_reward += game.major_module_door_yield(game.major_module_level(game.MAJOR_MODULE_SCIENCE))
 			game.MAJOR_MODULE_INDUSTRY:
 				if float(room["major_health"]) > 0.0 and not bool(room.get("major_under_construction", false)):
-					industry_reward += game.DOOR_REWARD_INDUSTRY_MODULE + max(game.major_module_level(game.MAJOR_MODULE_INDUSTRY) - 1, 0)
+					industry_reward += game.major_module_door_yield(game.major_module_level(game.MAJOR_MODULE_INDUSTRY))
 	return {
 		"food": food_reward,
 		"industry": industry_reward,
@@ -238,6 +238,7 @@ static func advance_wave_recovery(game: Node, delta: float) -> void:
 		for hero in game.heroes:
 			if is_instance_valid(hero):
 				hero.combo_points = 0
+		game.save_checkpoint("room_combat_finished", false)
 		game.status_message = "The wave is over. Heroes are recovering."
 		refresh_room_lighting_states(game)
 		game.update_hud()

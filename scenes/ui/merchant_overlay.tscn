@@ -1,0 +1,139 @@
+[gd_scene format=3 uid="uid://cg8sndv8n8cna"]
+
+[ext_resource type="Script" path="res://scripts/ui/merchant_overlay.gd" id="1_8d3tv"]
+
+[node name="MerchantOverlay" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 1
+script = ExtResource("1_8d3tv")
+
+[node name="LayoutRoot" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Backdrop" type="ColorRect" parent="LayoutRoot"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.03, 0.06, 0.08, 0.84)
+
+[node name="MainPanel" type="PanelContainer" parent="LayoutRoot"]
+layout_mode = 1
+anchors_preset = 15
+anchor_left = 0.08
+anchor_top = 0.07
+anchor_right = 0.92
+anchor_bottom = 0.93
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Margin" type="MarginContainer" parent="LayoutRoot/MainPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 18
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 14
+
+[node name="VBox" type="VBoxContainer" parent="LayoutRoot/MainPanel/Margin"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+
+[node name="HeaderRow" type="HBoxContainer" parent="LayoutRoot/MainPanel/Margin/VBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="TitleLabel" type="Label" parent="LayoutRoot/MainPanel/Margin/VBox/HeaderRow"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 30
+text = "Merchant"
+
+[node name="HeaderSpacer" type="Control" parent="LayoutRoot/MainPanel/Margin/VBox/HeaderRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ResourceLabel" type="Label" parent="LayoutRoot/MainPanel/Margin/VBox/HeaderRow"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Dust 0"
+
+[node name="CloseButton" type="Button" parent="LayoutRoot/MainPanel/Margin/VBox/HeaderRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(64, 40)
+theme_override_font_sizes/font_size = 16
+text = "Close"
+
+[node name="RoomLabel" type="Label" parent="LayoutRoot/MainPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+text = "Room"
+
+[node name="HeroLabel" type="Label" parent="LayoutRoot/MainPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "Hero"
+
+[node name="TabsRow" type="HBoxContainer" parent="LayoutRoot/MainPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="BuyTabButton" type="Button" parent="LayoutRoot/MainPanel/Margin/VBox/TabsRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+toggle_mode = true
+theme_override_font_sizes/font_size = 16
+text = "Buy"
+
+[node name="SellTabButton" type="Button" parent="LayoutRoot/MainPanel/Margin/VBox/TabsRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+toggle_mode = true
+theme_override_font_sizes/font_size = 16
+text = "Sell"
+
+[node name="BuybackTabButton" type="Button" parent="LayoutRoot/MainPanel/Margin/VBox/TabsRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+toggle_mode = true
+theme_override_font_sizes/font_size = 16
+text = "Buyback"
+
+[node name="EntryPanel" type="PanelContainer" parent="LayoutRoot/MainPanel/Margin/VBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="EntryScroll" type="ScrollContainer" parent="LayoutRoot/MainPanel/Margin/VBox/EntryPanel"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="EntryList" type="VBoxContainer" parent="LayoutRoot/MainPanel/Margin/VBox/EntryPanel/EntryScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 6
+
+[node name="FooterLabel" type="Label" parent="LayoutRoot/MainPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+text = "Tap an entry to trade."
+autowrap_mode = 3

@@ -16,6 +16,7 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 	else:
 		game.save_hero_profiles_from_nodes()
 	game.clear_inventory_session(false)
+	game.close_merchant_overlay()
 	game.clear_floor_actors()
 	game.rooms.clear()
 	game.room_nav_cache.clear()
@@ -56,6 +57,8 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 		game.food = 10
 		game.industry = 14
 		game.science = 0
+		game.research_reroll_count = 0
+		game.rejoin_claimable_hero_indices.clear()
 		game.crystal_health = 100.0
 		game.minor_module_levels = game.normalized_minor_module_levels(game.initialized_minor_module_levels())
 		game.major_module_levels = game.normalized_major_module_levels(game.initialized_major_module_levels())
@@ -113,6 +116,8 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 	game.assign_exit_room()
 	game.assign_research_crystals()
 	assign_floor_merchant(game)
+	game.prepare_floor_enemy_spawn_types()
+	game.prewarm_enemy_pool_for_floor()
 	game.spawn_starting_room_test_items()
 	game.normalize_runtime_rooms_slot_capacity()
 	game.refresh_room_lighting_states()
@@ -650,6 +655,15 @@ static func assign_research_crystals(game: Node) -> void:
 
 static func assign_floor_merchant(game: Node) -> void:
 	var candidate_rooms: Array[Vector2i] = []
+	var any_non_crystal_rooms: Array[Vector2i] = []
+	var crystal_neighbor_rooms: Array[Vector2i] = []
+	if game.rooms.has(game.crystal_room):
+		for neighbor_variant in Array(game.rooms[game.crystal_room].get("neighbors", [])):
+			var neighbor_room: Vector2i = neighbor_variant
+			if neighbor_room == game.crystal_room or not game.rooms.has(neighbor_room):
+				continue
+			if not crystal_neighbor_rooms.has(neighbor_room):
+				crystal_neighbor_rooms.append(neighbor_room)
 	for room_coord_variant in game.rooms.keys():
 		var room_coord: Vector2i = room_coord_variant
 		var room: Dictionary = game.rooms[room_coord]
@@ -659,20 +673,38 @@ static func assign_floor_merchant(game: Node) -> void:
 		room["merchant_buyback_doors_opened"] = game.doors_opened
 		if room_coord == game.crystal_room:
 			continue
+		any_non_crystal_rooms.append(room_coord)
 		if not bool(room.get("opened", false)) and not bool(room.get("crystal", false)):
 			candidate_rooms.append(room_coord)
-	if candidate_rooms.is_empty():
+	var merchant_room: Vector2i = game.INVALID_ROOM
+	var preferred_candidate_rooms: Array[Vector2i] = []
+	for crystal_neighbor in crystal_neighbor_rooms:
+		if candidate_rooms.has(crystal_neighbor):
+			preferred_candidate_rooms.append(crystal_neighbor)
+	if game.floor_index == 1 and not preferred_candidate_rooms.is_empty():
+		# Floor 1 has a single discovered branch first, so force a guaranteed early merchant encounter.
+		merchant_room = preferred_candidate_rooms[0]
+	elif not preferred_candidate_rooms.is_empty():
+		merchant_room = preferred_candidate_rooms[game.rng.randi_range(0, preferred_candidate_rooms.size() - 1)]
+	elif not candidate_rooms.is_empty():
+		merchant_room = candidate_rooms[game.rng.randi_range(0, candidate_rooms.size() - 1)]
+	elif not any_non_crystal_rooms.is_empty():
+		merchant_room = any_non_crystal_rooms[game.rng.randi_range(0, any_non_crystal_rooms.size() - 1)]
+	elif game.rooms.has(game.crystal_room):
+		# Last-resort fallback keeps the "at least one merchant per floor" invariant.
+		merchant_room = game.crystal_room
+	if merchant_room == game.INVALID_ROOM or not game.rooms.has(merchant_room):
 		return
-	var merchant_room: Vector2i = candidate_rooms[game.rng.randi_range(0, candidate_rooms.size() - 1)]
 	var merchant_themes: Array[String] = GAME_INVENTORY_ITEM_FLOW.merchant_theme_ids(game)
-	if merchant_themes.is_empty():
-		return
-	var chosen_theme: String = merchant_themes[game.rng.randi_range(0, merchant_themes.size() - 1)]
+	var chosen_theme: String = "dust"
+	if not merchant_themes.is_empty():
+		chosen_theme = merchant_themes[game.rng.randi_range(0, merchant_themes.size() - 1)]
 	var room_data: Dictionary = game.rooms[merchant_room]
 	room_data["merchant_theme"] = chosen_theme
 	room_data["merchant_stock"] = GAME_INVENTORY_ITEM_FLOW.generate_merchant_stock(game, 5)
 	room_data["merchant_buyback"] = []
 	room_data["merchant_buyback_doors_opened"] = game.doors_opened
+	game.rooms[merchant_room] = room_data
 
 static func find_path(game: Node, from_room: Vector2i, to_room: Vector2i, only_open_rooms: bool) -> Array[Vector2i]:
 	if from_room == to_room:

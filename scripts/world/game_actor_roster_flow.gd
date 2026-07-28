@@ -12,7 +12,7 @@ static func clear_floor_actors(game: Node) -> void:
 	game.heroes.clear()
 	for enemy in game.enemies:
 		if is_instance_valid(enemy):
-			enemy.queue_free()
+			game.release_enemy_to_pool(enemy)
 	game.enemies.clear()
 
 static func spawn_heroes(game: Node) -> void:

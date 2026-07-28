@@ -9,6 +9,7 @@ static func ensure_runtime_ui(game: Node) -> void:
 	ensure_exit_button(game)
 	ensure_restart_button_hold_fill(game)
 	ensure_inventory_overlay(game)
+	ensure_merchant_overlay(game)
 	ensure_research_overlay(game)
 	ensure_hero_select_overlay(game)
 	game.update_hero_select_overlay()
@@ -140,6 +141,18 @@ static func ensure_inventory_overlay(game: Node) -> void:
 	game.inventory_overlay.level_up_requested.connect(game._on_inventory_level_up_requested)
 	game.inventory_overlay.item_dropped.connect(game._on_inventory_item_dropped)
 	game.inventory_overlay.spellbook_slots_changed.connect(game._on_inventory_spellbook_slots_changed)
+
+static func ensure_merchant_overlay(game: Node) -> void:
+	if game.merchant_overlay != null:
+		return
+	var ui_root: Node = game.get_node(^"UI")
+	game.merchant_overlay = game.MERCHANT_OVERLAY_SCENE.instantiate()
+	game.merchant_overlay.visible = false
+	ui_root.add_child(game.merchant_overlay)
+	game.merchant_overlay.close_requested.connect(game._on_merchant_overlay_close_requested)
+	game.merchant_overlay.buy_requested.connect(game._on_merchant_overlay_buy_requested)
+	game.merchant_overlay.sell_requested.connect(game._on_merchant_overlay_sell_requested)
+	game.merchant_overlay.buyback_requested.connect(game._on_merchant_overlay_buyback_requested)
 
 static func ensure_research_overlay(game: Node) -> void:
 	if game.research_overlay != null:
@@ -426,6 +439,20 @@ static func ensure_hero_select_overlay(game: Node) -> void:
 	footer_bar.alignment = BoxContainer.ALIGNMENT_END
 	footer_bar.add_theme_constant_override("separation", 10)
 	root_vbox.add_child(footer_bar)
+	game.hero_select_new_game_button = Button.new()
+	game.hero_select_new_game_button.custom_minimum_size = Vector2(148.0, 44.0)
+	game.hero_select_new_game_button.add_theme_font_size_override("font_size", 17)
+	game.hero_select_new_game_button.text = "New Game"
+	game.hero_select_new_game_button.pressed.connect(game._on_hero_select_new_game_button_pressed)
+	footer_bar.add_child(game.hero_select_new_game_button)
+
+	game.hero_select_load_game_button = Button.new()
+	game.hero_select_load_game_button.custom_minimum_size = Vector2(148.0, 44.0)
+	game.hero_select_load_game_button.add_theme_font_size_override("font_size", 17)
+	game.hero_select_load_game_button.text = "Load Game"
+	game.hero_select_load_game_button.pressed.connect(game._on_hero_select_load_game_button_pressed)
+	footer_bar.add_child(game.hero_select_load_game_button)
+
 	game.hero_select_start_button = Button.new()
 	game.hero_select_start_button.custom_minimum_size = Vector2(168.0, 44.0)
 	game.hero_select_start_button.add_theme_font_size_override("font_size", 18)

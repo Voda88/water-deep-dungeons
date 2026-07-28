@@ -107,9 +107,12 @@ static func update_restart_button_hold_fill(game: Node) -> void:
 static func update_hud(game: Node) -> void:
 	game.update_selected_hero_flags()
 	var inventory_open: bool = game.inventory_overlay != null and game.inventory_overlay.visible
+	var merchant_open: bool = game.merchant_overlay != null and game.merchant_overlay.visible
 	var research_open: bool = game.research_overlay != null and game.research_overlay.visible
 	if inventory_open:
 		game.refresh_open_inventory_overlay()
+	if merchant_open:
+		game.refresh_open_merchant_overlay()
 	if research_open:
 		game.refresh_research_overlay()
 	var door_income: Dictionary = game.calculate_door_rewards()
@@ -125,7 +128,7 @@ static func update_hud(game: Node) -> void:
 		game.crystal_label.text = "Crystal %d%%" % int(clampf(game.crystal_health, 0.0, 100.0))
 	game.wave_label.text = "Floor %d  Doors %d  Waves %d  Dark %d" % [game.floor_index, game.doors_opened, game.wave_index, count_dark_open_rooms(game)]
 	game.room_label.text = game.room_summary(game.selected_room)
-	game.inventory_button.disabled = inventory_open or research_open or game.selected_hero() == null or not inventory_allowed
+	game.inventory_button.disabled = inventory_open or merchant_open or research_open or game.selected_hero() == null or not inventory_allowed
 	game.inventory_button.text = "Inventory"
 	game.stamina_use_enabled = false
 	game.stamina_toggle_button.visible = false
@@ -135,7 +138,7 @@ static func update_hud(game: Node) -> void:
 	game.restart_button.disabled = false
 	game.restart_button.text = "Restart"
 	update_restart_button_hold_fill(game)
-	game.build_menu.visible = game.build_menu_open and not inventory_open and not research_open
+	game.build_menu.visible = game.build_menu_open and not inventory_open and not merchant_open and not research_open
 	game.build_menu_title.text = game.build_menu_title_text()
 	game.turret_button.disabled = not game.any_room_can_build_or_repair_turret()
 	game.turret_button.text = game.turret_button_text(game.selected_room)
@@ -213,15 +216,16 @@ static func update_hero_button_text(game: Node) -> void:
 
 static func update_runtime_button_state(game: Node) -> void:
 	var inventory_open: bool = game.inventory_overlay != null and game.inventory_overlay.visible
+	var merchant_open: bool = game.merchant_overlay != null and game.merchant_overlay.visible
 	if game.crystal_action_button != null:
-		game.crystal_action_button.visible = not inventory_open and game.crystal_prompt_visible and game.crystal_holder == null and game.crystal_ground_room != game.INVALID_ROOM and game.rooms.has(game.crystal_ground_room) and game.rooms[game.crystal_ground_room]["opened"] and game.can_local_control_hero_index(game.selected_hero_index)
+		game.crystal_action_button.visible = not inventory_open and not merchant_open and game.crystal_prompt_visible and game.crystal_holder == null and game.crystal_ground_room != game.INVALID_ROOM and game.rooms.has(game.crystal_ground_room) and game.rooms[game.crystal_ground_room]["opened"] and game.can_local_control_hero_index(game.selected_hero_index)
 		game.crystal_action_button.disabled = not game.can_selected_hero_pick_up_crystal()
 		game.crystal_action_button.text = "Carry" if game.crystal_action_button.disabled == false else "Hero Needed"
 		if game.crystal_action_button.visible:
 			var crystal_screen: Vector2 = game.world_to_screen(game.crystal_world_position())
 			game.crystal_action_button.position = crystal_screen + Vector2(36.0, -36.0)
 	if game.exit_button != null:
-		game.exit_button.visible = not inventory_open and game.carrier_in_exit_room() and game.crystal_holder != null and is_instance_valid(game.crystal_holder) and game.can_local_control_hero_index(game.crystal_holder.hero_index)
+		game.exit_button.visible = not inventory_open and not merchant_open and game.carrier_in_exit_room() and game.crystal_holder != null and is_instance_valid(game.crystal_holder) and game.can_local_control_hero_index(game.crystal_holder.hero_index)
 		game.exit_button.disabled = not game.all_heroes_in_exit_room()
 		game.exit_button.text = "Escape Floor" if game.exit_button.disabled == false else "Gather Heroes"
 

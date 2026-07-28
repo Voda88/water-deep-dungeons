@@ -20,14 +20,15 @@ static func any_room_can_build_or_repair_turret(game: Node) -> bool:
 
 static func turret_button_text(game: Node, room_coord: Vector2i) -> String:
 	var ballista_level: int = clampi(game.minor_module_level(game.MINOR_MODULE_TURRET), 1, 4)
-	var ballista_label: String = "Crossbow %s" % game.module_level_roman(ballista_level)
+	var ballista_label: String = "%s %s" % [game.build_type_label(game.MINOR_MODULE_TURRET), game.module_level_roman(ballista_level)]
+	var ballista_cost: int = game.minor_module_cost(game.MINOR_MODULE_TURRET)
 	if not game.rooms.has(room_coord):
 		return ballista_label
 	var room: Dictionary = game.rooms[room_coord]
 	if not room["lit"]:
 		return "%s Auto-Lights" % ballista_label
 	if room["minor_modules"].size() < game.effective_minor_slot_count(room_coord):
-		return "Build %s (3)" % ballista_label
+		return "Build %s (%d)" % [ballista_label, ballista_cost]
 	return "Minor Slots Full"
 
 static func can_build_or_repair_major(game: Node, room_coord: Vector2i, module_type: String) -> bool:

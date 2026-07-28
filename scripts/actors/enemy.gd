@@ -56,6 +56,9 @@ var attack_effect_left: float = 0.0
 var hurt_effect_left: float = 0.0
 var visual_facing_left: bool = false
 var death_started: bool = false
+var pool_managed: bool = false
+var default_collision_layer: int = 0
+var default_collision_mask: int = 0
 var rooted_time_left: float = 0.0
 var knockback_velocity: Vector2 = Vector2.ZERO
 var knockback_time_left: float = 0.0
@@ -67,6 +70,8 @@ var knockback_regions: Array = []
 func _ready() -> void:
 	current_health = max_health
 	base_move_speed = move_speed
+	default_collision_layer = collision_layer
+	default_collision_mask = collision_mask
 	destination = global_position
 	next_room = current_room
 	previous_room = current_room
@@ -318,6 +323,85 @@ func trigger_attack(target_position: Vector2) -> void:
 	update_visual_facing(target_position - global_position)
 	update_sprite_state(destination - global_position)
 
+func set_pool_managed(enabled: bool) -> void:
+	pool_managed = enabled
+
+func deactivate_for_pool() -> void:
+	death_started = false
+	attack_effect_left = 0.0
+	hurt_effect_left = 0.0
+	rooted_time_left = 0.0
+	recovering_slow_time_left = 0.0
+	recovering_slow_duration = 0.0
+	recovering_slow_move_multiplier = 1.0
+	recovering_slow_attack_speed_multiplier = 1.0
+	knockback_velocity = Vector2.ZERO
+	knockback_time_left = 0.0
+	knockback_duration = 0.0
+	knockback_bounds_enabled = false
+	knockback_regions.clear()
+	move_steps.clear()
+	moving_between_rooms = false
+	transit_stage = ""
+	pending_room = INVALID_ROOM
+	current_room = INVALID_ROOM
+	previous_room = INVALID_ROOM
+	next_room = INVALID_ROOM
+	enemy_uid = -1
+	velocity = Vector2.ZERO
+	destination = global_position
+	current_health = max_health
+	attack_cooldown_left = 0.0
+	if collision_shape != null:
+		collision_shape.disabled = true
+	collision_layer = 0
+	collision_mask = 0
+	if animated_sprite != null:
+		animated_sprite.stop()
+		animated_sprite.animation = "idle"
+		animated_sprite.frame = 0
+	set_physics_process(false)
+	visible = false
+	queue_redraw()
+
+func activate_from_pool(next_enemy_uid: int, role_name: String, room_coord: Vector2i, spawn_position: Vector2) -> void:
+	if default_collision_layer == 0 and default_collision_mask == 0:
+		default_collision_layer = 1
+		default_collision_mask = 1
+	for meta_key_variant in get_meta_list():
+		remove_meta(meta_key_variant)
+	death_started = false
+	visible = true
+	set_physics_process(true)
+	if collision_shape != null:
+		collision_shape.disabled = false
+	collision_layer = default_collision_layer
+	collision_mask = default_collision_mask
+	enemy_uid = next_enemy_uid
+	global_position = spawn_position
+	reset_physics_interpolation()
+	set_role(role_name)
+	current_room = room_coord
+	previous_room = room_coord
+	next_room = room_coord
+	pending_room = INVALID_ROOM
+	moving_between_rooms = false
+	transit_stage = ""
+	move_steps.clear()
+	velocity = Vector2.ZERO
+	set_destination(spawn_position)
+	if animated_sprite != null:
+		animated_sprite.speed_scale = 1.0
+		animated_sprite.play("idle")
+	queue_redraw()
+
+func ready_for_pool_recycle() -> bool:
+	if not pool_managed or not death_started:
+		return false
+	if animated_sprite == null:
+		return true
+	return animated_sprite.animation == "death" and not animated_sprite.is_playing()
+
 func is_dying_state() -> bool:
 	return death_started
 
@@ -344,7 +428,10 @@ func begin_death() -> void:
 
 func _on_animated_sprite_animation_finished() -> void:
 	if death_started and animated_sprite != null and animated_sprite.animation == "death":
-		queue_free()
+		if pool_managed:
+			set_physics_process(false)
+		else:
+			queue_free()
 	elif animated_sprite != null:
 		match String(animated_sprite.animation):
 			"attack":

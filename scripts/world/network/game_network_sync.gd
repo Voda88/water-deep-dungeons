@@ -141,6 +141,7 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 		"global_item_card_states": game.global_item_card_states.duplicate(true),
 		"global_item_passive_timers": game.global_item_passive_timers.duplicate(true),
 		"hero_owner_peer_ids": game.hero_owner_peer_ids.duplicate(true),
+		"rejoin_claimable_hero_indices": game.rejoin_claimable_hero_indices.duplicate(true),
 		"lobby_peer_ready": game.lobby_peer_ready.duplicate(true),
 		"lobby_game_started": game.lobby_game_started,
 		"heroes": hero_states,
@@ -156,6 +157,7 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 		"food": game.food,
 		"industry": game.industry,
 		"science": game.science,
+		"research_reroll_count": game.research_reroll_count,
 		"minor_module_levels": game.minor_module_levels.duplicate(true),
 		"major_module_levels": game.major_module_levels.duplicate(true),
 		"active_research": game.active_research.duplicate(true),
@@ -192,6 +194,7 @@ static func apply_network_snapshot(game: Node, snapshot: Dictionary) -> void:
 	game.hero_owner_peer_ids = Array(snapshot.get("hero_owner_peer_ids", [])).duplicate(true)
 	if game.hero_owner_peer_ids.size() != game.HERO_COUNT:
 		game.reset_hero_owner_peer_ids()
+	game.rejoin_claimable_hero_indices = Array(snapshot.get("rejoin_claimable_hero_indices", [])).duplicate(true)
 	game.lobby_peer_ready = Dictionary(snapshot.get("lobby_peer_ready", {})).duplicate(true)
 	game.lobby_game_started = bool(snapshot.get("lobby_game_started", game.lobby_game_started))
 	game.opening_room = snapshot.get("opening_room", game.INVALID_ROOM)
@@ -205,6 +208,7 @@ static func apply_network_snapshot(game: Node, snapshot: Dictionary) -> void:
 	game.food = int(snapshot.get("food", game.food))
 	game.industry = int(snapshot.get("industry", game.industry))
 	game.science = int(snapshot.get("science", game.science))
+	game.research_reroll_count = maxi(int(snapshot.get("research_reroll_count", game.research_reroll_count)), 0)
 	game.minor_module_levels = game.normalized_minor_module_levels(Dictionary(snapshot.get("minor_module_levels", game.initialized_minor_module_levels())).duplicate(true))
 	game.major_module_levels = game.normalized_major_module_levels(Dictionary(snapshot.get("major_module_levels", game.initialized_major_module_levels())).duplicate(true))
 	game.active_research = Dictionary(snapshot.get("active_research", {})).duplicate(true)
@@ -357,7 +361,17 @@ static func apply_enemy_snapshots(game: Node, enemy_states: Array) -> void:
 static func assign_multiplayer_hero_owners_after_floor_transition(game: Node) -> void:
 	if not game.multiplayer_session_active() or not game.multiplayer.is_server():
 		return
-	game.redistribute_multiplayer_hero_owners()
+	if game.hero_owner_peer_ids.size() != game.HERO_COUNT:
+		game.reset_hero_owner_peer_ids()
+	var connected_peers: Array[int] = game.connected_session_peer_ids()
+	for hero_index in range(game.HERO_COUNT):
+		var owner_peer_id: int = int(game.hero_owner_peer_ids[hero_index])
+		if connected_peers.has(owner_peer_id):
+			continue
+		game.hero_owner_peer_ids[hero_index] = game.NETWORK_HOST_PEER_ID
+		if game.lobby_game_started and not game.rejoin_claimable_hero_indices.has(hero_index):
+			game.rejoin_claimable_hero_indices.append(hero_index)
+	game.rejoin_claimable_hero_indices.sort()
 	game.ensure_valid_selected_hero()
 
 static func server_request_world_command(game: Node, hero_index: int, world_position: Vector2) -> void:
@@ -477,7 +491,7 @@ static func server_request_pick_up_crystal(game: Node, hero_index: int) -> void:
 	game.crystal_holder.carrying_crystal = true
 	game.crystal_ground_room = game.INVALID_ROOM
 	game.crystal_prompt_visible = false
-	game.crystal_pressure_timer_left = game.CRYSTAL_PRESSURE_INTERVAL
+	game.crystal_pressure_timer_left = game.crystal_pressure_interval_for_current_dark_rooms()
 	game.status_message = "%s picked up the crystal. Dark rooms will keep spawning." % hero.hero_name
 	game.update_hud()
 	broadcast_network_snapshot(game)

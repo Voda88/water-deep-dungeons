@@ -7,6 +7,8 @@ static func _unhandled_input(game: Node, event: InputEvent) -> void:
 		return
 	if game.research_overlay != null and game.research_overlay.visible:
 		return
+	if game.merchant_overlay != null and game.merchant_overlay.visible:
+		return
 	if game.inventory_overlay != null and game.inventory_overlay.visible:
 		handle_inventory_input(game, event)
 		return

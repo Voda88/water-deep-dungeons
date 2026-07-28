@@ -201,6 +201,7 @@ static func set_hero_select_overlay_visible(game: Node, visible: bool) -> void:
 	if visible:
 		game.clear_room_action_hold()
 		game.close_room_action_menu()
+		game.close_merchant_overlay()
 		game.cancel_room_action_camera_focus()
 		if game.inventory_overlay != null and game.inventory_overlay.visible:
 			game.clear_inventory_session(true)
@@ -231,6 +232,19 @@ static func update_hero_select_overlay(game: Node) -> void:
 		else:
 			game.hero_select_start_button.text = "Close Lobby"
 			game.hero_select_start_button.disabled = false
+	var host_actions_allowed: bool = not multiplayer_session_active(game) or game.multiplayer.is_server()
+	if game.hero_select_new_game_button != null:
+		game.hero_select_new_game_button.disabled = not host_actions_allowed
+		game.hero_select_new_game_button.text = "New Game" if host_actions_allowed else "Host: New Game"
+	if game.hero_select_load_game_button != null:
+		var has_checkpoint: bool = game.checkpoint_exists()
+		game.hero_select_load_game_button.disabled = (not host_actions_allowed) or (not has_checkpoint)
+		if not host_actions_allowed:
+			game.hero_select_load_game_button.text = "Host: Load Game"
+		elif has_checkpoint:
+			game.hero_select_load_game_button.text = "Load Game"
+		else:
+			game.hero_select_load_game_button.text = "Load Game (No Save)"
 	for hero_index in range(game.HERO_COUNT):
 		if not game.hero_select_cards.has(hero_index):
 			continue
@@ -338,8 +352,44 @@ static func on_hero_select_start_button_pressed(game: Node) -> void:
 		return
 	set_hero_select_overlay_visible(game, false)
 
+static func on_hero_select_new_game_button_pressed(game: Node) -> void:
+	game.start_new_game()
+
+static func on_hero_select_load_game_button_pressed(game: Node) -> void:
+	game.load_checkpoint(true)
+
+static func hero_index_labels(hero_indices: Array[int]) -> String:
+	var labels: Array[String] = []
+	for hero_index in hero_indices:
+		labels.append("H%d" % (hero_index + 1))
+	return ",".join(labels)
+
+static func assign_claimable_heroes_to_peer(game: Node, peer_id: int) -> Array[int]:
+	var assigned: Array[int] = []
+	var remaining_claims: Array[int] = []
+	for hero_index_variant in game.rejoin_claimable_hero_indices:
+		var hero_index: int = int(hero_index_variant)
+		if hero_index < 0 or hero_index >= game.HERO_COUNT:
+			continue
+		if int(game.hero_owner_peer_ids[hero_index]) == game.NETWORK_HOST_PEER_ID:
+			game.hero_owner_peer_ids[hero_index] = peer_id
+			assigned.append(hero_index)
+		else:
+			remaining_claims.append(hero_index)
+	game.rejoin_claimable_hero_indices = remaining_claims
+	return assigned
+
+static func assign_host_hero_to_peer_for_live_join(game: Node, peer_id: int) -> Array[int]:
+	for hero_index in range(game.HERO_COUNT - 1, -1, -1):
+		if int(game.hero_owner_peer_ids[hero_index]) != game.NETWORK_HOST_PEER_ID:
+			continue
+		game.hero_owner_peer_ids[hero_index] = peer_id
+		return [hero_index]
+	return []
+
 static func redistribute_multiplayer_hero_owners(game: Node) -> void:
 	reset_hero_owner_peer_ids(game)
+	game.rejoin_claimable_hero_indices.clear()
 	if not multiplayer_session_active(game):
 		return
 	var peer_ids: Array[int] = connected_session_peer_ids(game)
@@ -393,6 +443,7 @@ static func join_host_session(game: Node, address_text: String) -> void:
 		game.update_hud()
 		return
 	game.multiplayer.multiplayer_peer = peer
+	game.rejoin_claimable_hero_indices.clear()
 	reset_hero_owner_peer_ids(game)
 	if not game.lobby_game_started:
 		sync_lobby_peer_ready_states(game, true)
@@ -405,6 +456,7 @@ static func stop_network_session(game: Node, reason: String = "Returned to offli
 	if game.multiplayer.multiplayer_peer != null:
 		game.multiplayer.multiplayer_peer.close()
 		game.multiplayer.multiplayer_peer = null
+	game.rejoin_claimable_hero_indices.clear()
 	reset_hero_owner_peer_ids(game)
 	sync_lobby_peer_ready_states(game, not game.lobby_game_started)
 	game.network_snapshot_timer = 0.0
@@ -416,14 +468,20 @@ static func stop_network_session(game: Node, reason: String = "Returned to offli
 static func on_multiplayer_peer_connected(game: Node, peer_id: int) -> void:
 	if not game.multiplayer.is_server():
 		return
-	redistribute_multiplayer_hero_owners(game)
-	if not game.lobby_game_started:
+	var assigned_heroes: Array[int] = []
+	if game.lobby_game_started:
+		assigned_heroes = assign_claimable_heroes_to_peer(game, peer_id)
+		if assigned_heroes.is_empty():
+			assigned_heroes = assign_host_hero_to_peer_for_live_join(game, peer_id)
+		if assigned_heroes.is_empty():
+			game.status_message = "Peer %d joined, but no hero role is currently available." % peer_id
+		else:
+			game.status_message = "Peer %d rejoined and took %s." % [peer_id, hero_index_labels(assigned_heroes)]
+	else:
+		redistribute_multiplayer_hero_owners(game)
 		sync_lobby_peer_ready_states(game, true)
-	var assigned_heroes: Array[int] = controlled_hero_indices_for_peer(game, peer_id)
-	var assigned_labels: Array[String] = []
-	for hero_index in assigned_heroes:
-		assigned_labels.append("H%d" % (hero_index + 1))
-	game.status_message = "Peer %d joined and took %s." % [peer_id, ",".join(assigned_labels)]
+		assigned_heroes = controlled_hero_indices_for_peer(game, peer_id)
+		game.status_message = "Peer %d joined and took %s." % [peer_id, hero_index_labels(assigned_heroes)]
 	ensure_valid_selected_hero(game)
 	game.update_hud()
 	update_network_ui(game)
@@ -431,9 +489,24 @@ static func on_multiplayer_peer_connected(game: Node, peer_id: int) -> void:
 
 static func on_multiplayer_peer_disconnected(game: Node, peer_id: int) -> void:
 	if game.multiplayer.is_server():
-		redistribute_multiplayer_hero_owners(game)
-		sync_lobby_peer_ready_states(game, not game.lobby_game_started)
-		game.status_message = "Peer %d disconnected." % peer_id
+		if game.lobby_game_started:
+			var claimable_now: Array[int] = []
+			for hero_index in range(game.HERO_COUNT):
+				if int(game.hero_owner_peer_ids[hero_index]) != peer_id:
+					continue
+				game.hero_owner_peer_ids[hero_index] = game.NETWORK_HOST_PEER_ID
+				if not game.rejoin_claimable_hero_indices.has(hero_index):
+					game.rejoin_claimable_hero_indices.append(hero_index)
+				claimable_now.append(hero_index)
+			game.rejoin_claimable_hero_indices.sort()
+			if claimable_now.is_empty():
+				game.status_message = "Peer %d disconnected." % peer_id
+			else:
+				game.status_message = "Peer %d disconnected. %s can be reclaimed by a rejoining player." % [peer_id, hero_index_labels(claimable_now)]
+		else:
+			redistribute_multiplayer_hero_owners(game)
+			sync_lobby_peer_ready_states(game, true)
+			game.status_message = "Peer %d disconnected." % peer_id
 		ensure_valid_selected_hero(game)
 		game.update_hud()
 		update_network_ui(game)
