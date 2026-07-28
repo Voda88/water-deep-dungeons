@@ -196,6 +196,21 @@ static func enemy_spawn_weight(enemy_type: String, pressure_spawn: bool = false)
 static func enemy_spawn_order() -> Array[String]:
 	return [TYPE_ORC, TYPE_BAT, TYPE_SKELETON_ARCHER, TYPE_ORC_SHAMAN, TYPE_ORC_RIDER, TYPE_GOLEM]
 
+static func enemy_dust_drop_chance(enemy_type: String) -> float:
+	match normalize_enemy_type(enemy_type):
+		TYPE_BAT:
+			return 0.4
+		TYPE_ORC:
+			return 0.5
+		TYPE_SKELETON_ARCHER:
+			return 0.7
+		TYPE_ORC_SHAMAN:
+			return 0.7
+		TYPE_ORC_RIDER:
+			return 0.9
+		_:
+			return 0.0
+
 static func enemy_available_on_floor(enemy_type: String, floor_index: int) -> bool:
 	var resolved_type: String = normalize_enemy_type(enemy_type)
 	if floor_index == 1 and resolved_type == TYPE_GOLEM:

@@ -36,7 +36,7 @@ static func can_build_or_repair_major(game: Node, room_coord: Vector2i, module_t
 	var room: Dictionary = game.rooms[room_coord]
 	if int(room["major_slots"]) <= 0:
 		return false
-	if bool(room.get("research_crystal", false)) and not bool(room.get("research_crystal_spent", false)):
+	if bool(room.get("research_crystal", false)):
 		return false
 	if not game.pending_major_construction_for_room(room_coord).is_empty():
 		return false
@@ -187,7 +187,7 @@ static func queue_room_construction(game: Node, room_coord: Vector2i, module_typ
 			game.queue_redraw()
 			return false
 		if game.room_has_research_crystal(room_coord):
-			game.status_message = "Research the crystal in %s before building there." % game.room_title(room_coord)
+			game.status_message = "Major slot occupied by research crystal in %s." % game.room_title(room_coord)
 			game.update_hud()
 			game.queue_redraw()
 			return false

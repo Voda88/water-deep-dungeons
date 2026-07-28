@@ -140,10 +140,16 @@ static func sync_door_art(room: Node) -> void:
 		var opened: bool = door_art_opened(room, direction_key)
 		var closed_node: CanvasItem = direction_node.get_node_or_null(^"Closed")
 		var open_node: CanvasItem = direction_node.get_node_or_null(^"Open")
+		var closed_glow_node: CanvasItem = direction_node.get_node_or_null(^"ClosedGlow")
+		var open_glow_node: CanvasItem = direction_node.get_node_or_null(^"OpenGlow")
 		if closed_node != null:
 			closed_node.visible = not opened
 		if open_node != null:
 			open_node.visible = opened
+		if closed_glow_node != null:
+			closed_glow_node.visible = not opened
+		if open_glow_node != null:
+			open_glow_node.visible = opened
 
 static func refresh_room_visuals(room: Node) -> void:
 	sync_backdrop_visuals(room)

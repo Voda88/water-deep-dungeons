@@ -9,6 +9,28 @@ static func item_size_in_cells(game: Node, item: Dictionary) -> Vector2i:
 		return Vector2i(base_size.y, base_size.x)
 	return base_size
 
+static func infer_item_level_from_definition(game: Node, item_def: Dictionary) -> int:
+	var max_level: int = maxi(1, int(item_def.get("item_level", 1)))
+	var generator_defs: Array = []
+	if item_def.has("hand_cards"):
+		generator_defs = Array(item_def.get("hand_cards", [])).duplicate(true)
+	else:
+		var single_generator: Dictionary = Dictionary(item_def.get("hand_card", item_def.get("combat_card", {})))
+		if not single_generator.is_empty():
+			generator_defs.append(single_generator)
+	for generator_variant in generator_defs:
+		var generator: Dictionary = Dictionary(generator_variant)
+		var card_id: String = String(generator.get("card_id", ""))
+		if card_id == "":
+			continue
+		max_level = maxi(max_level, int(game.card_definition(card_id).get("spell_level", 1)))
+	var passive_ability: Dictionary = Dictionary(item_def.get("passive_combat_ability", {}))
+	if not passive_ability.is_empty():
+		var passive_card_id: String = String(passive_ability.get("card_id", ""))
+		if passive_card_id != "":
+			max_level = maxi(max_level, int(game.card_definition(passive_card_id).get("spell_level", 1)))
+	return maxi(1, max_level)
+
 static func normalize_item_instance(game: Node, item_variant: Variant) -> Dictionary:
 	var item: Dictionary = (item_variant as Dictionary).duplicate(true)
 	var item_def: Dictionary = game.item_defs.get(String(item.get("item_id", "")), {})
@@ -17,6 +39,10 @@ static func normalize_item_instance(game: Node, item_variant: Variant) -> Dictio
 		game.next_item_uid += 1
 	if item_def.has("max_charges") and not item.has("charges_left"):
 		item["charges_left"] = int(item_def.get("max_charges", 0))
+	if not item.has("item_level"):
+		item["item_level"] = infer_item_level_from_definition(game, item_def)
+	else:
+		item["item_level"] = maxi(1, int(item.get("item_level", item_def.get("item_level", 1))))
 	return item
 
 static func make_ground_item(game: Node, item_id: String, world_position: Vector2) -> Dictionary:
@@ -53,10 +79,8 @@ static func roll_ground_item_id(game: Node) -> String:
 	var weighted_item_ids: Array[String] = [
 		"ration", "ration",
 		"boots", "boots",
-		"blade", "blade",
+		"whirling_blade",
 		"buckler",
-		"whetstone", "whetstone",
-		"banner",
 		"lantern",
 		"medkit",
 		"torch",
@@ -79,14 +103,15 @@ static func spawn_ground_loot(game: Node, room_coord: Vector2i) -> void:
 		return
 	if game.rng.randf() > 0.72:
 		return
-	var loot_count: int = 1
-	if game.rng.randf() < 0.18:
-		loot_count = 2
+	var loot_count: int = game.rng.randi_range(3, 6)
+	var chest_anchor_position: Vector2 = game.clamp_point_to_room(game.room_center(room_coord) + GAME_DUNGEON_BUILDER.random_room_offset(game, 58.0), room_coord)
 	for loot_index in range(loot_count):
 		var item_id: String = roll_ground_item_id(game)
 		if item_id == "":
 			continue
-		var item_position: Vector2 = game.clamp_point_to_room(game.room_center(room_coord) + GAME_DUNGEON_BUILDER.random_room_offset(game, 84.0 + float(loot_index) * 28.0), room_coord)
+		var item_position: Vector2 = chest_anchor_position
+		if loot_index > 0:
+			item_position = game.clamp_point_to_room(chest_anchor_position + GAME_DUNGEON_BUILDER.random_room_offset(game, 32.0 + float(loot_index) * 9.0), room_coord)
 		game.rooms[room_coord]["ground_items"].append(make_ground_item(game, item_id, item_position))
 
 static func ground_item_draw_rect(game: Node, ground_item: Dictionary) -> Rect2:
@@ -393,12 +418,14 @@ static func inventory_effect_summary(game: Node, items: Array) -> Dictionary:
 			var card_generator: Dictionary = Dictionary(card_generator_variant).duplicate(true)
 			card_generator["item_uid"] = item_uid_card
 			card_generator["item_id"] = String(item_with_card.get("item_id", ""))
+			card_generator["item_level"] = int(item_with_card.get("item_level", item_def_card.get("item_level", 1)))
 			card_generator["item_bonus"] = Dictionary(summary.get("item_bonus_by_uid", {}).get(item_uid_card, empty_inventory_effect_summary(game))).duplicate(true)
 			summary["card_generators"].append(card_generator)
 		var combat_passive: Dictionary = Dictionary(item_def_card.get("passive_combat_ability", {}))
 		if not combat_passive.is_empty():
 			combat_passive["item_uid"] = item_uid_card
 			combat_passive["item_id"] = String(item_with_card.get("item_id", ""))
+			combat_passive["item_level"] = int(item_with_card.get("item_level", item_def_card.get("item_level", 1)))
 			combat_passive["item_bonus"] = Dictionary(summary.get("item_bonus_by_uid", {}).get(item_uid_card, empty_inventory_effect_summary(game))).duplicate(true)
 			summary["combat_passives"].append(combat_passive)
 	summary["speed"] = move_bonus + float(summary.get("speed", 0.0)) - move_bonus
@@ -521,3 +548,191 @@ static func consume_item_charges_by_uid(game: Node, item_uid: int, amount: int, 
 				game.rooms[room_coord]["ground_items"][item_index] = ground_item
 			return true
 	return false
+
+static func merchant_theme_ids(_game: Node) -> Array[String]:
+	return ["food", "materials", "arcana", "dust"]
+
+static func merchant_theme_display_name(_game: Node, theme_id: String) -> String:
+	match theme_id:
+		"food":
+			return "Food Merchant"
+		"materials":
+			return "Materials Merchant"
+		"arcana":
+			return "Arcana Merchant"
+		"dust":
+			return "Dust Merchant"
+		_:
+			return "Merchant"
+
+static func merchant_theme_resource_id(_game: Node, theme_id: String) -> String:
+	match theme_id:
+		"food":
+			return "food"
+		"materials":
+			return "industry"
+		"arcana":
+			return "science"
+		"dust":
+			return "dust"
+		_:
+			return ""
+
+static func merchant_resource_label(_game: Node, resource_id: String) -> String:
+	match resource_id:
+		"food":
+			return "Food"
+		"industry":
+			return "Materials"
+		"science":
+			return "Arcana"
+		"dust":
+			return "Dust"
+		_:
+			return "Resource"
+
+static func merchant_resource_amount(game: Node, resource_id: String) -> int:
+	match resource_id:
+		"food":
+			return game.food
+		"industry":
+			return game.industry
+		"science":
+			return game.science
+		"dust":
+			return game.dust
+		_:
+			return 0
+
+static func merchant_add_resource(game: Node, resource_id: String, amount: int) -> void:
+	if amount == 0:
+		return
+	match resource_id:
+		"food":
+			game.food += amount
+		"industry":
+			game.industry += amount
+		"science":
+			game.science += amount
+		"dust":
+			game.dust += amount
+
+static func merchant_spend_resource(game: Node, resource_id: String, amount: int) -> bool:
+	if amount <= 0:
+		return true
+	if merchant_resource_amount(game, resource_id) < amount:
+		return false
+	merchant_add_resource(game, resource_id, -amount)
+	return true
+
+static func room_has_merchant(game: Node, room_coord: Vector2i) -> bool:
+	if not game.rooms.has(room_coord):
+		return false
+	return String(game.rooms[room_coord].get("merchant_theme", "")) != ""
+
+static func merchant_theme_for_room(game: Node, room_coord: Vector2i) -> String:
+	if not game.rooms.has(room_coord):
+		return ""
+	return String(game.rooms[room_coord].get("merchant_theme", ""))
+
+static func merchant_resource_id_for_room(game: Node, room_coord: Vector2i) -> String:
+	return merchant_theme_resource_id(game, merchant_theme_for_room(game, room_coord))
+
+static func ensure_room_merchant_state(game: Node, room_coord: Vector2i) -> void:
+	if not room_has_merchant(game, room_coord):
+		return
+	var room: Dictionary = game.rooms[room_coord]
+	if not room.has("merchant_stock"):
+		room["merchant_stock"] = []
+	if not room.has("merchant_buyback"):
+		room["merchant_buyback"] = []
+	if not room.has("merchant_buyback_doors_opened"):
+		room["merchant_buyback_doors_opened"] = game.doors_opened
+	if int(room.get("merchant_buyback_doors_opened", game.doors_opened)) != game.doors_opened:
+		room["merchant_buyback"] = []
+		room["merchant_buyback_doors_opened"] = game.doors_opened
+
+static func clear_all_merchant_buybacks(game: Node) -> void:
+	for room_coord_variant in game.rooms.keys():
+		var room_coord: Vector2i = room_coord_variant
+		if not room_has_merchant(game, room_coord):
+			continue
+		var room: Dictionary = game.rooms[room_coord]
+		room["merchant_buyback"] = []
+		room["merchant_buyback_doors_opened"] = game.doors_opened
+
+static func merchant_offer_item_name(game: Node, offer: Dictionary) -> String:
+	var item_data: Dictionary = Dictionary(offer.get("item", {}))
+	var item_id: String = String(item_data.get("item_id", ""))
+	return String(game.item_defs.get(item_id, {}).get("name", item_id.capitalize()))
+
+static func merchant_item_full_price(game: Node, item_variant: Variant) -> int:
+	var item: Dictionary = normalize_item_instance(game, item_variant)
+	var item_id: String = String(item.get("item_id", ""))
+	var item_def: Dictionary = game.item_defs.get(item_id, {})
+	if item_def.is_empty():
+		return 6
+	var size_cells: Vector2i = item_size_in_cells(game, item)
+	var area_value: float = float(maxi(1, size_cells.x * size_cells.y)) * 3.2
+	var level_value: float = float(maxi(1, int(item.get("item_level", 1))) - 1) * 3.4
+	var stats: Dictionary = Dictionary(item_def.get("stats", {}))
+	var stat_value: float = 0.0
+	for stat_value_variant in stats.values():
+		stat_value += absf(float(stat_value_variant)) * 0.46
+	var generator_count: int = 0
+	if item_def.has("hand_cards"):
+		generator_count = Array(item_def.get("hand_cards", [])).size()
+	elif not Dictionary(item_def.get("hand_card", item_def.get("combat_card", {}))).is_empty():
+		generator_count = 1
+	var passive_value: float = 6.0 if not Dictionary(item_def.get("passive_combat_ability", {})).is_empty() else 0.0
+	var tag_value: float = 0.0
+	for tag_variant in Array(item_def.get("tags", [])):
+		var tag_name: String = String(tag_variant)
+		if tag_name == "weapon" or tag_name == "armor" or tag_name == "arcane":
+			tag_value += 2.2
+		elif tag_name == "support" or tag_name == "light":
+			tag_value += 1.3
+	var charge_value: float = 0.0
+	if item_def.has("max_charges"):
+		charge_value = float(maxi(1, int(item_def.get("max_charges", 1)))) * 1.5
+	var raw_price: float = area_value + level_value + stat_value + float(generator_count) * 5.6 + passive_value + tag_value + charge_value
+	return clampi(int(round(raw_price)), 4, 96)
+
+static func merchant_item_sell_price(game: Node, item_variant: Variant) -> int:
+	return maxi(1, int(floor(float(merchant_item_full_price(game, item_variant)) * 0.5)))
+
+static func make_merchant_offer_for_item_id(game: Node, item_id: String) -> Dictionary:
+	if item_id == "":
+		return {}
+	var item_level: int = clampi(game.floor_index + game.rng.randi_range(-1, 1), 1, 5)
+	var item: Dictionary = normalize_item_instance(game, {
+		"uid": game.next_item_uid,
+		"item_id": item_id,
+		"rotated": false,
+		"item_level": item_level,
+	})
+	game.next_item_uid += 1
+	item.erase("position")
+	item.erase("anchor")
+	return {
+		"offer_uid": int(item.get("uid", -1)),
+		"item": item,
+		"price": merchant_item_full_price(game, item),
+	}
+
+static func generate_merchant_stock(game: Node, offer_count: int) -> Array:
+	var stock: Array = []
+	if offer_count <= 0:
+		return stock
+	var max_attempts: int = maxi(offer_count * 6, 12)
+	var attempts: int = 0
+	while stock.size() < offer_count and attempts < max_attempts:
+		attempts += 1
+		var item_id: String = roll_ground_item_id(game)
+		if item_id == "":
+			continue
+		var offer: Dictionary = make_merchant_offer_for_item_id(game, item_id)
+		if offer.is_empty():
+			continue
+		stock.append(offer)
+	return stock

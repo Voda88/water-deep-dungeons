@@ -45,8 +45,6 @@ static func complete_active_research(game: Node) -> void:
 	else:
 		game.minor_module_levels[game.canonical_minor_module_type(module_type)] = next_level
 	var research_room: Vector2i = Vector2i(game.active_research.get("room", game.INVALID_ROOM))
-	if game.rooms.has(research_room):
-		game.rooms[research_room]["research_crystal_spent"] = true
 	game.status_message = "Research complete: %s." % active_research_title(game)
 	game.active_research.clear()
 	if game.research_overlay != null and game.research_overlay.visible:
@@ -182,9 +180,8 @@ static func open_research_overlay(game: Node, room_coord: Vector2i) -> void:
 	game.research_offer_choices = roll_research_offer_choices(game)
 	game.research_selected_index = 0
 	if game.research_offer_choices.is_empty():
-		game.rooms[room_coord]["research_crystal_spent"] = true
 		game.research_overlay_open_room = game.INVALID_ROOM
-		game.status_message = "Nothing remains to research here."
+		game.status_message = "No additional research remains at this crystal."
 		game.update_hud()
 		return
 	game.research_overlay.visible = true
@@ -225,7 +222,7 @@ static func apply_research_option(game: Node, choice_index: int) -> void:
 	game.queue_redraw()
 
 static func room_has_research_crystal(game: Node, room_coord: Vector2i) -> bool:
-	return game.rooms.has(room_coord) and bool(game.rooms[room_coord].get("research_crystal", false)) and not bool(game.rooms[room_coord].get("research_crystal_spent", false))
+	return game.rooms.has(room_coord) and bool(game.rooms[room_coord].get("research_crystal", false))
 
 static func research_in_progress(game: Node) -> bool:
 	return not game.active_research.is_empty()

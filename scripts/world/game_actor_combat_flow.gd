@@ -13,7 +13,7 @@ static func enemy_forward_direction(game: Node, enemy: Variant) -> Vector2:
 	return Vector2.RIGHT
 
 static func enemy_is_active(_game: Node, enemy: Variant) -> bool:
-	return enemy != null and is_instance_valid(enemy) and (not enemy.has_method("is_dying_state") or not enemy.is_dying_state())
+	return _game.is_enemy_actor(enemy) and (not enemy.has_method("is_dying_state") or not enemy.is_dying_state())
 
 static func actor_weight(_game: Node, actor: Variant) -> float:
 	if actor == null or not is_instance_valid(actor):
@@ -165,12 +165,15 @@ static func advance_pending_melee_attacks(game: Node, delta: float) -> void:
 			continue
 		if game.is_enemy_actor(target) and target.current_room != attack_room:
 			continue
-		var attack_range: float = game.melee_attack_resolution_distance(attacker, target)
-		if attacker.global_position.distance_to(target.global_position) > attack_range:
-			continue
-		if game.is_hero_actor(target) and game.try_auto_cast_fatal_shield(target, float(pending_attack.get("damage", 0.0))):
-			continue
-		var defeated: bool = target.take_damage(float(pending_attack.get("damage", 0.0)))
+		# Commit queued melee attacks even if movement changed spacing during windup.
+		var incoming_damage: float = float(pending_attack.get("damage", 0.0))
+		var defeated: bool = false
+		if game.is_hero_actor(target):
+			defeated = target.take_damage(incoming_damage, false)
+			if defeated and game.try_auto_cast_fatal_shield(target, incoming_damage):
+				continue
+		else:
+			defeated = target.take_damage(incoming_damage, (target.global_position - attacker.global_position).normalized())
 		apply_weighted_melee_knockback(game, attacker, target, attack_room)
 		if defeated and game.is_hero_actor(target):
 			finalize_hero_death(game, target, String(pending_attack.get("source_label", "An enemy")))

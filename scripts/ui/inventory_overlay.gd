@@ -113,7 +113,7 @@ var synergy_shine_time: float = 0.0
 @onready var spellbook_overlay_node: Variant = $SpellbookOverlay
 
 func _ready() -> void:
-	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mouse_filter = Control.MOUSE_FILTER_STOP
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	prepare_runtime_guides()
 	if spellbook_overlay_node != null:
@@ -121,6 +121,35 @@ func _ready() -> void:
 		spellbook_overlay_node.slots_changed.connect(_on_spellbook_overlay_slots_changed)
 	update_layout_nodes()
 	visible = false
+
+func _gui_input(event: InputEvent) -> void:
+	if not visible:
+		return
+	if event is InputEventScreenTouch:
+		var touch_event: InputEventScreenTouch = event
+		if touch_event.pressed:
+			pointer_press(touch_event.position)
+		else:
+			pointer_release(touch_event.position)
+		accept_event()
+		return
+	if event is InputEventScreenDrag:
+		pointer_move(event.position)
+		accept_event()
+		return
+	if event is InputEventMouseButton:
+		var mouse_event: InputEventMouseButton = event
+		if mouse_event.button_index != MOUSE_BUTTON_LEFT:
+			return
+		if mouse_event.pressed:
+			pointer_press(mouse_event.position)
+		else:
+			pointer_release(mouse_event.position)
+		accept_event()
+		return
+	if event is InputEventMouseMotion:
+		pointer_move(event.position)
+		accept_event()
 
 func _process(delta: float) -> void:
 	var needs_redraw: bool = false
@@ -993,6 +1022,7 @@ func draw_dragging_pack() -> void:
 
 func draw_inventory_item(item_rect: Rect2, item: Dictionary, emphasize: bool) -> void:
 	var item_def: Dictionary = item_defs.get(String(item.get("item_id", "")), {})
+	var item_level: int = maxi(1, int(item.get("item_level", item_def.get("item_level", 1))))
 	var fill: Color = item_def.get("color", Color("9ed4ff"))
 	if emphasize:
 		fill = fill.lightened(0.12)
@@ -1002,6 +1032,7 @@ func draw_inventory_item(item_rect: Rect2, item: Dictionary, emphasize: bool) ->
 	var item_name: String = String(item_def.get("name", "Item"))
 	var short_label: String = String(item_def.get("short", item_name.substr(0, mini(item_name.length(), 3)).to_upper()))
 	draw_string(font, item_rect.position + Vector2(8.0, 22.0), short_label, HORIZONTAL_ALIGNMENT_LEFT, item_rect.size.x - 12.0, 18, Color("0f171b"))
+	draw_string(font, item_rect.position + Vector2(item_rect.size.x - 34.0, 14.0), "L%d" % item_level, HORIZONTAL_ALIGNMENT_LEFT, 30.0, 12, Color("132028"))
 	draw_string(font, item_rect.position + Vector2(8.0, item_rect.size.y - 8.0), item_name, HORIZONTAL_ALIGNMENT_LEFT, item_rect.size.x - 12.0, 14, Color("0f171b"))
 
 func draw_item_synergy_overlay() -> void:
@@ -1042,6 +1073,8 @@ func _on_spellbook_overlay_slots_changed(slotted_spells: Array) -> void:
 func item_description_lines(item: Dictionary) -> Array[String]:
 	var lines: Array[String] = []
 	var item_def: Dictionary = item_defs.get(String(item.get("item_id", "")), {})
+	var item_level: int = maxi(1, int(item.get("item_level", item_def.get("item_level", 1))))
+	lines.append("Item Level %d" % item_level)
 	var unique_star_lines: Dictionary = {}
 	for line_variant in Array(item_def.get("description_lines", [])):
 		lines.append(String(line_variant))
@@ -1112,8 +1145,6 @@ func synergy_bonus_text(bonus_stats: Dictionary) -> String:
 				parts.append("+%d health" % int(round(float(bonus_stats[bonus_key_variant]))))
 			"speed":
 				parts.append("+%d speed" % int(round(float(bonus_stats[bonus_key_variant]))))
-			"stamina":
-				parts.append("+%s stamina" % format_socket_metric(float(bonus_stats[bonus_key_variant])))
 			"hand_size":
 				parts.append("+%d hand size" % int(bonus_stats[bonus_key_variant]))
 			"projectile_count":
@@ -1128,12 +1159,6 @@ func synergy_bonus_text(bonus_stats: Dictionary) -> String:
 					parts.append("%d%% faster card charge" % int(round((1.0 - charge_mult) * 100.0)))
 				elif charge_mult > 1.0:
 					parts.append("%d%% slower card charge" % int(round((charge_mult - 1.0) * 100.0)))
-			"stamina_cost_mult":
-				var stamina_mult: float = float(bonus_stats[bonus_key_variant])
-				if stamina_mult < 1.0:
-					parts.append("%d%% lower stamina cost" % int(round((1.0 - stamina_mult) * 100.0)))
-				elif stamina_mult > 1.0:
-					parts.append("%d%% higher stamina cost" % int(round((stamina_mult - 1.0) * 100.0)))
 	if parts.is_empty():
 		return ""
 	return ", ".join(PackedStringArray(parts))
@@ -1164,8 +1189,6 @@ func dragging_item_stat_preview_suffix(stat_line: String) -> String:
 		return format_preview_bonus_suffix(float(stats.get("health", 0.0)))
 	if stat_line.begins_with("Speed "):
 		return format_preview_bonus_suffix(float(stats.get("speed", 0.0)))
-	if stat_line.begins_with("Stamina "):
-		return format_preview_bonus_suffix(float(stats.get("stamina", 0.0)))
 	if stat_line.begins_with("Hand "):
 		return format_preview_bonus_suffix(float(int(stats.get("hand_size", 0))))
 	return ""
@@ -1221,8 +1244,10 @@ func ground_item_item_rects() -> Array:
 	var columns: int = mini(maxi(int(floor(dock_rect.size.x / 120.0)), 1), maxi(ground_items.size(), 1))
 	var rows: int = maxi(1, int(ceil(float(ground_items.size()) / float(columns))))
 	var gap: float = 8.0
-	var slot_width: float = (dock_rect.size.x - gap * float(columns - 1)) / float(columns)
-	var slot_height: float = (dock_rect.size.y - gap * float(rows - 1)) / float(rows)
+	var usable_width: float = maxf(dock_rect.size.x - gap * float(columns - 1), 1.0)
+	var usable_height: float = maxf(dock_rect.size.y - gap * float(rows - 1), 1.0)
+	var slot_width: float = usable_width / float(columns)
+	var slot_height: float = usable_height / float(rows)
 	for item_index in range(ground_items.size()):
 		var row: int = item_index / columns
 		var column: int = item_index % columns
@@ -1247,6 +1272,9 @@ func ground_item_hit_rect(slot_rect: Rect2) -> Rect2:
 
 func ground_item_index_at(local_position: Vector2) -> int:
 	var item_rects: Array = ground_item_item_rects()
+	for item_index in range(item_rects.size()):
+		if Rect2(item_rects[item_index]).has_point(local_position):
+			return item_index
 	var best_index: int = -1
 	var best_distance: float = INF
 	for item_index in range(item_rects.size()):

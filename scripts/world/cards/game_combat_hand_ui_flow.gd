@@ -1,5 +1,12 @@
 extends RefCounted
 
+const DRAGGED_HAND_CARD_ALPHA: float = 0.14
+
+static func scaled_alpha(color: Color, alpha_scale: float) -> Color:
+	var scaled: Color = color
+	scaled.a *= clampf(alpha_scale, 0.0, 1.0)
+	return scaled
+
 static func active_hand_returning_uids(game: Node) -> Dictionary:
 	var returning: Dictionary = {}
 	for animation_variant in game.hand_card_return_animations:
@@ -23,18 +30,28 @@ static func selected_hand_hero(game: Node) -> Variant:
 
 static func combat_hand_panel_rect(game: Node, hero: Variant) -> Rect2:
 	var viewport_size: Vector2 = game.get_viewport_rect().size
-	var slot_count: int = maxi(maxi(hero.hand_cards.size(), hero.max_hand_size), 1)
-	var visible_slots: int = mini(slot_count, 5)
+	var slot_count: int = maxi(hero.hand_cards.size(), 1)
+	var visible_slots: int = mini(slot_count, 8)
 	var panel_width: float = minf(viewport_size.x - game.CARD_HAND_SIDE_MARGIN * 2.0, game.CARD_HAND_CARD_SIZE.x * float(visible_slots) + game.CARD_HAND_GAP * float(maxi(visible_slots - 1, 0)) + 24.0)
 	var panel_height: float = game.CARD_HAND_CARD_SIZE.y + 44.0
 	return Rect2(Vector2((viewport_size.x - panel_width) * 0.5, viewport_size.y - panel_height - game.CARD_HAND_BOTTOM_MARGIN), Vector2(panel_width, panel_height))
 
+static func combat_hand_card_step(game: Node, hero: Variant) -> float:
+	var card_count: int = maxi(hero.hand_cards.size(), 1)
+	if card_count <= 1:
+		return game.CARD_HAND_CARD_SIZE.x + game.CARD_HAND_GAP
+	var panel_rect: Rect2 = combat_hand_panel_rect(game, hero)
+	var available_track: float = maxf(panel_rect.size.x - 24.0 - game.CARD_HAND_CARD_SIZE.x, 1.0)
+	var natural_step: float = game.CARD_HAND_CARD_SIZE.x + game.CARD_HAND_GAP
+	return clampf(available_track / float(card_count - 1), 14.0, natural_step)
+
 static func combat_hand_card_rect(game: Node, hero: Variant, card_index: int) -> Rect2:
 	var panel_rect: Rect2 = combat_hand_panel_rect(game, hero)
 	var visible_count: int = maxi(hero.hand_cards.size(), 1)
-	var total_width: float = game.CARD_HAND_CARD_SIZE.x * float(visible_count) + game.CARD_HAND_GAP * float(maxi(visible_count - 1, 0))
+	var step: float = combat_hand_card_step(game, hero)
+	var total_width: float = game.CARD_HAND_CARD_SIZE.x + step * float(maxi(visible_count - 1, 0))
 	var start_x: float = panel_rect.get_center().x - total_width * 0.5
-	return Rect2(Vector2(start_x + float(card_index) * (game.CARD_HAND_CARD_SIZE.x + game.CARD_HAND_GAP), panel_rect.position.y + 8.0), game.CARD_HAND_CARD_SIZE)
+	return Rect2(Vector2(start_x + float(card_index) * step, panel_rect.position.y + 8.0), game.CARD_HAND_CARD_SIZE)
 
 static func combat_hand_info_button_rect(game: Node, hero: Variant) -> Rect2:
 	var panel_rect: Rect2 = combat_hand_panel_rect(game, hero)
@@ -79,9 +96,6 @@ static func hand_card_footer_bits(game: Node, hand_card: Dictionary) -> Array[St
 	var food_cost: int = int(hand_card.get("food_cost", 0))
 	if food_cost > 0:
 		footer_bits.append("%d Food" % food_cost)
-	var stamina_cost: float = float(hand_card.get("stamina_cost", 0.0))
-	if stamina_cost > 0.0:
-		footer_bits.append("%.0f Sta" % stamina_cost)
 	var expires_on: int = int(hand_card.get("expires_on_doors_opened", -1))
 	if expires_on >= 0:
 		footer_bits.append("Exp %d" % maxi(0, expires_on - game.doors_opened))
@@ -115,15 +129,16 @@ static func dismiss_hand_card_info_if_outside(game: Node, screen_position: Vecto
 	game.queue_redraw()
 	return true
 
-static func draw_hand_card(game: Node, screen_rect: Rect2, hand_card: Dictionary, highlighted: bool, reaction_rect_screen: Rect2 = Rect2()) -> void:
+static func draw_hand_card(game: Node, screen_rect: Rect2, hand_card: Dictionary, highlighted: bool, reaction_rect_screen: Rect2 = Rect2(), alpha_scale: float = 1.0) -> void:
 	var world_rect: Rect2 = game.screen_rect_to_world_rect(screen_rect)
+	var resolved_alpha: float = clampf(alpha_scale, 0.0, 1.0)
 	var fill: Color = hand_card.get("color", Color("cfe6ff"))
 	if highlighted:
 		fill = fill.lightened(0.12)
-	game.draw_rect(world_rect, fill, true)
-	game.draw_rect(world_rect, Color("eff8ff"), false, 2.0)
+	game.draw_rect(world_rect, scaled_alpha(fill, resolved_alpha), true)
+	game.draw_rect(world_rect, scaled_alpha(Color("eff8ff"), resolved_alpha), false, 2.0)
 	var font: Font = ThemeDB.fallback_font
-	game.draw_string(font, world_rect.position + Vector2(5.0, 13.0), String(hand_card.get("name", "Card")), HORIZONTAL_ALIGNMENT_LEFT, world_rect.size.x - 10.0, 10, Color("091116"))
+	game.draw_string(font, world_rect.position + Vector2(5.0, 13.0), String(hand_card.get("name", "Card")), HORIZONTAL_ALIGNMENT_LEFT, world_rect.size.x - 10.0, 10, scaled_alpha(Color("091116"), resolved_alpha))
 	var phase_label: String = "Calm"
 	match String(hand_card.get("phase", "combat")):
 		"combat":
@@ -133,21 +148,21 @@ static func draw_hand_card(game: Node, screen_rect: Rect2, hand_card: Dictionary
 	var tag_line: String = "%s  %s" % [phase_label, String(hand_card.get("target_scope_label", game.card_target_scope_label(String(hand_card.get("target_scope", "same_room")))))]
 	if bool(hand_card.get("requires_line_of_effect", false)):
 		tag_line += "  LoE"
-	game.draw_string(font, world_rect.position + Vector2(5.0, 26.0), tag_line, HORIZONTAL_ALIGNMENT_LEFT, world_rect.size.x - 10.0, 8, Color("102028"))
+	game.draw_string(font, world_rect.position + Vector2(5.0, 26.0), tag_line, HORIZONTAL_ALIGNMENT_LEFT, world_rect.size.x - 10.0, 8, scaled_alpha(Color("102028"), resolved_alpha))
 	var info_lines: Array = Array(hand_card.get("description_lines", []))
 	for line_index in range(mini(info_lines.size(), 2)):
-		game.draw_string(font, world_rect.position + Vector2(5.0, 40.0 + float(line_index) * 10.0), String(info_lines[line_index]), HORIZONTAL_ALIGNMENT_LEFT, world_rect.size.x - 10.0, 8, Color("102028"))
+		game.draw_string(font, world_rect.position + Vector2(5.0, 40.0 + float(line_index) * 10.0), String(info_lines[line_index]), HORIZONTAL_ALIGNMENT_LEFT, world_rect.size.x - 10.0, 8, scaled_alpha(Color("102028"), resolved_alpha))
 	var footer_bits: Array[String] = hand_card_footer_bits(game, hand_card)
 	if not footer_bits.is_empty():
-		game.draw_string(font, world_rect.position + Vector2(5.0, world_rect.size.y - 7.0), "  ".join(footer_bits), HORIZONTAL_ALIGNMENT_LEFT, world_rect.size.x - 10.0, 8, Color("20323d"))
+		game.draw_string(font, world_rect.position + Vector2(5.0, world_rect.size.y - 7.0), "  ".join(footer_bits), HORIZONTAL_ALIGNMENT_LEFT, world_rect.size.x - 10.0, 8, scaled_alpha(Color("20323d"), resolved_alpha))
 	if game.card_supports_reaction(hand_card) and reaction_rect_screen.size != Vector2.ZERO:
 		var reaction_world_rect: Rect2 = game.screen_rect_to_world_rect(reaction_rect_screen)
-		game.draw_rect(reaction_world_rect, Color(0.08, 0.14, 0.18, 0.92), true)
-		game.draw_rect(reaction_world_rect, Color("d8eef8"), false, 1.5)
+		game.draw_rect(reaction_world_rect, scaled_alpha(Color(0.08, 0.14, 0.18, 0.92), resolved_alpha), true)
+		game.draw_rect(reaction_world_rect, scaled_alpha(Color("d8eef8"), resolved_alpha), false, 1.5)
 		if bool(hand_card.get("reaction_enabled", false)):
-			game.draw_line(reaction_world_rect.position + Vector2(3.0, 10.0), reaction_world_rect.position + Vector2(7.0, 14.0), Color("9cffb4"), 2.0, true)
-			game.draw_line(reaction_world_rect.position + Vector2(7.0, 14.0), reaction_world_rect.position + Vector2(15.0, 4.0), Color("9cffb4"), 2.0, true)
-		game.draw_string(font, reaction_world_rect.position + Vector2(-12.0, 15.0), "R", HORIZONTAL_ALIGNMENT_LEFT, 10.0, 10, Color("eef8ff"))
+			game.draw_line(reaction_world_rect.position + Vector2(3.0, 10.0), reaction_world_rect.position + Vector2(7.0, 14.0), scaled_alpha(Color("9cffb4"), resolved_alpha), 2.0, true)
+			game.draw_line(reaction_world_rect.position + Vector2(7.0, 14.0), reaction_world_rect.position + Vector2(15.0, 4.0), scaled_alpha(Color("9cffb4"), resolved_alpha), 2.0, true)
+		game.draw_string(font, reaction_world_rect.position + Vector2(-12.0, 15.0), "R", HORIZONTAL_ALIGNMENT_LEFT, 10.0, 10, scaled_alpha(Color("eef8ff"), resolved_alpha))
 
 static func draw_hand_card_info_panel(game: Node, hero: Variant) -> void:
 	if hero == null or not is_instance_valid(hero):
@@ -189,7 +204,7 @@ static func draw_combat_hand(game: Node) -> void:
 	game.draw_string(font, panel_world.position + Vector2(10.0, 16.0), "%s Cards" % hero.hero_name, HORIZONTAL_ALIGNMENT_LEFT, panel_world.size.x * 0.52, 13, Color("eef8ff"))
 	var phase_status: String = "Combat" if game.wave_in_progress() else "Calm"
 	game.draw_string(font, panel_world.position + Vector2(panel_world.size.x - 116.0, 16.0), phase_status, HORIZONTAL_ALIGNMENT_LEFT, 108.0, 12, Color("bde3ff"))
-	game.draw_string(font, panel_world.position + Vector2(panel_world.size.x - 116.0, 30.0), "%d/%d" % [hero.hand_cards.size(), hero.max_hand_size], HORIZONTAL_ALIGNMENT_LEFT, 108.0, 11, Color("ffd8a0"))
+	game.draw_string(font, panel_world.position + Vector2(panel_world.size.x - 116.0, 30.0), "%d cards" % hero.hand_cards.size(), HORIZONTAL_ALIGNMENT_LEFT, 108.0, 11, Color("ffd8a0"))
 	var info_button_world: Rect2 = game.screen_rect_to_world_rect(combat_hand_info_button_rect(game, hero))
 	var info_button_fill: Color = Color(0.12, 0.18, 0.21, 0.96)
 	if not game.active_hand_drag.is_empty() and combat_hand_info_button_rect(game, hero).grow(12.0).has_point(Vector2(game.active_hand_drag.get("current_screen", Vector2.ZERO))):
@@ -217,7 +232,7 @@ static func draw_combat_hand(game: Node) -> void:
 	if not game.active_hand_drag.is_empty():
 		var drag_card: Dictionary = game.active_hand_drag.get("card", {})
 		var drag_rect: Rect2 = Rect2(Vector2(game.active_hand_drag.get("current_screen", Vector2.ZERO)) - game.CARD_HAND_CARD_SIZE * 0.5, game.CARD_HAND_CARD_SIZE)
-		draw_hand_card(game, drag_rect, drag_card, true)
+		draw_hand_card(game, drag_rect, drag_card, true, Rect2(), DRAGGED_HAND_CARD_ALPHA)
 	draw_hand_card_info_panel(game, hero)
 
 static func begin_hand_card_drag(game: Node, pointer_kind: String, pointer_id: int, screen_position: Vector2) -> bool:

@@ -127,9 +127,11 @@ static func update_hud(game: Node) -> void:
 	game.room_label.text = game.room_summary(game.selected_room)
 	game.inventory_button.disabled = inventory_open or research_open or game.selected_hero() == null or not inventory_allowed
 	game.inventory_button.text = "Inventory"
-	game.stamina_toggle_button.disabled = false
-	game.stamina_toggle_button.button_pressed = game.stamina_use_enabled
-	game.stamina_toggle_button.text = "Use Stamina"
+	game.stamina_use_enabled = false
+	game.stamina_toggle_button.visible = false
+	game.stamina_toggle_button.disabled = true
+	game.stamina_toggle_button.button_pressed = false
+	game.stamina_toggle_button.text = "Stamina Removed"
 	game.restart_button.disabled = false
 	game.restart_button.text = "Restart"
 	update_restart_button_hold_fill(game)

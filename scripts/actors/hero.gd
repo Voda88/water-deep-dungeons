@@ -6,6 +6,7 @@ const SPRITE_FRAME_SIZE: Vector2i = Vector2i(100, 100)
 const MELEE_IMPACT_FRAME: float = 2.0
 const MELEE_ATTACK_FPS: float = 13.0
 const MELEE_ATTACK_SPEED_SCALE: float = 0.72
+const UNLIMITED_HAND_SIZE: int = 9999
 const HERO_SPRITE_PROFILES := {
 	"fighter": {
 		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Knight/Knight/Knight_Idle.png",
@@ -126,6 +127,10 @@ var knockback_duration: float = 0.0
 var knockback_bounds_enabled: bool = false
 var knockback_bounds: Rect2 = Rect2()
 var knockback_regions: Array = []
+var reaction_card_preferences: Dictionary = {}
+var evasive_roll_time_left: float = 0.0
+var evasive_roll_speed_multiplier: float = 1.0
+var evasive_roll_spin_speed: float = 0.0
 
 func _ready() -> void:
 	base_move_speed = move_speed
@@ -304,6 +309,7 @@ func begin_death() -> void:
 	if dead_started:
 		return
 	dead_started = true
+	end_evasive_roll()
 	current_health = 0.0
 	attack_effect_left = 0.0
 	hurt_effect_left = 0.0
@@ -413,7 +419,7 @@ func clamp_to_knockback_bounds() -> void:
 		clampf(global_position.y, knockback_bounds.position.y, knockback_bounds.end.y)
 	)
 
-func take_damage(amount: float) -> bool:
+func take_damage(amount: float, allow_lethal_death: bool = true) -> bool:
 	if dead_started:
 		return true
 	if invulnerability_time_left > 0.0:
@@ -429,7 +435,7 @@ func take_damage(amount: float) -> bool:
 			barrier_time_left = 0.0
 	current_health = maxf(current_health - remaining_damage, 0.0)
 	hurt_effect_left = maxf(hurt_effect_left, 0.22)
-	if current_health <= 0.0:
+	if current_health <= 0.0 and allow_lethal_death:
 		begin_death()
 	queue_redraw()
 	return current_health <= 0.0
@@ -492,9 +498,49 @@ func apply_invulnerability(duration: float) -> void:
 	invulnerability_time_left = maxf(invulnerability_time_left, duration)
 	queue_redraw()
 
+func begin_evasive_roll(duration: float, speed_multiplier: float = 2.0, spin_speed: float = 18.0, grant_invulnerability: bool = true) -> void:
+	if dead_started or duration <= 0.0:
+		return
+	evasive_roll_time_left = maxf(evasive_roll_time_left, duration)
+	evasive_roll_speed_multiplier = maxf(evasive_roll_speed_multiplier, speed_multiplier)
+	if absf(evasive_roll_spin_speed) <= 0.001:
+		evasive_roll_spin_speed = spin_speed
+	else:
+		evasive_roll_spin_speed = signf(evasive_roll_spin_speed) * maxf(absf(evasive_roll_spin_speed), absf(spin_speed))
+	if grant_invulnerability:
+		apply_invulnerability(duration)
+
+func end_evasive_roll() -> void:
+	evasive_roll_time_left = 0.0
+	evasive_roll_speed_multiplier = 1.0
+	evasive_roll_spin_speed = 0.0
+	if animated_sprite != null:
+		animated_sprite.rotation = 0.0
+
 func clear_invulnerability() -> void:
 	invulnerability_time_left = 0.0
 	queue_redraw()
+
+func reaction_preference_key(generator_key: String, card_id: String) -> String:
+	if generator_key != "":
+		return "gen:%s" % generator_key
+	if card_id != "":
+		return "card:%s" % card_id
+	return ""
+
+func get_reaction_card_preference(generator_key: String, card_id: String, default_enabled: bool) -> bool:
+	var key: String = reaction_preference_key(generator_key, card_id)
+	if key == "":
+		return default_enabled
+	if reaction_card_preferences.has(key):
+		return bool(reaction_card_preferences[key])
+	return default_enabled
+
+func set_reaction_card_preference(generator_key: String, card_id: String, enabled: bool) -> void:
+	var key: String = reaction_preference_key(generator_key, card_id)
+	if key == "":
+		return
+	reaction_card_preferences[key] = enabled
 
 func heal(amount: float) -> bool:
 	if amount <= 0.0:
@@ -512,7 +558,7 @@ func apply_inventory_stats(move_bonus: float, health_bonus: float, attack_bonus:
 	var previous_max_stamina: float = max_stamina
 	max_stamina = base_max_stamina + stamina_bonus
 	attack_damage = base_attack_damage + attack_bonus
-	max_hand_size = maxi(1, base_max_hand_size + hand_bonus)
+	max_hand_size = UNLIMITED_HAND_SIZE
 	synergy_count = next_synergy_count
 	if previous_max_health <= 0.001:
 		current_health = max_health
@@ -522,8 +568,6 @@ func apply_inventory_stats(move_bonus: float, health_bonus: float, attack_bonus:
 		stamina = max_stamina
 	else:
 		stamina = clampf(stamina + (max_stamina - previous_max_stamina), -maxf(max_stamina, 1.0), max_stamina)
-	while hand_cards.size() > max_hand_size:
-		hand_cards.pop_back()
 	combo_points = maxi(combo_points, 0)
 	queue_redraw()
 
@@ -584,6 +628,8 @@ func set_calm_movement_multiplier(multiplier: float) -> void:
 
 func movement_speed() -> float:
 	var speed: float = move_speed * (combat_move_speed_multiplier if combat_movement_mode else calm_move_speed_multiplier)
+	if evasive_roll_time_left > 0.0:
+		speed *= maxf(evasive_roll_speed_multiplier, 1.0)
 	if carrying_crystal:
 		speed *= crystal_carry_speed_multiplier
 	return speed * knockback_recovery_factor()
@@ -629,6 +675,12 @@ func _physics_process(delta: float) -> void:
 		return
 	attack_effect_left = maxf(attack_effect_left - delta, 0.0)
 	hurt_effect_left = maxf(hurt_effect_left - delta, 0.0)
+	if evasive_roll_time_left > 0.0:
+		evasive_roll_time_left = maxf(evasive_roll_time_left - delta, 0.0)
+		if animated_sprite != null:
+			animated_sprite.rotation += evasive_roll_spin_speed * delta
+		if evasive_roll_time_left <= 0.0:
+			end_evasive_roll()
 	var offset: Vector2 = destination - global_position
 	var desired_velocity: Vector2 = Vector2.ZERO
 	if offset.length() < 4.0:
@@ -650,24 +702,31 @@ func _draw() -> void:
 	var health_ratio: float = current_health / maxf(max_health, 0.001)
 	draw_rect(Rect2(Vector2(-22.0, -38.0), Vector2(44.0, 6.0)), Color("1a2225"), true)
 	draw_rect(Rect2(Vector2(-22.0, -38.0), Vector2(44.0 * health_ratio, 6.0)), Color("8df4b2"), true)
-	var stamina_ratio: float = clampf(stamina / maxf(max_stamina, 0.001), 0.0, 1.0)
-	draw_rect(Rect2(Vector2(-22.0, -29.0), Vector2(44.0, 4.0)), Color("1a2225"), true)
-	draw_rect(Rect2(Vector2(-22.0, -29.0), Vector2(44.0 * stamina_ratio, 4.0)), Color("8bc1ff"), true)
-	if stamina < 0.0:
-		var exhausted_ratio: float = clampf(absf(stamina) / maxf(max_stamina, 0.001), 0.0, 1.0)
-		draw_rect(Rect2(Vector2(-22.0, -29.0), Vector2(44.0 * exhausted_ratio, 4.0)), Color("ff8d78"), true)
-	if stamina_regen_time_left > 0.0:
-		draw_rect(Rect2(Vector2(-22.0, -24.0), Vector2(44.0, 2.0)), Color("17323e"), true)
-		draw_rect(Rect2(Vector2(-22.0, -24.0), Vector2(44.0 * clampf(stamina_regen_time_left / 8.0, 0.0, 1.0), 2.0)), Color("a4f3ff"), true)
+	if evasive_roll_time_left > 0.0 and absf(evasive_roll_spin_speed) <= 0.001:
+		var dash_pulse: float = 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.026)
+		var dash_radius: float = 26.0 + 4.0 * dash_pulse
+		draw_circle(Vector2.ZERO, dash_radius + 7.0, Color(0.48, 0.95, 0.86, 0.11))
+		draw_circle(Vector2.ZERO, dash_radius + 2.0, Color(0.48, 0.95, 0.86, 0.16))
+		draw_arc(Vector2.ZERO, dash_radius, 0.0, TAU, 44, Color(0.78, 1.0, 0.95, 0.8), 2.4, true)
 	if barrier_time_left > 0.0 and barrier_capacity > 0.0:
 		var barrier_ratio: float = clampf(barrier_amount / maxf(barrier_capacity, 0.001), 0.0, 1.0)
 		draw_rect(Rect2(Vector2(-22.0, -44.0), Vector2(44.0, 3.0)), Color("17323e"), true)
 		draw_rect(Rect2(Vector2(-22.0, -44.0), Vector2(44.0 * barrier_ratio, 3.0)), Color("b7d9ff"), true)
-		draw_arc(Vector2.ZERO, 24.0, 0.0, TAU, 40, Color(0.72, 0.87, 1.0, 0.45 + 0.2 * barrier_ratio), 2.0, true)
+		draw_arc(Vector2.ZERO, 24.0, 0.0, TAU, 40, Color(0.72, 0.87, 1.0, 0.55 + 0.22 * barrier_ratio), 2.4, true)
+	var shield_time_left: float = maxf(barrier_time_left, invulnerability_time_left)
+	if shield_time_left > 0.0:
+		var pulse: float = 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.014)
+		var glow_strength: float = 0.55 + 0.45 * pulse
+		var bubble_radius: float = 27.0 + glow_strength * 2.2
+		draw_circle(Vector2.ZERO, bubble_radius + 9.0, Color(0.33, 0.63, 1.0, 0.08 + 0.06 * glow_strength))
+		draw_circle(Vector2.ZERO, bubble_radius + 5.0, Color(0.47, 0.77, 1.0, 0.12 + 0.08 * glow_strength))
+		draw_circle(Vector2.ZERO, bubble_radius + 1.0, Color(0.65, 0.88, 1.0, 0.12 + 0.08 * glow_strength))
+		draw_arc(Vector2.ZERO, bubble_radius, 0.0, TAU, 56, Color(0.82, 0.95, 1.0, 0.62 + 0.18 * glow_strength), 3.0, true)
+		draw_arc(Vector2.ZERO, bubble_radius - 4.5, 0.0, TAU, 48, Color(0.62, 0.84, 1.0, 0.44 + 0.18 * glow_strength), 1.8, true)
 	if invulnerability_time_left > 0.0:
 		var shimmer: float = 0.55 + 0.45 * sin(Time.get_ticks_msec() * 0.018)
-		draw_arc(Vector2.ZERO, 27.0, 0.0, TAU, 44, Color(0.96, 0.98, 1.0, 0.45 + shimmer * 0.28), 3.0, true)
-		draw_circle(Vector2.ZERO, 22.0, Color(0.75, 0.9, 1.0, 0.08 + shimmer * 0.05))
+		draw_arc(Vector2.ZERO, 27.0, 0.0, TAU, 44, Color(0.96, 0.98, 1.0, 0.56 + shimmer * 0.30), 3.2, true)
+		draw_circle(Vector2.ZERO, 22.0, Color(0.75, 0.9, 1.0, 0.12 + shimmer * 0.08))
 	if carrying_crystal:
 		draw_colored_polygon(PackedVector2Array([
 			Vector2(0.0, -52.0),

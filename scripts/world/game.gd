@@ -115,6 +115,11 @@ const DOOR_REWARD_SCIENCE_BASE: int = 4
 const DOOR_REWARD_FOOD_MODULE: int = 2
 const DOOR_REWARD_INDUSTRY_MODULE: int = 3
 const DOOR_REWARD_SCIENCE_MODULE: int = 2
+const ROOM_LIGHT_DUST_COST: int = 10
+const ROOM_OPEN_DUST_CHANCE: float = 0.5
+const ROOM_OPEN_DUST_MIN: int = 2
+const ROOM_OPEN_DUST_MAX: int = 9
+const PRELIT_ROOM_CHANCE: float = 0.24
 const WAVE_WARNING_DURATION: float = 1.0
 const WAVE_STAGGER_ROOM_INTERVAL: float = 2.0
 const WAVE_STAGGER_ENEMY_INTERVAL: float = 0.1
@@ -137,6 +142,7 @@ const GROUND_ITEM_PICK_RADIUS: float = 34.0
 const RESOURCE_FLOAT_DURATION: float = 1.15
 const RESOURCE_FLOAT_RISE: float = 52.0
 const HEAL_FOOD_COST: int = 3
+const ARCANA_RESET_COST_PER_LEVEL_PER_TURN: int = 2
 const POST_WAVE_HEAL_RATE: float = 210.0
 const BUILD_DURATION_CALM: float = 0.9
 const BUILD_DURATION_WAVE: float = 2.4
@@ -227,12 +233,12 @@ var crystal_holder: Variant = null
 var crystal_ground_room: Vector2i = INVALID_ROOM
 var crystal_prompt_visible: bool = false
 var crystal_pressure_timer_left: float = 0.0
-var dust: int = 4
+var dust: int = 20
 var food: int = 10
 var industry: int = 14
 var science: int = 0
 var crystal_health: float = 100.0
-var stamina_use_enabled: bool = true
+var stamina_use_enabled: bool = false
 var opened_rooms: int = 0
 var wave_index: int = 0
 var doors_opened: int = 0
@@ -791,6 +797,13 @@ func assign_exit_room() -> void:
 func assign_research_crystals() -> void:
 	GAME_DUNGEON_BUILDER.assign_research_crystals(self)
 
+func spawn_starting_room_test_items() -> void:
+	GAME_DUNGEON_BUILDER.spawn_starting_room_test_items(self)
+
+func spawn_starting_room_test_spell_scrolls() -> void:
+	# Backward-compatible alias.
+	spawn_starting_room_test_items()
+
 func spawn_heroes() -> void:
 	GAME_ACTOR_ROSTER_FLOW.spawn_heroes(self)
 
@@ -1072,7 +1085,7 @@ func center_camera() -> void:
 	GAME_CAMERA_FLOW.center_camera(self)
 
 func hero_is_active(hero: Variant) -> bool:
-	return hero != null and is_instance_valid(hero) and (not hero.has_method("is_dead_state") or not hero.is_dead_state()) and float(hero.current_health) > 0.0
+	return is_hero_actor(hero) and (not hero.has_method("is_dead_state") or not hero.is_dead_state()) and float(hero.current_health) > 0.0
 
 func is_hero_actor(actor: Variant) -> bool:
 	return actor != null and is_instance_valid(actor) and actor.get_script() == HERO_SCRIPT
@@ -1382,6 +1395,30 @@ func request_room_construction(room_coord: Vector2i, module_type: String) -> boo
 func request_room_construction_for_hero(hero_index: int, room_coord: Vector2i, module_type: String) -> bool:
 	return GAME_COMMAND_FLOW.request_room_construction_for_hero(self, hero_index, room_coord, module_type)
 
+func request_room_merchant_buy(room_coord: Vector2i, offer_uid: int) -> bool:
+	return GAME_COMMAND_FLOW.request_room_merchant_buy(self, room_coord, offer_uid)
+
+func request_room_merchant_buy_for_hero(hero_index: int, room_coord: Vector2i, offer_uid: int) -> bool:
+	return GAME_COMMAND_FLOW.request_room_merchant_buy_for_hero(self, hero_index, room_coord, offer_uid)
+
+func request_room_merchant_sell(room_coord: Vector2i, item_uid: int) -> bool:
+	return GAME_COMMAND_FLOW.request_room_merchant_sell(self, room_coord, item_uid)
+
+func request_room_merchant_sell_for_hero(hero_index: int, room_coord: Vector2i, item_uid: int) -> bool:
+	return GAME_COMMAND_FLOW.request_room_merchant_sell_for_hero(self, hero_index, room_coord, item_uid)
+
+func request_room_merchant_buyback(room_coord: Vector2i, offer_uid: int) -> bool:
+	return GAME_COMMAND_FLOW.request_room_merchant_buyback(self, room_coord, offer_uid)
+
+func request_room_merchant_buyback_for_hero(hero_index: int, room_coord: Vector2i, offer_uid: int) -> bool:
+	return GAME_COMMAND_FLOW.request_room_merchant_buyback_for_hero(self, hero_index, room_coord, offer_uid)
+
+func request_room_resource_trade(room_coord: Vector2i, target_hero_index: int, resource_id: String, amount: int = 5) -> bool:
+	return GAME_COMMAND_FLOW.request_room_resource_trade(self, room_coord, target_hero_index, resource_id, amount)
+
+func request_room_resource_trade_for_hero(hero_index: int, room_coord: Vector2i, target_hero_index: int, resource_id: String, amount: int = 5) -> bool:
+	return GAME_COMMAND_FLOW.request_room_resource_trade_for_hero(self, hero_index, room_coord, target_hero_index, resource_id, amount)
+
 func loot_focus_position(room_coord: Vector2i) -> Vector2:
 	if rooms.has(room_coord) and not rooms[room_coord]["ground_items"].is_empty():
 		return clamp_point_to_room(Vector2(rooms[room_coord]["ground_items"][0]["position"]), room_coord)
@@ -1688,12 +1725,6 @@ func advance_hero_stamina_effects(delta: float) -> void:
 	for hero in heroes:
 		if hero == null or not is_instance_valid(hero):
 			continue
-		if hero.stamina_regen_time_left > 0.0:
-			hero.stamina_regen_time_left = maxf(hero.stamina_regen_time_left - delta, 0.0)
-			if wave_in_progress() and hero.current_health > 0.0:
-				hero.restore_stamina(hero.stamina_regen_rate * delta)
-			if hero.stamina_regen_time_left <= 0.0:
-				hero.clear_stamina_regen_buff()
 		if hero.barrier_time_left > 0.0:
 			hero.barrier_time_left = maxf(hero.barrier_time_left - delta, 0.0)
 			if hero.barrier_time_left <= 0.0:
@@ -1814,6 +1845,9 @@ func try_auto_cast_fatal_shield(hero: Variant, incoming_damage: float) -> bool:
 func cast_lightning_bolt_spell(hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
 	GAME_CARD_ACTIONS.cast_lightning_bolt_spell(self, hero, target_world_position, target_room, hand_card)
 
+func build_lightning_bolt_points(origin: Vector2, target: Vector2, target_room: Vector2i, bounce_count: int) -> Array:
+	return GAME_CARD_ACTIONS.build_lightning_bolt_points(self, origin, target, target_room, bounce_count)
+
 func cast_scorching_ray_spell(hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
 	GAME_CARD_ACTIONS.cast_scorching_ray_spell(self, hero, target_world_position, target_room, hand_card)
 
@@ -1874,17 +1908,17 @@ func process_combat(_delta: float) -> void:
 func process_modules(delta: float) -> void:
 	GAME_COMBAT_FLOW.process_modules(self, delta)
 
-func spawn_arrow_projectile(origin: Vector2, target: Variant, damage: float, color: Color = Color("d8bf7a"), width: float = 2.4, speed: float = PROJECTILE_SPEED) -> void:
-	GAME_COMBAT_FLOW.spawn_arrow_projectile(self, origin, target, damage, color, width, speed)
+func spawn_arrow_projectile(origin: Vector2, target: Variant, damage: float, color: Color = Color("d8bf7a"), width: float = 2.4, speed: float = PROJECTILE_SPEED, bounces: int = 0, pierce: int = 0) -> void:
+	GAME_COMBAT_FLOW.spawn_arrow_projectile(self, origin, target, damage, color, width, speed, bounces, pierce)
 
-func spawn_laser_projectile(origin: Vector2, target: Variant, damage: float, color: Color = Color("89f2ff"), width: float = 4.0, speed: float = PROJECTILE_SPEED) -> void:
-	GAME_COMBAT_FLOW.spawn_laser_projectile(self, origin, target, damage, color, width, speed)
+func spawn_laser_projectile(origin: Vector2, target: Variant, damage: float, color: Color = Color("89f2ff"), width: float = 4.0, speed: float = PROJECTILE_SPEED, bounces: int = 0, pierce: int = 0) -> void:
+	GAME_COMBAT_FLOW.spawn_laser_projectile(self, origin, target, damage, color, width, speed, bounces, pierce)
 
 func spawn_magic_missile_projectile(origin: Vector2, target: Variant, damage: float, color: Color = Color("c18dff"), width: float = 4.8, speed: float = PROJECTILE_SPEED, curve_offset: float = 0.0) -> void:
 	GAME_COMBAT_FLOW.spawn_magic_missile_projectile(self, origin, target, damage, color, width, speed, curve_offset)
 
-func spawn_fire_bolt_projectile(origin: Vector2, target: Variant, damage: float, color: Color = Color("ff8e47"), width: float = 4.4, speed: float = PROJECTILE_SPEED) -> void:
-	GAME_COMBAT_FLOW.spawn_fire_bolt_projectile(self, origin, target, damage, color, width, speed)
+func spawn_fire_bolt_projectile(origin: Vector2, target: Variant, damage: float, color: Color = Color("ff8e47"), width: float = 4.4, speed: float = PROJECTILE_SPEED, bounces: int = 0, pierce: int = 0) -> void:
+	GAME_COMBAT_FLOW.spawn_fire_bolt_projectile(self, origin, target, damage, color, width, speed, bounces, pierce)
 
 func advance_projectiles(delta: float) -> void:
 	GAME_COMBAT_FLOW.advance_projectiles(self, delta)
@@ -1947,6 +1981,14 @@ func server_request_room_light(hero_index: int, room_coord: Vector2i) -> void:
 @rpc("any_peer", "call_remote", "reliable")
 func server_request_room_construction(hero_index: int, room_coord: Vector2i, module_type: String) -> void:
 	GAME_NETWORK_SYNC.server_request_room_construction(self, hero_index, room_coord, module_type)
+
+@rpc("any_peer", "call_remote", "reliable")
+func server_request_room_merchant_action(hero_index: int, room_coord: Vector2i, action_kind: String, item_or_offer_uid: int) -> void:
+	GAME_NETWORK_SYNC.server_request_room_merchant_action(self, hero_index, room_coord, action_kind, item_or_offer_uid)
+
+@rpc("any_peer", "call_remote", "reliable")
+func server_request_room_resource_trade(hero_index: int, room_coord: Vector2i, target_hero_index: int, resource_id: String, amount: int) -> void:
+	GAME_NETWORK_SYNC.server_request_room_resource_trade(self, hero_index, room_coord, target_hero_index, resource_id, amount)
 
 @rpc("any_peer", "call_remote", "reliable")
 func server_request_hero_class(hero_index: int, class_id: String) -> void:
@@ -2468,20 +2510,11 @@ func _on_inventory_button_pressed() -> void:
 	update_hud()
 
 func _on_stamina_toggle_button_toggled(enabled: bool) -> void:
-	if stamina_use_enabled == enabled:
-		update_hud()
-		return
-	if multiplayer_session_active() and not authoritative_simulation_active():
-		server_request_set_stamina_use_enabled.rpc_id(NETWORK_HOST_PEER_ID, enabled)
-		stamina_toggle_button.set_pressed_no_signal(stamina_use_enabled)
-		status_message = "Requested stamina use %s." % ("enabled" if enabled else "disabled")
-		update_hud()
-		return
-	stamina_use_enabled = enabled
-	status_message = "Stamina use %s." % ("enabled" if stamina_use_enabled else "disabled")
+	stamina_use_enabled = false
+	if stamina_toggle_button != null:
+		stamina_toggle_button.set_pressed_no_signal(false)
+	status_message = "Stamina has been removed."
 	update_hud()
-	if multiplayer_session_active() and multiplayer.is_server():
-		broadcast_network_snapshot()
 
 func _on_center_button_pressed() -> void:
 	GAME_CAMERA_FLOW.center_on_selected_hero(self)

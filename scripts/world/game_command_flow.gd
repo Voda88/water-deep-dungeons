@@ -1,5 +1,198 @@
 extends RefCounted
 
+const GAME_INVENTORY_ITEM_FLOW: GDScript = preload("res://scripts/world/inventory/game_inventory_item_flow.gd")
+const RESOURCE_TRADE_TRANSFER_AMOUNT: int = 5
+
+static func action_suffix_int(action_id: String, prefix: String) -> int:
+	if not action_id.begins_with(prefix):
+		return -1
+	var suffix: String = action_id.trim_prefix(prefix)
+	if not suffix.is_valid_int():
+		return -1
+	return int(suffix)
+
+static func hero_inventory_item_index_by_uid(hero: Variant, item_uid: int) -> int:
+	if hero == null or not is_instance_valid(hero):
+		return -1
+	for item_index in range(hero.inventory_items.size()):
+		if int(Dictionary(hero.inventory_items[item_index]).get("uid", -1)) == item_uid:
+			return item_index
+	return -1
+
+static func room_offer_index_by_uid(room: Dictionary, list_key: String, offer_uid: int) -> int:
+	for offer_index in range(Array(room.get(list_key, [])).size()):
+		if int(Dictionary(Array(room.get(list_key, []))[offer_index]).get("offer_uid", -1)) == offer_uid:
+			return offer_index
+	return -1
+
+static func execute_room_merchant_buy_for_hero(game: Node, hero: Variant, room_coord: Vector2i, offer_uid: int) -> bool:
+	if hero == null or not is_instance_valid(hero) or not game.rooms.has(room_coord):
+		return false
+	if not GAME_INVENTORY_ITEM_FLOW.room_has_merchant(game, room_coord):
+		game.status_message = "No merchant is available in %s." % game.room_title(room_coord)
+		game.update_hud()
+		return false
+	GAME_INVENTORY_ITEM_FLOW.ensure_room_merchant_state(game, room_coord)
+	var room: Dictionary = game.rooms[room_coord]
+	var stock: Array = Array(room.get("merchant_stock", []))
+	var offer_index: int = room_offer_index_by_uid(room, "merchant_stock", offer_uid)
+	if offer_index < 0:
+		game.status_message = "That offer is no longer available."
+		game.update_hud()
+		return false
+	var offer: Dictionary = Dictionary(stock[offer_index]).duplicate(true)
+	var item: Dictionary = Dictionary(offer.get("item", {})).duplicate(true)
+	var item_name: String = GAME_INVENTORY_ITEM_FLOW.merchant_offer_item_name(game, offer)
+	var price: int = int(offer.get("price", GAME_INVENTORY_ITEM_FLOW.merchant_item_full_price(game, item)))
+	var resource_id: String = GAME_INVENTORY_ITEM_FLOW.merchant_resource_id_for_room(game, room_coord)
+	var resource_label: String = GAME_INVENTORY_ITEM_FLOW.merchant_resource_label(game, resource_id)
+	if resource_id == "":
+		game.status_message = "Merchant setup is invalid."
+		game.update_hud()
+		return false
+	if GAME_INVENTORY_ITEM_FLOW.merchant_resource_amount(game, resource_id) < price:
+		game.status_message = "Need %d %s to buy %s." % [price, resource_label, item_name]
+		game.update_hud()
+		return false
+	if not game.add_item_to_hero_inventory(hero, item):
+		game.status_message = "%s has no inventory space for %s." % [hero.hero_name, item_name]
+		game.update_hud()
+		return false
+	if not GAME_INVENTORY_ITEM_FLOW.merchant_spend_resource(game, resource_id, price):
+		game.status_message = "Could not spend %s for that purchase." % resource_label
+		game.update_hud()
+		return false
+	stock.remove_at(offer_index)
+	room["merchant_stock"] = stock
+	game.status_message = "%s bought %s for %d %s." % [hero.hero_name, item_name, price, resource_label]
+	game.update_hud()
+	game.queue_redraw()
+	return true
+
+static func execute_room_merchant_sell_for_hero(game: Node, hero: Variant, room_coord: Vector2i, item_uid: int) -> bool:
+	if hero == null or not is_instance_valid(hero) or not game.rooms.has(room_coord):
+		return false
+	if not GAME_INVENTORY_ITEM_FLOW.room_has_merchant(game, room_coord):
+		game.status_message = "No merchant is available in %s." % game.room_title(room_coord)
+		game.update_hud()
+		return false
+	GAME_INVENTORY_ITEM_FLOW.ensure_room_merchant_state(game, room_coord)
+	var item_index: int = hero_inventory_item_index_by_uid(hero, item_uid)
+	if item_index < 0:
+		game.status_message = "That item can no longer be sold."
+		game.update_hud()
+		return false
+	var sold_item: Dictionary = Dictionary(hero.inventory_items[item_index]).duplicate(true)
+	var item_name: String = String(game.item_defs.get(String(sold_item.get("item_id", "")), {}).get("name", String(sold_item.get("item_id", "item")).capitalize()))
+	var sell_price: int = GAME_INVENTORY_ITEM_FLOW.merchant_item_sell_price(game, sold_item)
+	var buyback_price: int = GAME_INVENTORY_ITEM_FLOW.merchant_item_full_price(game, sold_item)
+	var resource_id: String = GAME_INVENTORY_ITEM_FLOW.merchant_resource_id_for_room(game, room_coord)
+	var resource_label: String = GAME_INVENTORY_ITEM_FLOW.merchant_resource_label(game, resource_id)
+	if resource_id == "":
+		game.status_message = "Merchant setup is invalid."
+		game.update_hud()
+		return false
+	hero.inventory_items.remove_at(item_index)
+	game.apply_inventory_stats_to_hero(hero)
+	GAME_INVENTORY_ITEM_FLOW.merchant_add_resource(game, resource_id, sell_price)
+	sold_item.erase("anchor")
+	sold_item.erase("position")
+	var room: Dictionary = game.rooms[room_coord]
+	var buyback: Array = Array(room.get("merchant_buyback", []))
+	buyback.append({
+		"offer_uid": int(sold_item.get("uid", -1)),
+		"item": sold_item,
+		"price": buyback_price,
+		"sold_by_hero_index": int(hero.hero_index),
+	})
+	if buyback.size() > 24:
+		buyback.pop_front()
+	room["merchant_buyback"] = buyback
+	room["merchant_buyback_doors_opened"] = game.doors_opened
+	game.status_message = "%s sold %s for %d %s." % [hero.hero_name, item_name, sell_price, resource_label]
+	game.update_hud()
+	game.queue_redraw()
+	return true
+
+static func execute_room_merchant_buyback_for_hero(game: Node, hero: Variant, room_coord: Vector2i, offer_uid: int) -> bool:
+	if hero == null or not is_instance_valid(hero) or not game.rooms.has(room_coord):
+		return false
+	if not GAME_INVENTORY_ITEM_FLOW.room_has_merchant(game, room_coord):
+		game.status_message = "No merchant is available in %s." % game.room_title(room_coord)
+		game.update_hud()
+		return false
+	GAME_INVENTORY_ITEM_FLOW.ensure_room_merchant_state(game, room_coord)
+	var room: Dictionary = game.rooms[room_coord]
+	var buyback: Array = Array(room.get("merchant_buyback", []))
+	var offer_index: int = room_offer_index_by_uid(room, "merchant_buyback", offer_uid)
+	if offer_index < 0:
+		game.status_message = "That buyback offer expired."
+		game.update_hud()
+		return false
+	var offer: Dictionary = Dictionary(buyback[offer_index]).duplicate(true)
+	var item: Dictionary = Dictionary(offer.get("item", {})).duplicate(true)
+	var item_name: String = String(game.item_defs.get(String(item.get("item_id", "")), {}).get("name", String(item.get("item_id", "item")).capitalize()))
+	var buyback_price: int = int(offer.get("price", GAME_INVENTORY_ITEM_FLOW.merchant_item_full_price(game, item)))
+	var resource_id: String = GAME_INVENTORY_ITEM_FLOW.merchant_resource_id_for_room(game, room_coord)
+	var resource_label: String = GAME_INVENTORY_ITEM_FLOW.merchant_resource_label(game, resource_id)
+	if resource_id == "":
+		game.status_message = "Merchant setup is invalid."
+		game.update_hud()
+		return false
+	if GAME_INVENTORY_ITEM_FLOW.merchant_resource_amount(game, resource_id) < buyback_price:
+		game.status_message = "Need %d %s to buy back %s." % [buyback_price, resource_label, item_name]
+		game.update_hud()
+		return false
+	if not game.add_item_to_hero_inventory(hero, item):
+		game.status_message = "%s has no inventory space for %s." % [hero.hero_name, item_name]
+		game.update_hud()
+		return false
+	if not GAME_INVENTORY_ITEM_FLOW.merchant_spend_resource(game, resource_id, buyback_price):
+		game.status_message = "Could not spend %s for that buyback." % resource_label
+		game.update_hud()
+		return false
+	buyback.remove_at(offer_index)
+	room["merchant_buyback"] = buyback
+	game.status_message = "%s bought back %s for %d %s." % [hero.hero_name, item_name, buyback_price, resource_label]
+	game.update_hud()
+	game.queue_redraw()
+	return true
+
+static func execute_room_resource_trade_for_hero(game: Node, hero: Variant, room_coord: Vector2i, target_hero_index: int, resource_id: String, amount: int) -> bool:
+	if hero == null or not is_instance_valid(hero):
+		return false
+	if target_hero_index < 0 or target_hero_index >= game.heroes.size() or target_hero_index == int(hero.hero_index):
+		game.status_message = "Choose another hero as a trade partner."
+		game.update_hud()
+		return false
+	var target_hero: Variant = game.heroes[target_hero_index]
+	if target_hero == null or not is_instance_valid(target_hero):
+		game.status_message = "Trade target is unavailable."
+		game.update_hud()
+		return false
+	if target_hero.current_room != room_coord:
+		game.status_message = "%s is not in %s." % [target_hero.hero_name, game.room_title(room_coord)]
+		game.update_hud()
+		return false
+	if resource_id != "food" and resource_id != "industry" and resource_id != "science" and resource_id != "dust":
+		game.status_message = "That resource cannot be traded."
+		game.update_hud()
+		return false
+	var resource_available: int = GAME_INVENTORY_ITEM_FLOW.merchant_resource_amount(game, resource_id)
+	var trade_amount: int = mini(maxi(amount, 1), resource_available)
+	if trade_amount <= 0:
+		game.status_message = "No %s available to trade." % GAME_INVENTORY_ITEM_FLOW.merchant_resource_label(game, resource_id)
+		game.update_hud()
+		return false
+	# Resources are pooled party-wide; this records an explicit hero-to-hero trade action.
+	var resource_label: String = GAME_INVENTORY_ITEM_FLOW.merchant_resource_label(game, resource_id)
+	game.status_message = "%s shared %d %s with %s." % [hero.hero_name, trade_amount, resource_label, target_hero.hero_name]
+	game.add_resource_floating_text(hero.global_position + Vector2(0.0, -36.0), "-%d %s" % [trade_amount, resource_label], Color("f3d88f"))
+	game.add_resource_floating_text(target_hero.global_position + Vector2(0.0, -36.0), "+%d %s" % [trade_amount, resource_label], Color("8bc1ff"))
+	game.update_hud()
+	game.queue_redraw()
+	return true
+
 static func clear_pending_room_loot_request(game: Node, hero_index: int = -1) -> void:
 	if hero_index < 0:
 		game.pending_room_loot_requests.clear()
@@ -60,6 +253,25 @@ static func try_execute_pending_room_action_request(game: Node, hero: Variant) -
 			hero.player_command_locked = false
 			game.queue_room_construction(room_coord, String(action_request.get("module_type", "")))
 			return true
+		"merchant_buy":
+			hero.player_command_locked = false
+			return execute_room_merchant_buy_for_hero(game, hero, room_coord, int(action_request.get("offer_uid", -1)))
+		"merchant_sell":
+			hero.player_command_locked = false
+			return execute_room_merchant_sell_for_hero(game, hero, room_coord, int(action_request.get("item_uid", -1)))
+		"merchant_buyback":
+			hero.player_command_locked = false
+			return execute_room_merchant_buyback_for_hero(game, hero, room_coord, int(action_request.get("offer_uid", -1)))
+		"trade_resource":
+			hero.player_command_locked = false
+			return execute_room_resource_trade_for_hero(
+				game,
+				hero,
+				room_coord,
+				int(action_request.get("target_hero_index", -1)),
+				String(action_request.get("resource_id", "")),
+				int(action_request.get("amount", RESOURCE_TRADE_TRANSFER_AMOUNT))
+			)
 		"card":
 			hero.player_command_locked = false
 			return game.play_card_for_hero(hero.hero_index, int(action_request.get("card_uid", -1)), Vector2(action_request.get("target_world_position", game.room_center(room_coord))))
@@ -210,6 +422,9 @@ static func handle_mouse_button(game: Node, event: InputEventMouseButton) -> voi
 		game.mouse_dragging = false
 		return
 	if event.pressed and not game.room_action_menu.is_empty():
+		game.mouse_pressed = true
+		game.mouse_dragging = false
+		game.mouse_press_screen = event.position
 		game.begin_room_action_menu_pointer("mouse", 0, event.position)
 		return
 	if not event.pressed and not game.room_action_menu.is_empty():
@@ -239,10 +454,13 @@ static func handle_mouse_button(game: Node, event: InputEventMouseButton) -> voi
 static func handle_mouse_motion(game: Node, event: InputEventMouseMotion) -> void:
 	if game.update_hand_card_drag("mouse", 0, event.position):
 		return
-	if not game.mouse_pressed or not game.touch_points.is_empty():
+	if not game.touch_points.is_empty():
 		return
 	if not game.room_action_menu.is_empty():
-		game.update_room_action_menu_pointer("mouse", 0, event.position)
+		if game.mouse_pressed:
+			game.update_room_action_menu_pointer("mouse", 0, event.position)
+		return
+	if not game.mouse_pressed:
 		return
 	if not game.room_action_hold.is_empty() and game.room_action_hold["pointer_kind"] == "mouse":
 		game.room_action_hold["current_screen"] = event.position
@@ -391,10 +609,10 @@ static func hero_ready_for_room_action(game: Node, hero: Variant, room_coord: Ve
 static func room_action_staging_position(game: Node, room_coord: Vector2i) -> Vector2:
 	return game.room_walkable_center(room_coord)
 
-static func request_deferred_room_action(game: Node, room_coord: Vector2i, kind: String, module_type: String = "") -> bool:
-	return request_deferred_room_action_for_hero(game, game.selected_hero_index, room_coord, kind, module_type)
+static func request_deferred_room_action(game: Node, room_coord: Vector2i, kind: String, module_type: String = "", extra_request: Dictionary = {}, action_label_override: String = "") -> bool:
+	return request_deferred_room_action_for_hero(game, game.selected_hero_index, room_coord, kind, module_type, extra_request, action_label_override)
 
-static func request_deferred_room_action_for_hero(game: Node, hero_index: int, room_coord: Vector2i, kind: String, module_type: String = "") -> bool:
+static func request_deferred_room_action_for_hero(game: Node, hero_index: int, room_coord: Vector2i, kind: String, module_type: String = "", extra_request: Dictionary = {}, action_label_override: String = "") -> bool:
 	if hero_index < 0 or hero_index >= game.heroes.size():
 		return false
 	var hero: Variant = game.heroes[hero_index]
@@ -403,11 +621,14 @@ static func request_deferred_room_action_for_hero(game: Node, hero_index: int, r
 	clear_pending_room_loot_request(game, hero.hero_index)
 	clear_pending_room_action_request(game, hero.hero_index)
 	var command_room: Vector2i = game.interrupt_hero_orders(hero)
-	game.pending_room_action_requests[hero.hero_index] = {
+	var action_request: Dictionary = {
 		"room": room_coord,
 		"kind": kind,
 		"module_type": module_type,
 	}
+	for extra_key_variant in extra_request.keys():
+		action_request[extra_key_variant] = extra_request[extra_key_variant]
+	game.pending_room_action_requests[hero.hero_index] = action_request
 	var target_position: Vector2 = room_action_staging_position(game, room_coord)
 	if command_room == room_coord:
 		var room_action_path: Array[Vector2i] = [room_coord]
@@ -421,11 +642,13 @@ static func request_deferred_room_action_for_hero(game: Node, hero_index: int, r
 			game.queue_redraw()
 			return false
 		game.issue_hero_steps(hero, game.build_steps_for_path(path, hero.global_position, target_position))
-	var action_label: String = "light %s" % game.room_title(room_coord)
-	if kind == "build":
-		action_label = "build in %s" % game.room_title(room_coord)
-	elif kind == "research":
-		action_label = "research in %s" % game.room_title(room_coord)
+	var action_label: String = action_label_override
+	if action_label == "":
+		action_label = "light %s" % game.room_title(room_coord)
+		if kind == "build":
+			action_label = "build in %s" % game.room_title(room_coord)
+		elif kind == "research":
+			action_label = "research in %s" % game.room_title(room_coord)
 	game.status_message = "%s moving to %s." % [hero.hero_name, action_label]
 	game.update_hud()
 	game.queue_redraw()
@@ -448,27 +671,9 @@ static func request_deferred_room_card_for_hero(game: Node, hero_index: int, roo
 		"target_world_position": target_world_position,
 	}
 	if command_room == room_coord:
-		var current_position_target: Vector2 = game.card_cast_staging_position(room_coord, target_room, game.hand_card_by_uid(hero, card_uid), target_world_position)
-		if current_position_target == Vector2.INF:
-			clear_pending_room_action_request(game, hero.hero_index)
-			game.status_message = "No line of effect to %s." % game.room_title(target_room)
-			game.update_hud()
-			game.queue_redraw()
-			return false
-		if hero.current_room == room_coord and hero.global_position.distance_to(current_position_target) > 22.0:
-			var room_card_path: Array[Vector2i] = [room_coord]
-			game.issue_hero_steps(hero, game.build_steps_for_path(room_card_path, hero.global_position, current_position_target))
-		else:
-			hero.move_steps.clear()
+		hero.move_steps.clear()
 	else:
-		var hand_card: Dictionary = game.hand_card_by_uid(hero, card_uid)
-		var target_position: Vector2 = game.card_cast_staging_position(room_coord, target_room, hand_card, target_world_position)
-		if target_position == Vector2.INF:
-			clear_pending_room_action_request(game, hero.hero_index)
-			game.status_message = "No line of effect to %s." % game.room_title(target_room)
-			game.update_hud()
-			game.queue_redraw()
-			return false
+		var target_position: Vector2 = game.room_action_staging_position(room_coord)
 		var path: Array[Vector2i] = game.find_path(command_room, room_coord, true)
 		if path.size() <= 1:
 			clear_pending_room_action_request(game, hero.hero_index)
@@ -539,10 +744,190 @@ static func request_room_construction_for_hero(game: Node, hero_index: int, room
 		return game.queue_room_construction(room_coord, module_type)
 	return request_deferred_room_action_for_hero(game, hero_index, room_coord, "build", module_type)
 
+static func request_room_merchant_buy(game: Node, room_coord: Vector2i, offer_uid: int) -> bool:
+	return request_room_merchant_buy_for_hero(game, game.selected_hero_index, room_coord, offer_uid)
+
+static func request_room_merchant_buy_for_hero(game: Node, hero_index: int, room_coord: Vector2i, offer_uid: int) -> bool:
+	if hero_index < 0 or hero_index >= game.heroes.size() or not game.rooms.has(room_coord) or not bool(game.rooms[room_coord].get("opened", false)):
+		return false
+	if not GAME_INVENTORY_ITEM_FLOW.room_has_merchant(game, room_coord):
+		return false
+	var hero: Variant = game.heroes[hero_index]
+	if hero == null or not is_instance_valid(hero):
+		return false
+	if game.multiplayer_session_active() and not game.authoritative_simulation_active():
+		game.server_request_room_merchant_action.rpc_id(game.NETWORK_HOST_PEER_ID, hero_index, room_coord, "buy", offer_uid)
+		game.status_message = "%s moving to buy from %s." % [hero.hero_name, game.room_title(room_coord)]
+		game.update_hud()
+		game.queue_redraw()
+		return true
+	if hero_ready_for_room_action(game, hero, room_coord):
+		return execute_room_merchant_buy_for_hero(game, hero, room_coord, offer_uid)
+	return request_deferred_room_action_for_hero(
+		game,
+		hero_index,
+		room_coord,
+		"merchant_buy",
+		"",
+		{"offer_uid": offer_uid},
+		"trade with the merchant in %s" % game.room_title(room_coord)
+	)
+
+static func request_room_merchant_sell(game: Node, room_coord: Vector2i, item_uid: int) -> bool:
+	return request_room_merchant_sell_for_hero(game, game.selected_hero_index, room_coord, item_uid)
+
+static func request_room_merchant_sell_for_hero(game: Node, hero_index: int, room_coord: Vector2i, item_uid: int) -> bool:
+	if hero_index < 0 or hero_index >= game.heroes.size() or not game.rooms.has(room_coord) or not bool(game.rooms[room_coord].get("opened", false)):
+		return false
+	if not GAME_INVENTORY_ITEM_FLOW.room_has_merchant(game, room_coord):
+		return false
+	var hero: Variant = game.heroes[hero_index]
+	if hero == null or not is_instance_valid(hero):
+		return false
+	if game.multiplayer_session_active() and not game.authoritative_simulation_active():
+		game.server_request_room_merchant_action.rpc_id(game.NETWORK_HOST_PEER_ID, hero_index, room_coord, "sell", item_uid)
+		game.status_message = "%s moving to sell in %s." % [hero.hero_name, game.room_title(room_coord)]
+		game.update_hud()
+		game.queue_redraw()
+		return true
+	if hero_ready_for_room_action(game, hero, room_coord):
+		return execute_room_merchant_sell_for_hero(game, hero, room_coord, item_uid)
+	return request_deferred_room_action_for_hero(
+		game,
+		hero_index,
+		room_coord,
+		"merchant_sell",
+		"",
+		{"item_uid": item_uid},
+		"trade with the merchant in %s" % game.room_title(room_coord)
+	)
+
+static func request_room_merchant_buyback(game: Node, room_coord: Vector2i, offer_uid: int) -> bool:
+	return request_room_merchant_buyback_for_hero(game, game.selected_hero_index, room_coord, offer_uid)
+
+static func request_room_merchant_buyback_for_hero(game: Node, hero_index: int, room_coord: Vector2i, offer_uid: int) -> bool:
+	if hero_index < 0 or hero_index >= game.heroes.size() or not game.rooms.has(room_coord) or not bool(game.rooms[room_coord].get("opened", false)):
+		return false
+	if not GAME_INVENTORY_ITEM_FLOW.room_has_merchant(game, room_coord):
+		return false
+	var hero: Variant = game.heroes[hero_index]
+	if hero == null or not is_instance_valid(hero):
+		return false
+	if game.multiplayer_session_active() and not game.authoritative_simulation_active():
+		game.server_request_room_merchant_action.rpc_id(game.NETWORK_HOST_PEER_ID, hero_index, room_coord, "buyback", offer_uid)
+		game.status_message = "%s moving to buy back in %s." % [hero.hero_name, game.room_title(room_coord)]
+		game.update_hud()
+		game.queue_redraw()
+		return true
+	if hero_ready_for_room_action(game, hero, room_coord):
+		return execute_room_merchant_buyback_for_hero(game, hero, room_coord, offer_uid)
+	return request_deferred_room_action_for_hero(
+		game,
+		hero_index,
+		room_coord,
+		"merchant_buyback",
+		"",
+		{"offer_uid": offer_uid},
+		"trade with the merchant in %s" % game.room_title(room_coord)
+	)
+
+static func request_room_resource_trade(game: Node, room_coord: Vector2i, target_hero_index: int, resource_id: String, amount: int = RESOURCE_TRADE_TRANSFER_AMOUNT) -> bool:
+	return request_room_resource_trade_for_hero(game, game.selected_hero_index, room_coord, target_hero_index, resource_id, amount)
+
+static func request_room_resource_trade_for_hero(game: Node, hero_index: int, room_coord: Vector2i, target_hero_index: int, resource_id: String, amount: int = RESOURCE_TRADE_TRANSFER_AMOUNT) -> bool:
+	if hero_index < 0 or hero_index >= game.heroes.size() or not game.rooms.has(room_coord) or not bool(game.rooms[room_coord].get("opened", false)):
+		return false
+	var hero: Variant = game.heroes[hero_index]
+	if hero == null or not is_instance_valid(hero):
+		return false
+	if game.multiplayer_session_active() and not game.authoritative_simulation_active():
+		game.server_request_room_resource_trade.rpc_id(game.NETWORK_HOST_PEER_ID, hero_index, room_coord, target_hero_index, resource_id, amount)
+		game.status_message = "%s moving to trade in %s." % [hero.hero_name, game.room_title(room_coord)]
+		game.update_hud()
+		game.queue_redraw()
+		return true
+	if hero_ready_for_room_action(game, hero, room_coord):
+		return execute_room_resource_trade_for_hero(game, hero, room_coord, target_hero_index, resource_id, amount)
+	return request_deferred_room_action_for_hero(
+		game,
+		hero_index,
+		room_coord,
+		"trade_resource",
+		"",
+		{
+			"target_hero_index": target_hero_index,
+			"resource_id": resource_id,
+			"amount": amount,
+		},
+		"trade resources in %s" % game.room_title(room_coord)
+	)
+
 static func room_action_enabled(game: Node, room_coord: Vector2i, action_id: String) -> bool:
 	var minor_module_type: String = game.minor_module_type_for_action(action_id)
 	if minor_module_type != "":
 		return game.can_open_build_for_room(room_coord) and game.minor_module_unlocked(minor_module_type)
+	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
+		return false
+	var selected_hero: Variant = game.selected_hero()
+	var merchant_here: bool = GAME_INVENTORY_ITEM_FLOW.room_has_merchant(game, room_coord)
+	if merchant_here:
+		GAME_INVENTORY_ITEM_FLOW.ensure_room_merchant_state(game, room_coord)
+	if action_id.begins_with("merchant_buy_offer_"):
+		if not merchant_here:
+			return false
+		if selected_hero == null or not is_instance_valid(selected_hero):
+			return false
+		var offer_uid: int = action_suffix_int(action_id, "merchant_buy_offer_")
+		if offer_uid < 0:
+			return false
+		var room: Dictionary = game.rooms[room_coord]
+		var offer_index: int = room_offer_index_by_uid(room, "merchant_stock", offer_uid)
+		if offer_index < 0:
+			return false
+		var offer: Dictionary = Dictionary(Array(room.get("merchant_stock", []))[offer_index])
+		var item: Dictionary = Dictionary(offer.get("item", {}))
+		var resource_id: String = GAME_INVENTORY_ITEM_FLOW.merchant_resource_id_for_room(game, room_coord)
+		var price: int = int(offer.get("price", GAME_INVENTORY_ITEM_FLOW.merchant_item_full_price(game, item)))
+		if GAME_INVENTORY_ITEM_FLOW.merchant_resource_amount(game, resource_id) < price:
+			return false
+		return game.find_first_inventory_item_anchor(selected_hero, item) != game.INVALID_ROOM
+	if action_id.begins_with("merchant_sell_item_"):
+		if not merchant_here or selected_hero == null or not is_instance_valid(selected_hero):
+			return false
+		var item_uid: int = action_suffix_int(action_id, "merchant_sell_item_")
+		return hero_inventory_item_index_by_uid(selected_hero, item_uid) >= 0
+	if action_id.begins_with("merchant_buyback_offer_"):
+		if not merchant_here or selected_hero == null or not is_instance_valid(selected_hero):
+			return false
+		var offer_uid_buyback: int = action_suffix_int(action_id, "merchant_buyback_offer_")
+		if offer_uid_buyback < 0:
+			return false
+		var room_buyback: Dictionary = game.rooms[room_coord]
+		var offer_index_buyback: int = room_offer_index_by_uid(room_buyback, "merchant_buyback", offer_uid_buyback)
+		if offer_index_buyback < 0:
+			return false
+		var offer_buyback: Dictionary = Dictionary(Array(room_buyback.get("merchant_buyback", []))[offer_index_buyback])
+		var item_buyback: Dictionary = Dictionary(offer_buyback.get("item", {}))
+		var resource_id_buyback: String = GAME_INVENTORY_ITEM_FLOW.merchant_resource_id_for_room(game, room_coord)
+		var price_buyback: int = int(offer_buyback.get("price", GAME_INVENTORY_ITEM_FLOW.merchant_item_full_price(game, item_buyback)))
+		if GAME_INVENTORY_ITEM_FLOW.merchant_resource_amount(game, resource_id_buyback) < price_buyback:
+			return false
+		return game.find_first_inventory_item_anchor(selected_hero, item_buyback) != game.INVALID_ROOM
+	if action_id.begins_with("trade_target_"):
+		if selected_hero == null or not is_instance_valid(selected_hero):
+			return false
+		var target_hero_index: int = action_suffix_int(action_id, "trade_target_")
+		if target_hero_index < 0 or target_hero_index >= game.heroes.size() or target_hero_index == int(selected_hero.hero_index):
+			return false
+		var target_hero: Variant = game.heroes[target_hero_index]
+		if target_hero == null or not is_instance_valid(target_hero):
+			return false
+		return target_hero.current_room == room_coord
+	if action_id.begins_with("trade_resource_") and action_id != "trade_resource_back":
+		var resource_id_trade: String = action_id.trim_prefix("trade_resource_")
+		if resource_id_trade != "food" and resource_id_trade != "industry" and resource_id_trade != "science" and resource_id_trade != "dust":
+			return false
+		return GAME_INVENTORY_ITEM_FLOW.merchant_resource_amount(game, resource_id_trade) > 0
 	match action_id:
 		"light":
 			return game.can_toggle_light(room_coord)
@@ -558,6 +943,12 @@ static func room_action_enabled(game: Node, room_coord: Vector2i, action_id: Str
 			return game.can_build_or_repair_major(room_coord, game.MAJOR_MODULE_INDUSTRY)
 		"submenu_back", "submenu_back_build":
 			return true
+		"merchant_menu":
+			return merchant_here
+		"merchant_buy_menu", "merchant_sell_menu", "merchant_buyback_menu", "merchant_back", "merchant_page_prev", "merchant_page_next", "merchant_none":
+			return merchant_here
+		"trade_menu", "trade_back", "trade_resource_back", "trade_none":
+			return selected_hero != null and is_instance_valid(selected_hero)
 		"loot":
 			return game.rooms.has(room_coord) and game.rooms[room_coord]["opened"]
 		_:

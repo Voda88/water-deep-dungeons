@@ -10,7 +10,6 @@ static func hero_level_stat_bonuses(_game: Node, level_value: int) -> Dictionary
 		"health": float(earned_levels) * 8.0,
 		"attack": float(earned_levels) * 2.0,
 		"speed": float(earned_levels) * 10.0,
-		"stamina": float(earned_levels) * 0.5,
 	}
 
 static func hero_spell_slot_capacity(game: Node, hero: Variant) -> int:
@@ -125,10 +124,9 @@ static func build_level_up_reward_lines(game: Node, hero: Variant) -> Array[Stri
 	var health_gain: int = int(round(float(next_bonus.get("health", 0.0)) - float(current_bonus.get("health", 0.0))))
 	var attack_gain: int = int(round(float(next_bonus.get("attack", 0.0)) - float(current_bonus.get("attack", 0.0))))
 	var speed_gain: int = int(round(float(next_bonus.get("speed", 0.0)) - float(current_bonus.get("speed", 0.0))))
-	var stamina_gain: float = float(next_bonus.get("stamina", 0.0)) - float(current_bonus.get("stamina", 0.0))
 	var next_pack_size: Vector2i = hero_next_pack_size(game, hero)
 	var unlock_names: Array[String] = hero_next_level_unlock_names(game, hero)
-	reward_lines.append("Stats +%d hp  +%d dmg  +%d spd  +%.1f sta" % [health_gain, attack_gain, speed_gain, stamina_gain])
+	reward_lines.append("Stats +%d hp  +%d dmg  +%d spd" % [health_gain, attack_gain, speed_gain])
 	reward_lines.append("Pack %dx%d inventory module" % [next_pack_size.x, next_pack_size.y])
 	if unlock_names.is_empty():
 		reward_lines.append("Passive ability: none this level")
@@ -177,8 +175,7 @@ static func build_inventory_stat_lines(game: Node, hero: Variant, items: Array) 
 	stat_lines.append("Damage %d" % int(round(hero.base_attack_damage + float(level_bonuses.get("attack", 0.0)) + float(bonuses["attack"]))))
 	stat_lines.append("Health %d" % int(round(hero.base_max_health + float(level_bonuses.get("health", 0.0)) + float(bonuses["health"]))))
 	stat_lines.append("Speed %d" % int(round(hero.base_move_speed + float(level_bonuses.get("speed", 0.0)) + float(bonuses["speed"]))))
-	stat_lines.append("Stamina %d" % int(round(hero.base_max_stamina + float(level_bonuses.get("stamina", 0.0)) + float(bonuses.get("stamina", 0.0)))))
-	stat_lines.append("Hand %d" % maxi(1, hero.base_max_hand_size + int(bonuses.get("hand_size", 0))))
+	stat_lines.append("Hand inf")
 	stat_lines.append("Synergies %d" % int(bonuses["synergies"]))
 	stat_lines.append("Space %d/%d" % [used_cells, game.inventory_capacity(hero.pack_modules)])
 	return stat_lines
@@ -188,8 +185,8 @@ static func format_ability_metric(_game: Node, value: float) -> String:
 		return str(int(round(value)))
 	return "%.1f" % value
 
-static func ability_detail_text(game: Node, cooldown: float, power_text: String, stamina_cost: float, extra_text: String = "") -> String:
-	var detail: String = "CD %ss  Pow %s  Sta %s" % [format_ability_metric(game, cooldown), power_text, format_ability_metric(game, stamina_cost)]
+static func ability_detail_text(game: Node, cooldown: float, power_text: String, _stamina_cost: float, extra_text: String = "") -> String:
+	var detail: String = "CD %ss  Pow %s" % [format_ability_metric(game, cooldown), power_text]
 	if extra_text != "":
 		detail += "  %s" % extra_text
 	return detail
@@ -270,7 +267,7 @@ static func apply_inventory_stats_to_hero(game: Node, hero: Variant) -> void:
 		float(level_bonuses.get("speed", 0.0)) + float(bonuses["speed"]),
 		float(level_bonuses.get("health", 0.0)) + float(bonuses["health"]),
 		float(level_bonuses.get("attack", 0.0)) + float(bonuses["attack"]),
-		float(level_bonuses.get("stamina", 0.0)) + float(bonuses.get("stamina", 0.0)),
+		0.0,
 		int(bonuses.get("hand_size", 0)),
 		int(bonuses["synergies"])
 	)

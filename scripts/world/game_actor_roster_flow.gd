@@ -39,6 +39,8 @@ static func spawn_heroes(game: Node) -> void:
 		game.apply_inventory_stats_to_hero(hero)
 		if bool(game.hero_profiles[hero_index].get("dead", false)):
 			hero.set_permanently_dead_hidden()
+		else:
+			hero.restore_health()
 		game.heroes.append(hero)
 	if game.selected_hero_index >= game.heroes.size():
 		game.selected_hero_index = 0

@@ -2,6 +2,7 @@ extends RefCounted
 
 const GAME_DUNGEON_BUILDER: GDScript = preload("res://scripts/world/rooms/game_dungeon_builder.gd")
 const GAME_INVENTORY_ITEM_FLOW: GDScript = preload("res://scripts/world/inventory/game_inventory_item_flow.gd")
+const SCORCHING_RAY_EFFECT_DURATION: float = 0.5
 
 static func hero_hand_card_index(_game: Node, hero: Variant, card_uid: int) -> int:
 	if hero == null or not is_instance_valid(hero):
@@ -22,7 +23,21 @@ static func hero_hand_card_index_by_id(_game: Node, hero: Variant, card_id: Stri
 static func card_supports_reaction(_game: Node, hand_card: Dictionary) -> bool:
 	return String(hand_card.get("reaction_trigger", "")) != ""
 
-static func play_reaction_card_for_hero_at_index(game: Node, hero: Variant, hand_index: int) -> bool:
+static func reaction_nonrenewable_cost(hand_card: Dictionary) -> int:
+	return maxi(0, int(hand_card.get("food_cost", 0))) + maxi(0, int(hand_card.get("arcana_cost", hand_card.get("science_cost", 0)))) + maxi(0, int(hand_card.get("material_cost", hand_card.get("industry_cost", 0))))
+
+static func reaction_consumes_source(hand_card: Dictionary) -> bool:
+	return bool(hand_card.get("consume_item_on_play", false)) or int(hand_card.get("consume_item_charges_on_play", 0)) > 0
+
+static func reaction_priority_value(hand_card: Dictionary) -> int:
+	var card_id: String = String(hand_card.get("card_id", ""))
+	if card_id == "ration_meal_card":
+		return maxi(int(hand_card.get("reaction_priority", 0)), 30)
+	if card_id == "emergency_snack_card":
+		return mini(int(hand_card.get("reaction_priority", 0)), 0)
+	return int(hand_card.get("reaction_priority", 0))
+
+static func play_reaction_card_for_hero_at_index(game: Node, hero: Variant, hand_index: int, trigger_id: String = "") -> bool:
 	if hero == null or not is_instance_valid(hero) or hand_index < 0 or hand_index >= hero.hand_cards.size():
 		return false
 	var hand_card: Dictionary = (hero.hand_cards[hand_index] as Dictionary).duplicate(true)
@@ -32,6 +47,7 @@ static func play_reaction_card_for_hero_at_index(game: Node, hero: Variant, hand
 		"hero": hero,
 		"room": hero.current_room,
 		"world_position": hero.global_position,
+		"reaction_trigger": trigger_id,
 	}
 	if not game.apply_hand_card_effect(hero, hand_card, target_data):
 		return false
@@ -42,28 +58,148 @@ static func play_reaction_card_for_hero_at_index(game: Node, hero: Variant, hand
 	game.cleanup_global_item_card_states()
 	return true
 
-static func trigger_first_reaction_card(game: Node, hero: Variant, trigger_id: String) -> bool:
+static func first_reaction_card_index_for_trigger(game: Node, hero: Variant, trigger_id: String) -> int:
 	if hero == null or not is_instance_valid(hero) or trigger_id == "":
-		return false
+		return -1
+	var best_index: int = -1
+	var best_nonrenewable_penalty: int = 2
+	var best_consumes_source_penalty: int = 2
+	var best_priority: int = -999999
+	var best_nonrenewable_cost: int = 999999
 	for hand_index in range(hero.hand_cards.size()):
 		var hand_card: Dictionary = hero.hand_cards[hand_index]
 		if String(hand_card.get("reaction_trigger", "")) != trigger_id or not bool(hand_card.get("reaction_enabled", false)):
 			continue
-		if play_reaction_card_for_hero_at_index(game, hero, hand_index):
-			return true
-	return false
+		if trigger_id == "stamina_negative" and String(hand_card.get("card_id", "")) == "emergency_snack_card":
+			continue
+		if not game.hand_card_phase_allows_play(hand_card):
+			continue
+		var nonrenewable_cost: int = reaction_nonrenewable_cost(hand_card)
+		var nonrenewable_penalty: int = 1 if nonrenewable_cost > 0 else 0
+		var consumes_source_penalty: int = 1 if reaction_consumes_source(hand_card) else 0
+		var priority_value: int = reaction_priority_value(hand_card)
+		if best_index < 0 \
+		or nonrenewable_penalty < best_nonrenewable_penalty \
+		or (nonrenewable_penalty == best_nonrenewable_penalty and consumes_source_penalty < best_consumes_source_penalty) \
+		or (nonrenewable_penalty == best_nonrenewable_penalty and consumes_source_penalty == best_consumes_source_penalty and priority_value > best_priority) \
+		or (nonrenewable_penalty == best_nonrenewable_penalty and consumes_source_penalty == best_consumes_source_penalty and priority_value == best_priority and nonrenewable_cost < best_nonrenewable_cost):
+			best_index = hand_index
+			best_nonrenewable_penalty = nonrenewable_penalty
+			best_consumes_source_penalty = consumes_source_penalty
+			best_priority = priority_value
+			best_nonrenewable_cost = nonrenewable_cost
+	return best_index
+
+static func trigger_first_reaction_card(game: Node, hero: Variant, trigger_id: String) -> bool:
+	var hand_index: int = first_reaction_card_index_for_trigger(game, hero, trigger_id)
+	if hand_index < 0:
+		return false
+	return play_reaction_card_for_hero_at_index(game, hero, hand_index, trigger_id)
 
 static func spend_hero_stamina_with_reactions(game: Node, hero: Variant, amount: float) -> bool:
-	if amount > 0.0 and not game.stamina_use_enabled:
-		return false
 	if hero == null or not is_instance_valid(hero):
 		return false
-	var previous_stamina: float = hero.stamina
-	if not hero.spend_stamina(amount):
-		return false
-	if previous_stamina >= -0.001 and hero.stamina < -0.001:
-		trigger_first_reaction_card(game, hero, "stamina_negative")
+	# Stamina is no longer a gameplay gate for card use.
 	return true
+
+static func cooldown_level_for_generator(game: Node, generator: Dictionary, card_def: Dictionary) -> int:
+	var spell_level: int = maxi(0, int(card_def.get("spell_level", 0)))
+	if spell_level > 0:
+		return spell_level
+	var item_level: int = maxi(0, int(generator.get("item_level", 0)))
+	if item_level > 0:
+		return item_level
+	var item_id: String = String(generator.get("item_id", ""))
+	if item_id != "":
+		item_level = int(game.item_defs.get(item_id, {}).get("item_level", 1))
+	return maxi(1, item_level)
+
+static func collect_resettable_cooldowns(game: Node, hero: Variant) -> Array:
+	var entries: Array = []
+	if hero == null or not is_instance_valid(hero):
+		return entries
+	var effect_summary: Dictionary = game.inventory_effect_summary(hero.inventory_items)
+	var resolved_generators: Array = Array(effect_summary.get("card_generators", [])).duplicate(true)
+	for spell_generator_variant in game.spellbook_card_generators(hero, effect_summary):
+		resolved_generators.append((spell_generator_variant as Dictionary).duplicate(true))
+	var generators_by_key: Dictionary = {}
+	for generator_variant in resolved_generators:
+		var generator: Dictionary = Dictionary(generator_variant).duplicate(true)
+		generators_by_key[game.resolve_generator_key(generator)] = generator
+	for state_key_variant in game.global_item_card_states.keys():
+		var state_key: String = String(state_key_variant)
+		if not generators_by_key.has(state_key):
+			continue
+		var generator_for_key: Dictionary = Dictionary(generators_by_key[state_key]).duplicate(true)
+		var state: Dictionary = Dictionary(game.global_item_card_states.get(state_key, {})).duplicate(true)
+		if String(state.get("generation_mode", game.resolve_card_generator_mode(generator_for_key))) != "door_interval":
+			continue
+		var card_def: Dictionary = game.card_definition(String(generator_for_key.get("card_id", "")))
+		var max_stored_cards: int = maxi(1, game.generator_max_stored_cards(generator_for_key, card_def))
+		var stored_cards: int = game.hero_hand_card_count_for_generator_key(hero, state_key) + int(state.get("queued_cards", 0))
+		if stored_cards >= max_stored_cards:
+			continue
+		var remaining_doors: int = maxi(0, int(state.get("remaining_doors", 0)))
+		if remaining_doors <= 0:
+			continue
+		entries.append({
+			"key": state_key,
+			"state": state,
+			"generator": generator_for_key,
+			"remaining_doors": remaining_doors,
+			"cooldown_level": cooldown_level_for_generator(game, generator_for_key, card_def),
+		})
+	return entries
+
+static func try_reset_cooldowns_with_arcana(game: Node, hero: Variant) -> Dictionary:
+	var result: Dictionary = {
+		"success": false,
+		"reason": "no_cooldowns",
+		"required_arcana": 0,
+		"total_cost": 0,
+		"refreshed_cards": 0,
+		"reduced_turns": 0,
+	}
+	var cooldown_entries: Array = collect_resettable_cooldowns(game, hero)
+	if cooldown_entries.is_empty():
+		return result
+	var total_cost: int = 0
+	for entry_variant in cooldown_entries:
+		var entry: Dictionary = entry_variant
+		total_cost += int(entry.get("remaining_doors", 0)) * maxi(1, int(entry.get("cooldown_level", 1))) * game.ARCANA_RESET_COST_PER_LEVEL_PER_TURN
+	result["required_arcana"] = total_cost
+	if total_cost <= 0:
+		return result
+	if game.science < total_cost:
+		result["reason"] = "not_enough_arcana"
+		return result
+	game.science -= total_cost
+	var refreshed_cards: int = 0
+	var reduced_turns: int = 0
+	for entry_variant in cooldown_entries:
+		var entry: Dictionary = entry_variant
+		var key: String = String(entry.get("key", ""))
+		if key == "":
+			continue
+		var state: Dictionary = Dictionary(entry.get("state", {})).duplicate(true)
+		var generator: Dictionary = Dictionary(entry.get("generator", {})).duplicate(true)
+		var card_def: Dictionary = game.card_definition(String(generator.get("card_id", "")))
+		var max_stored_cards: int = maxi(1, game.generator_max_stored_cards(generator, card_def))
+		var hand_count: int = game.hero_hand_card_count_for_generator_key(hero, key)
+		var queue_target: int = maxi(0, max_stored_cards - hand_count)
+		state["queued_cards"] = maxi(int(state.get("queued_cards", 0)), queue_target)
+		state["remaining_doors"] = maxi(1, int(state.get("interval", state.get("remaining_doors", 1))))
+		game.global_item_card_states[key] = state
+		refreshed_cards += 1
+		reduced_turns += int(entry.get("remaining_doors", 0))
+	game.fill_queued_hand_cards(hero)
+	game.cleanup_global_item_card_states()
+	result["success"] = true
+	result["reason"] = ""
+	result["total_cost"] = total_cost
+	result["refreshed_cards"] = refreshed_cards
+	result["reduced_turns"] = reduced_turns
+	return result
 
 static func projected_hero_damage_after_barrier(_game: Node, hero: Variant, amount: float) -> float:
 	if hero == null or not is_instance_valid(hero):
@@ -88,7 +224,10 @@ static func commit_hand_state(game: Node, hero_index: int, hand_state: Array) ->
 			continue
 		var rebuilt_card: Dictionary = (cards_by_uid[card_uid] as Dictionary).duplicate(true)
 		if card_supports_reaction(game, rebuilt_card):
-			rebuilt_card["reaction_enabled"] = bool(state.get("reaction_enabled", rebuilt_card.get("reaction_enabled", false)))
+			var reaction_enabled: bool = bool(state.get("reaction_enabled", rebuilt_card.get("reaction_enabled", false)))
+			rebuilt_card["reaction_enabled"] = reaction_enabled
+			if hero.has_method("set_reaction_card_preference"):
+				hero.set_reaction_card_preference(String(rebuilt_card.get("generator_key", "")), String(rebuilt_card.get("card_id", "")), reaction_enabled)
 		rebuilt_hand.append(rebuilt_card)
 		cards_by_uid.erase(card_uid)
 	for remaining_card_variant in hero.hand_cards:
@@ -120,6 +259,8 @@ static func toggle_hand_card_reaction(game: Node, hero: Variant, hand_index: int
 	if not card_supports_reaction(game, hand_card):
 		return false
 	hand_card["reaction_enabled"] = not bool(hand_card.get("reaction_enabled", false))
+	if hero.has_method("set_reaction_card_preference"):
+		hero.set_reaction_card_preference(String(hand_card.get("generator_key", "")), String(hand_card.get("card_id", "")), bool(hand_card.get("reaction_enabled", false)))
 	hero.hand_cards[hand_index] = hand_card
 	return true
 
@@ -296,6 +437,65 @@ static func card_cast_candidate_rooms(game: Node, target_room: Vector2i, hand_ca
 static func room_has_neighbor(game: Node, room_coord: Vector2i, neighbor: Vector2i) -> bool:
 	return game.rooms.has(room_coord) and Array(game.rooms[room_coord].get("neighbors", [])).has(neighbor)
 
+static func card_requires_adjacent_room_target(_game: Node, hand_card: Dictionary) -> bool:
+	return bool(hand_card.get("requires_adjacent_room_target", false))
+
+static func evasive_roll_origin_room(game: Node, hero: Variant) -> Vector2i:
+	if hero == null or not is_instance_valid(hero):
+		return game.INVALID_ROOM
+	var world_room: Vector2i = game.room_at_world_position(hero.global_position)
+	if world_room != game.INVALID_ROOM and game.rooms.has(world_room):
+		return world_room
+	if hero.current_room != game.INVALID_ROOM and game.rooms.has(hero.current_room):
+		return hero.current_room
+	var command_room: Vector2i = game.active_hero_room_for_commands(hero)
+	if command_room != game.INVALID_ROOM and game.rooms.has(command_room):
+		return command_room
+	return game.INVALID_ROOM
+
+static func adjacent_target_valid_for_card(game: Node, hero: Variant, hand_card: Dictionary, target_room: Vector2i) -> bool:
+	if not card_requires_adjacent_room_target(game, hand_card):
+		return true
+	if hero == null or not is_instance_valid(hero) or target_room == game.INVALID_ROOM or not game.rooms.has(target_room):
+		return false
+	var cast_room: Vector2i = game.active_hero_room_for_commands(hero)
+	var card_id: String = String(hand_card.get("card_id", ""))
+	if card_id == "evasive_roll_card" or card_id == "whirling_blade_card":
+		cast_room = evasive_roll_origin_room(game, hero)
+	if cast_room == game.INVALID_ROOM or not game.rooms.has(cast_room):
+		cast_room = hero.current_room
+	if card_id == "whirling_blade_card" and cast_room == target_room:
+		return true
+	return room_has_neighbor(game, cast_room, target_room)
+
+static func misty_step_escape_room_toward_crystal(game: Node, hero: Variant) -> Vector2i:
+	if hero == null or not is_instance_valid(hero):
+		return game.INVALID_ROOM
+	var origin_room: Vector2i = hero.current_room
+	if origin_room == game.INVALID_ROOM or not game.rooms.has(origin_room):
+		return game.INVALID_ROOM
+	var best_room: Vector2i = origin_room
+	var best_distance: int = game.room_path_distance(origin_room, game.crystal_room)
+	for neighbor_variant in Array(game.rooms[origin_room].get("neighbors", [])):
+		var neighbor_room: Vector2i = neighbor_variant
+		if not game.rooms.has(neighbor_room) or not bool(game.rooms[neighbor_room].get("opened", false)):
+			continue
+		var distance_to_crystal: int = game.room_path_distance(neighbor_room, game.crystal_room)
+		if distance_to_crystal < best_distance:
+			best_distance = distance_to_crystal
+			best_room = neighbor_room
+	return best_room
+
+static func travel_distance_for_steps(start_position: Vector2, steps: Array) -> float:
+	var total_distance: float = 0.0
+	var previous_position: Vector2 = start_position
+	for step_variant in steps:
+		var step: Dictionary = step_variant
+		var step_position: Vector2 = Vector2(step.get("position", previous_position))
+		total_distance += previous_position.distance_to(step_position)
+		previous_position = step_position
+	return total_distance
+
 static func room_interior_rect(game: Node, room_coord: Vector2i, margin: float = 24.0) -> Rect2:
 	var walkable_regions: Array = game.room_walkable_regions(room_coord, margin)
 	if walkable_regions.is_empty():
@@ -341,14 +541,7 @@ static func cross_room_card_cast_staging_position(game: Node, cast_room: Vector2
 static func card_cast_staging_position(game: Node, cast_room: Vector2i, target_room: Vector2i, hand_card: Dictionary, target_world_position: Vector2 = Vector2.INF) -> Vector2:
 	if cast_room == game.INVALID_ROOM or not game.rooms.has(cast_room):
 		return Vector2.INF
-	if not bool(hand_card.get("requires_line_of_effect", false)):
-		return game.room_action_staging_position(cast_room)
-	if target_room == game.INVALID_ROOM or cast_room == target_room:
-		return game.room_action_staging_position(cast_room)
-	var resolved_target: Vector2 = target_world_position
-	if resolved_target == Vector2.INF:
-		resolved_target = game.room_walkable_center(target_room)
-	return cross_room_card_cast_staging_position(game, cast_room, target_room, resolved_target)
+	return game.room_action_staging_position(cast_room)
 
 static func card_can_cast_to_adjacent_room_from_anywhere(game: Node, cast_room: Vector2i, target_room: Vector2i, hand_card: Dictionary) -> bool:
 	if not bool(hand_card.get("adjacent_cast_anywhere", false)):
@@ -358,27 +551,12 @@ static func card_can_cast_to_adjacent_room_from_anywhere(game: Node, cast_room: 
 	return cast_room == target_room or room_has_neighbor(game, cast_room, target_room)
 
 static func card_cast_has_line_of_effect(game: Node, cast_room: Vector2i, target_room: Vector2i, hand_card: Dictionary, target_world_position: Vector2) -> bool:
-	if not bool(hand_card.get("requires_line_of_effect", false)):
-		return true
-	if cast_room == game.INVALID_ROOM or target_room == game.INVALID_ROOM or not game.rooms.has(cast_room) or not game.rooms.has(target_room):
-		return false
-	if card_can_cast_to_adjacent_room_from_anywhere(game, cast_room, target_room, hand_card):
-		return true
-	if cast_room == target_room:
-		return game.room_walkable_contains_point(target_room, game.clamp_point_to_room(target_world_position, target_room), 10.0)
-	return card_cast_staging_position(game, cast_room, target_room, hand_card, target_world_position) != Vector2.INF
+	return cast_room != game.INVALID_ROOM and target_room != game.INVALID_ROOM and game.rooms.has(cast_room) and game.rooms.has(target_room)
 
 static func hero_ready_for_card_cast(game: Node, hero: Variant, cast_room: Vector2i, target_room: Vector2i, hand_card: Dictionary, target_world_position: Vector2 = Vector2.INF) -> bool:
 	if not game.hero_ready_for_room_action(hero, cast_room):
 		return false
-	if not bool(hand_card.get("requires_line_of_effect", false)):
-		return true
-	if card_can_cast_to_adjacent_room_from_anywhere(game, cast_room, target_room, hand_card):
-		return true
-	if cast_room == target_room or target_room == game.INVALID_ROOM:
-		return true
-	var staging_position: Vector2 = card_cast_staging_position(game, cast_room, target_room, hand_card, target_world_position)
-	return staging_position != Vector2.INF and hero.global_position.distance_to(staging_position) <= 22.0
+	return true
 
 static func best_card_cast_room(game: Node, from_room: Vector2i, target_room: Vector2i, hand_card: Dictionary, target_world_position: Vector2) -> Vector2i:
 	if card_can_cast_to_adjacent_room_from_anywhere(game, from_room, target_room, hand_card):
@@ -386,12 +564,12 @@ static func best_card_cast_room(game: Node, from_room: Vector2i, target_room: Ve
 	var candidates: Array[Vector2i] = card_cast_candidate_rooms(game, target_room, hand_card)
 	if candidates.is_empty():
 		return game.INVALID_ROOM
+	if candidates.has(from_room):
+		return from_room
 	var best_room: Vector2i = game.INVALID_ROOM
 	var best_path_size: int = 999999
 	var best_target_distance: int = 999999
 	for candidate in candidates:
-		if bool(hand_card.get("requires_line_of_effect", false)) and not card_cast_has_line_of_effect(game, candidate, target_room, hand_card, target_world_position):
-			continue
 		var path_size: int = 1
 		if candidate != from_room:
 			var path: Array[Vector2i] = game.find_path(from_room, candidate, true)
@@ -406,7 +584,11 @@ static func best_card_cast_room(game: Node, from_room: Vector2i, target_room: Ve
 	return best_room
 
 static func card_target_is_valid(game: Node, hero: Variant, hand_card: Dictionary, target_world_position: Vector2) -> bool:
-	return not resolve_card_target(game, hero, hand_card, target_world_position).is_empty()
+	var target_data: Dictionary = resolve_card_target(game, hero, hand_card, target_world_position)
+	if target_data.is_empty():
+		return false
+	var target_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
+	return adjacent_target_valid_for_card(game, hero, hand_card, target_room)
 
 static func hand_card_starts_spell_study(game: Node, hero: Variant, hand_card: Dictionary, target_data: Dictionary) -> bool:
 	if hero == null or not is_instance_valid(hero) or game.wave_in_progress():
@@ -460,11 +642,72 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			game.status_message = "%s invoked Light." % hero.hero_name
 			return true
 		"misty_step_card":
+			var reaction_trigger: String = String(target_data.get("reaction_trigger", ""))
+			if reaction_trigger == "fatal_damage":
+				var crystalward_room: Vector2i = misty_step_escape_room_toward_crystal(game, hero)
+				if crystalward_room == game.INVALID_ROOM or not game.rooms.has(crystalward_room):
+					return false
+				var crystalward_landing: Vector2 = game.room_walkable_center(crystalward_room)
+				cast_misty_step_spell(game, hero, crystalward_landing, crystalward_room, hand_card)
+				game.status_message = "%s reflexively stepped toward the crystal." % hero.hero_name
+				return true
 			var teleport_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
 			if teleport_room == game.INVALID_ROOM or not game.rooms.has(teleport_room):
 				return false
+			if not adjacent_target_valid_for_card(game, hero, hand_card, teleport_room):
+				game.status_message = "Misty Step needs an adjacent opened room."
+				return false
 			cast_misty_step_spell(game, hero, target_world_position, teleport_room, hand_card)
 			game.status_message = "%s cast Misty Step." % hero.hero_name
+			return true
+		"evasive_roll_card":
+			if not game.wave_in_progress():
+				game.status_message = "Evasive Roll can only be played in combat."
+				return false
+			var roll_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
+			if roll_room == game.INVALID_ROOM or not game.rooms.has(roll_room):
+				return false
+			if not adjacent_target_valid_for_card(game, hero, hand_card, roll_room):
+				game.status_message = "Evasive Roll needs an adjacent opened room."
+				return false
+			if not cast_evasive_roll(game, hero, target_world_position, roll_room, hand_card):
+				return false
+			game.status_message = "%s rolled into %s." % [hero.hero_name, game.room_title(roll_room)]
+			return true
+		"speed_dash_card":
+			if not game.wave_in_progress():
+				game.status_message = "Speed Dash can only be played in combat."
+				return false
+			var dash_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
+			if dash_room == game.INVALID_ROOM or not game.rooms.has(dash_room):
+				return false
+			if not cast_speed_dash(game, hero, target_world_position, dash_room, hand_card):
+				return false
+			game.status_message = "%s dashed to %s and stayed accelerated." % [hero.hero_name, game.room_title(dash_room)]
+			return true
+		"whirling_blade_card":
+			if not game.wave_in_progress():
+				game.status_message = "Whirling Blade can only be played in combat."
+				return false
+			var blade_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
+			if blade_room == game.INVALID_ROOM or not game.rooms.has(blade_room):
+				return false
+			if not adjacent_target_valid_for_card(game, hero, hand_card, blade_room):
+				game.status_message = "Whirling Blade needs an adjacent opened room."
+				return false
+			if not cast_whirling_blade(game, hero, target_world_position, blade_room, hand_card):
+				return false
+			game.status_message = "%s carved through to %s." % [hero.hero_name, game.room_title(blade_room)]
+			return true
+		"shield_bash_card":
+			if not game.wave_in_progress():
+				game.status_message = "Shield Bash can only be played in combat."
+				return false
+			var bash_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
+			if bash_room == game.INVALID_ROOM or not game.rooms.has(bash_room):
+				return false
+			if not cast_shield_bash(game, hero, target_world_position, bash_room, hand_card):
+				return false
 			return true
 		"web_card":
 			var web_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
@@ -549,6 +792,20 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			append_timed_effect_projectile(game, "priest_heal_effect", target_hero_mend.global_position + Vector2(0.0, -10.0), Color("9fe6b0"), 0.58, 0.58)
 			game.status_message = "%s restored %s." % [hero.hero_name, target_hero_mend.hero_name]
 			return true
+		"arcane_reset_card":
+			var reset_result: Dictionary = try_reset_cooldowns_with_arcana(game, hero)
+			if not bool(reset_result.get("success", false)):
+				if String(reset_result.get("reason", "")) == "not_enough_arcana":
+					game.status_message = "Need %d arcana to reset cooldowns." % int(reset_result.get("required_arcana", 0))
+				else:
+					game.status_message = "No cooldowns are currently waiting."
+				return false
+			hero.trigger_attack(hero.global_position + Vector2(0.0, -16.0), "laser")
+			append_timed_effect_projectile(game, "shield_flash", hero.global_position, Color(hand_card.get("color", Color("8bc1ff"))), 0.24, 0.24)
+			var refresh_count: int = int(reset_result.get("refreshed_cards", 0))
+			var spent_arcana: int = int(reset_result.get("total_cost", 0))
+			game.status_message = "%s spent %d arcana to refresh %d cooldown%s." % [hero.hero_name, spent_arcana, refresh_count, "" if refresh_count == 1 else "s"]
+			return true
 		"emergency_snack_card":
 			var snack_target: Variant = target_data.get("hero", hero)
 			if snack_target == null or not is_instance_valid(snack_target):
@@ -557,35 +814,33 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			if game.food < food_cost:
 				game.status_message = "Not enough food for %s." % String(hand_card.get("name", "that card"))
 				return false
+			var previous_snack_health: float = snack_target.current_health
+			var heal_percent: float = clampf(float(hand_card.get("heal_percent", 0.4)), 0.0, 1.0)
+			var heal_amount: float = maxf(snack_target.max_health * heal_percent, 1.0)
+			snack_target.heal(heal_amount)
+			if snack_target.current_health <= previous_snack_health + 0.001:
+				game.status_message = "%s does not need an emergency snack right now." % snack_target.hero_name
+				return false
 			game.food -= food_cost
-			snack_target.restore_health()
-			snack_target.refill_stamina()
 			snack_target.combo_points = 0
-			snack_target.clear_stamina_regen_buff()
 			hero.trigger_attack(snack_target.global_position, "laser")
-			game.status_message = "%s used an emergency snack." % snack_target.hero_name
+			var healed_amount: int = int(round(maxf(snack_target.current_health - previous_snack_health, 0.0)))
+			game.status_message = "%s used an emergency snack (+%d HP)." % [snack_target.hero_name, healed_amount]
 			return true
 		"ration_meal_card":
 			var ration_target: Variant = target_data.get("hero", hero)
 			if ration_target == null or not is_instance_valid(ration_target):
 				return false
 			var previous_ration_health: float = ration_target.current_health
-			var previous_ration_stamina: float = ration_target.stamina
-			var previous_regen_time_left: float = ration_target.stamina_regen_time_left
-			if bool(hand_card.get("heal_full", false)):
-				ration_target.restore_health()
-			else:
-				ration_target.heal(float(hand_card.get("heal_amount", 0.0)))
-			if bool(hand_card.get("restore_stamina_full", false)):
-				ration_target.refill_stamina()
-			else:
-				ration_target.restore_stamina(float(hand_card.get("stamina_restore", 0.0)))
-			ration_target.apply_stamina_regen_buff(float(hand_card.get("stamina_regen_rate", 0.0)), float(hand_card.get("stamina_regen_duration", 0.0)))
+			var ration_heal_percent: float = clampf(float(hand_card.get("heal_percent", 0.4)), 0.0, 1.0)
+			var ration_heal_amount: float = maxf(ration_target.max_health * ration_heal_percent, 1.0)
+			ration_target.heal(ration_heal_amount)
 			hero.trigger_attack(ration_target.global_position, "laser")
-			if ration_target.current_health <= previous_ration_health + 0.001 and ration_target.stamina <= previous_ration_stamina + 0.001 and ration_target.stamina_regen_time_left <= previous_regen_time_left + 0.001:
+			if ration_target.current_health <= previous_ration_health + 0.001:
 				game.status_message = "%s does not need a ration right now." % ration_target.hero_name
 				return false
-			game.status_message = "%s ate a ration." % ration_target.hero_name
+			var ration_healed: int = int(round(maxf(ration_target.current_health - previous_ration_health, 0.0)))
+			game.status_message = "%s ate a ration (+%d HP)." % [ration_target.hero_name, ration_healed]
 			return true
 		"dagger_card":
 			spawn_dagger_card_projectiles(game, hero, target_world_position, hand_card)
@@ -626,21 +881,22 @@ static func play_card_for_hero(game: Node, hero_index: int, card_uid: int, targe
 	var target_data: Dictionary = resolve_card_target(game, hero, hand_card, target_world_position)
 	if target_data.is_empty():
 		return false
+	var target_room_for_constraints: Vector2i = target_data.get("room", game.INVALID_ROOM)
+	if not adjacent_target_valid_for_card(game, hero, hand_card, target_room_for_constraints):
+		game.status_message = "%s needs an adjacent opened room target." % String(hand_card.get("name", "That card"))
+		game.update_hud()
+		return false
 	var target_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
-	if target_room != game.INVALID_ROOM:
+	var hand_card_id: String = String(hand_card.get("card_id", ""))
+	if target_room != game.INVALID_ROOM and hand_card_id != "evasive_roll_card" and hand_card_id != "whirling_blade_card" and hand_card_id != "speed_dash_card":
 		var cast_room: Vector2i = best_card_cast_room(game, game.active_hero_room_for_commands(hero), target_room, hand_card, Vector2(target_data.get("world_position", target_world_position)))
 		if cast_room == game.INVALID_ROOM:
-			game.status_message = "No line of effect to that spot."
+			game.status_message = "No reachable cast room for that target."
 			game.update_hud()
 			return false
 		if not hero_ready_for_card_cast(game, hero, cast_room, target_room, hand_card, Vector2(target_data.get("world_position", target_world_position))):
 			return game.request_deferred_room_card_for_hero(hero_index, cast_room, target_room, card_uid, Vector2(target_data.get("world_position", target_world_position)))
 	var is_study_play: bool = hand_card_starts_spell_study(game, hero, hand_card, target_data)
-	var stamina_cost: float = float(hand_card.get("stamina_cost", 0.0))
-	if not is_study_play and stamina_cost > 0.0 and not spend_hero_stamina_with_reactions(game, hero, stamina_cost):
-		game.status_message = "%s is too exhausted for that." % hero.hero_name
-		game.update_hud()
-		return false
 	if not apply_hand_card_effect(game, hero, hand_card, target_data):
 		return false
 	if not bool(hand_card.get("reusable", false)):
@@ -728,6 +984,188 @@ static func cast_misty_step_spell(game: Node, hero: Variant, target_world_positi
 	})
 	game.add_resource_floating_text(landing_position, "Step", Color(hand_card.get("color", Color("b89cff"))))
 
+static func cast_evasive_roll(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> bool:
+	var from_room: Vector2i = evasive_roll_origin_room(game, hero)
+	if from_room == game.INVALID_ROOM or not game.rooms.has(from_room):
+		game.status_message = "Evasive Roll failed: no valid origin room."
+		return false
+	if from_room == target_room:
+		game.status_message = "Evasive Roll needs an adjacent room."
+		return false
+	if not room_has_neighbor(game, from_room, target_room):
+		game.status_message = "Evasive Roll needs an adjacent opened room."
+		return false
+	game.interrupt_hero_orders(hero)
+	hero.current_room = from_room
+	hero.pending_room = game.HERO_INVALID_ROOM
+	var landing_position: Vector2 = game.clamp_point_to_room(target_world_position, target_room)
+	var roll_path: Array[Vector2i] = [from_room, target_room]
+	var roll_steps: Array = game.build_steps_for_path(roll_path, hero.global_position, landing_position)
+	if roll_steps.is_empty():
+		hero.set_room(target_room, landing_position)
+		hero.begin_evasive_roll(0.28, 2.0, 18.0)
+		return true
+	var travel_distance: float = travel_distance_for_steps(hero.global_position, roll_steps)
+	var base_speed: float = maxf(hero.movement_speed(), 1.0)
+	var roll_speed: float = base_speed * 2.0
+	var roll_duration: float = clampf(travel_distance / roll_speed + 0.16, 0.24, 3.5)
+	hero.begin_evasive_roll(roll_duration, 2.0, 18.0)
+	game.issue_hero_steps(hero, roll_steps)
+	hero.trigger_attack(landing_position, "melee")
+	append_timed_effect_projectile(game, "shield_flash", hero.global_position, Color(hand_card.get("color", Color("9ef4df"))), 0.2, 0.2)
+	return true
+
+static func cast_speed_dash(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> bool:
+	if hero == null or not is_instance_valid(hero):
+		return false
+	if target_room == game.INVALID_ROOM or not game.rooms.has(target_room) or not bool(game.rooms[target_room].get("opened", false)):
+		game.status_message = "Speed Dash needs an opened room target."
+		return false
+	var origin_room: Vector2i = evasive_roll_origin_room(game, hero)
+	if origin_room == game.INVALID_ROOM or not game.rooms.has(origin_room):
+		game.status_message = "Speed Dash failed: no valid origin room."
+		return false
+	game.interrupt_hero_orders(hero)
+	hero.current_room = origin_room
+	hero.pending_room = game.HERO_INVALID_ROOM
+	var landing_position: Vector2 = game.clamp_point_to_room(target_world_position, target_room)
+	var dash_path: Array[Vector2i] = [origin_room]
+	if origin_room != target_room:
+		dash_path = game.find_path(origin_room, target_room, true)
+		if dash_path.is_empty():
+			game.status_message = "Speed Dash failed: no route to target room."
+			return false
+	var dash_steps: Array = game.build_steps_for_path(dash_path, hero.global_position, landing_position)
+	var dash_multiplier: float = maxf(float(hand_card.get("dash_speed_multiplier", 4.0)), 1.0)
+	var post_dash_duration: float = clampf(float(hand_card.get("dash_post_duration", 6.0)), 0.5, 12.0)
+	var minimum_burst: float = clampf(float(hand_card.get("dash_duration", 0.2)), 0.1, 2.0)
+	if not dash_steps.is_empty():
+		var travel_distance: float = travel_distance_for_steps(hero.global_position, dash_steps)
+		var base_speed: float = maxf(hero.movement_speed(), 1.0)
+		var boosted_speed: float = maxf(base_speed * dash_multiplier, 1.0)
+		var travel_duration: float = travel_distance / boosted_speed
+		hero.begin_evasive_roll(maxf(travel_duration + post_dash_duration, post_dash_duration + minimum_burst), dash_multiplier, 0.0, false)
+		game.issue_hero_steps(hero, dash_steps)
+	else:
+		hero.begin_evasive_roll(post_dash_duration, dash_multiplier, 0.0, false)
+	hero.trigger_attack(landing_position, "melee")
+	append_timed_effect_projectile(game, "shield_flash", hero.global_position, Color(hand_card.get("color", Color("8ff6df"))), 0.18, 0.18)
+	return true
+
+static func apply_whirling_blade_sweep_damage(game: Node, hero: Variant, from_room: Vector2i, target_room: Vector2i, landing_position: Vector2, roll_steps: Array, hand_card: Dictionary) -> int:
+	var sweep_points: Array = [hero.global_position]
+	for step_variant in roll_steps:
+		sweep_points.append(Vector2((step_variant as Dictionary).get("position", landing_position)))
+	if sweep_points.size() < 2:
+		sweep_points.append(landing_position)
+	var impact_radius: float = maxf(float(hand_card.get("impact_radius", 54.0)), 20.0)
+	var damage: float = float(hand_card.get("damage", hand_card.get("base_damage", 24.0)))
+	var knockback_force: float = maxf(float(hand_card.get("knockback_force", 360.0)), 0.0)
+	var knockback_duration: float = clampf(float(hand_card.get("knockback_duration", 0.22)), 0.08, 0.5)
+	var hit_count: int = 0
+	for enemy in game.enemies:
+		if not game.enemy_is_active(enemy):
+			continue
+		if enemy.current_room != from_room and enemy.current_room != target_room:
+			continue
+		if point_distance_to_polyline(game, sweep_points, enemy.global_position) > impact_radius:
+			continue
+		var impact_direction: Vector2 = (enemy.global_position - hero.global_position).normalized()
+		if impact_direction == Vector2.ZERO:
+			impact_direction = (landing_position - hero.global_position).normalized()
+		if impact_direction == Vector2.ZERO:
+			impact_direction = Vector2.RIGHT
+		enemy.take_damage(damage, impact_direction)
+		game.knockback_actor(enemy, impact_direction, knockback_force, knockback_duration, enemy.current_room)
+		hit_count += 1
+	if hit_count > 0:
+		game.add_resource_floating_text(landing_position, "Whirl x%d" % hit_count, Color(hand_card.get("color", Color("ffe08b"))))
+	return hit_count
+
+static func cast_whirling_blade(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> bool:
+	var from_room: Vector2i = evasive_roll_origin_room(game, hero)
+	if from_room == game.INVALID_ROOM or not game.rooms.has(from_room):
+		game.status_message = "Whirling Blade failed: no valid origin room."
+		return false
+	if from_room != target_room and not room_has_neighbor(game, from_room, target_room):
+		game.status_message = "Whirling Blade needs an adjacent opened room."
+		return false
+	game.interrupt_hero_orders(hero)
+	hero.current_room = from_room
+	hero.pending_room = game.HERO_INVALID_ROOM
+	var landing_position: Vector2 = game.clamp_point_to_room(target_world_position, target_room)
+	var roll_path: Array[Vector2i] = [from_room]
+	if from_room != target_room:
+		roll_path.append(target_room)
+	var roll_steps: Array = game.build_steps_for_path(roll_path, hero.global_position, landing_position)
+	if roll_steps.is_empty():
+		hero.set_room(target_room, landing_position)
+		hero.begin_evasive_roll(0.35, 2.6, float(hand_card.get("spin_speed", 24.0)))
+		apply_whirling_blade_sweep_damage(game, hero, from_room, target_room, landing_position, roll_steps, hand_card)
+		return true
+	var travel_distance: float = travel_distance_for_steps(hero.global_position, roll_steps)
+	var travel_multiplier: float = maxf(float(hand_card.get("travel_speed_multiplier", 2.6)), 1.0)
+	var travel_speed: float = maxf(hero.movement_speed(), 1.0) * travel_multiplier
+	var spin_duration: float = clampf(travel_distance / travel_speed + 0.2, 0.26, 3.8)
+	hero.begin_evasive_roll(spin_duration, travel_multiplier, float(hand_card.get("spin_speed", 24.0)))
+	game.issue_hero_steps(hero, roll_steps)
+	hero.trigger_attack(landing_position, "melee")
+	apply_whirling_blade_sweep_damage(game, hero, from_room, target_room, landing_position, roll_steps, hand_card)
+	append_timed_effect_projectile(game, "shield_flash", hero.global_position, Color(hand_card.get("color", Color("ffe08b"))), 0.2, 0.2)
+	return true
+
+static func cast_shield_bash(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> bool:
+	if hero == null or not is_instance_valid(hero):
+		return false
+	if target_room != hero.current_room:
+		game.status_message = "Shield Bash can only hit your current room."
+		return false
+	var bash_origin: Vector2 = hero.global_position
+	var aim_direction: Vector2 = (target_world_position - bash_origin).normalized()
+	if aim_direction == Vector2.ZERO:
+		aim_direction = Vector2.LEFT if bool(hero.get("visual_facing_left")) else Vector2.RIGHT
+	var impact_radius: float = maxf(float(hand_card.get("impact_radius", 138.0)), 18.0)
+	var arc_angle_degrees: float = clampf(float(hand_card.get("arc_angle_deg", 110.0)), 10.0, 180.0)
+	var half_arc_radians: float = deg_to_rad(arc_angle_degrees * 0.5)
+	var damage: float = float(hand_card.get("damage", hand_card.get("base_damage", 12.0)))
+	var knockback_force: float = maxf(float(hand_card.get("knockback_force", 420.0)), 0.0)
+	var knockback_duration: float = clampf(float(hand_card.get("knockback_duration", 0.24)), 0.04, 0.65)
+	var slow_duration: float = maxf(float(hand_card.get("slow_duration", 6.0)), 0.0)
+	var slow_move_multiplier: float = clampf(float(hand_card.get("slow_move_multiplier", 0.0)), 0.0, 1.0)
+	var legacy_attack_cooldown_multiplier: float = maxf(float(hand_card.get("slow_attack_cooldown_multiplier", 1.0)), 0.001)
+	var slow_attack_speed_multiplier: float = clampf(float(hand_card.get("slow_attack_speed_multiplier", 1.0 / legacy_attack_cooldown_multiplier)), 0.0, 1.0)
+	var hit_count: int = 0
+	for enemy in game.enemies:
+		if not game.enemy_is_active(enemy) or enemy.current_room != target_room:
+			continue
+		var to_enemy: Vector2 = enemy.global_position - bash_origin
+		var distance_to_enemy: float = to_enemy.length()
+		if distance_to_enemy > impact_radius:
+			continue
+		var impact_direction: Vector2 = to_enemy.normalized() if distance_to_enemy > 0.001 else aim_direction
+		if impact_direction == Vector2.ZERO:
+			impact_direction = Vector2.RIGHT
+		if distance_to_enemy > 0.001 and aim_direction != Vector2.ZERO:
+			var arc_dot: float = clampf(aim_direction.dot(impact_direction), -1.0, 1.0)
+			if acos(arc_dot) > half_arc_radians:
+				continue
+		enemy.take_damage(damage, impact_direction)
+		game.knockback_actor(enemy, impact_direction, knockback_force, knockback_duration, target_room)
+		if slow_duration > 0.0 and enemy.has_method("apply_recovering_slow_debuff"):
+			enemy.apply_recovering_slow_debuff(slow_duration, slow_move_multiplier, slow_attack_speed_multiplier)
+		hit_count += 1
+	hero.trigger_attack(target_world_position, "melee")
+	append_timed_effect_projectile(game, "shield_flash", bash_origin, Color(hand_card.get("color", Color("9ec3ff"))), 0.18, 0.18)
+	if hit_count > 0:
+		game.add_resource_floating_text(bash_origin, "Bash x%d" % hit_count, Color(hand_card.get("color", Color("9ec3ff"))))
+		if hit_count == 1:
+			game.status_message = "%s slammed 1 enemy with Shield Bash." % hero.hero_name
+		else:
+			game.status_message = "%s slammed %d enemies with Shield Bash." % [hero.hero_name, hit_count]
+	else:
+		game.status_message = "%s used Shield Bash, but hit nothing." % hero.hero_name
+	return true
+
 static func cast_web_spell(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
 	var web_position: Vector2 = game.clamp_point_to_room(target_world_position, target_room)
 	var web_radius: float = maxf(float(hand_card.get("impact_radius", 108.0)), 18.0)
@@ -759,6 +1197,9 @@ static func cast_shield_spell(game: Node, hero: Variant, hand_card: Dictionary) 
 	var barrier_amount: float = float(hand_card.get("shield_amount", 34.0))
 	var barrier_duration: float = float(hand_card.get("shield_duration", 10.0))
 	var immunity_duration: float = float(hand_card.get("immunity_duration", 0.0))
+	if immunity_duration <= 0.0 and String(hand_card.get("card_id", "")) == "shield_card":
+		# Compatibility fallback for hand-card instances created before immunity_duration was serialized.
+		immunity_duration = 6.0
 	if barrier_amount > 0.0 and barrier_duration > 0.0:
 		hero.apply_barrier(barrier_amount, barrier_duration)
 	if immunity_duration > 0.0:
@@ -780,22 +1221,42 @@ static func cast_shield_spell(game: Node, hero: Variant, hand_card: Dictionary) 
 static func try_auto_cast_fatal_shield(game: Node, hero: Variant, incoming_damage: float) -> bool:
 	if hero == null or not is_instance_valid(hero):
 		return false
-	if hero.current_health <= 0.0 or hero.invulnerability_time_left > 0.0:
+	if hero.current_health > 0.0 or hero.invulnerability_time_left > 0.0:
 		return false
-	var lethal_damage: float = projected_hero_damage_after_barrier(game, hero, incoming_damage)
-	if lethal_damage < hero.current_health - 0.001:
+	var reaction_index: int = first_reaction_card_index_for_trigger(game, hero, "fatal_damage")
+	if reaction_index < 0:
 		return false
-	if not trigger_first_reaction_card(game, hero, "fatal_damage"):
+	var reaction_card: Dictionary = (hero.hand_cards[reaction_index] as Dictionary).duplicate(true)
+	if not play_reaction_card_for_hero_at_index(game, hero, reaction_index, "fatal_damage"):
 		return false
-	game.status_message = "%s reflexively cast Shield." % hero.hero_name
+	var reaction_card_id: String = String(reaction_card.get("card_id", ""))
+	if reaction_card_id == "shield_card":
+		hero.heal(maxf(incoming_damage, 0.0))
+		if hero.invulnerability_time_left <= 0.0:
+			hero.apply_invulnerability(6.0)
+			game.projectiles.append({
+				"kind": "shield_flash",
+				"position": hero.global_position,
+				"previous": hero.global_position,
+				"target_position": hero.global_position,
+				"color": Color("7ebaff"),
+				"radius": 36.0,
+				"impact_radius": 36.0,
+				"lifetime_left": 0.26,
+				"blast_duration": 0.26,
+				"width": 3.4,
+			})
+		game.status_message = "%s reflexively cast Shield." % hero.hero_name
+	elif hero.current_health <= 0.0:
+		hero.heal(maxf(incoming_damage, 0.0))
 	return true
 
 static func apply_spell_damage_to_hero(game: Node, hero: Variant, damage: float, source_label: String) -> bool:
 	if hero == null or not is_instance_valid(hero):
 		return false
-	if try_auto_cast_fatal_shield(game, hero, damage):
+	var defeated: bool = hero.take_damage(damage, false)
+	if defeated and try_auto_cast_fatal_shield(game, hero, damage):
 		return false
-	var defeated: bool = hero.take_damage(damage)
 	if defeated:
 		game.finalize_hero_death(hero, source_label)
 	return defeated
@@ -974,7 +1435,14 @@ static func cast_lightning_bolt_spell(game: Node, hero: Variant, target_world_po
 		if point_distance_to_polyline(game, bolt_points, enemy.global_position) > bolt_radius:
 			continue
 		hit_enemy_uids[int(enemy.enemy_uid)] = true
-		enemy.take_damage(bolt_damage)
+		var bolt_impact_direction: Vector2 = (enemy.global_position - bolt_origin).normalized()
+		if bolt_impact_direction == Vector2.ZERO:
+			bolt_impact_direction = (enemy.global_position - bolt_target).normalized()
+		if bolt_impact_direction == Vector2.ZERO:
+			bolt_impact_direction = (bolt_target - bolt_origin).normalized()
+		if bolt_impact_direction == Vector2.ZERO:
+			bolt_impact_direction = Vector2.RIGHT
+		enemy.take_damage(bolt_damage, bolt_impact_direction)
 	var hit_hero_indices: Dictionary = {}
 	for room_coord in affected_rooms:
 		for room_hero in game.heroes_in_room(room_coord):
@@ -1017,7 +1485,12 @@ static func cast_scorching_ray_spell(game: Node, hero: Variant, target_world_pos
 		var target_enemy: Variant = ray_targets[ray_index % ray_targets.size()]
 		if target_enemy == null or not is_instance_valid(target_enemy):
 			continue
-		target_enemy.take_damage(float(hand_card.get("damage", hand_card.get("base_damage", 22.0))))
+		var ray_impact_direction: Vector2 = (target_enemy.global_position - hero.global_position).normalized()
+		if ray_impact_direction == Vector2.ZERO:
+			ray_impact_direction = (target_world_position - hero.global_position).normalized()
+		if ray_impact_direction == Vector2.ZERO:
+			ray_impact_direction = Vector2.RIGHT
+		target_enemy.take_damage(float(hand_card.get("damage", hand_card.get("base_damage", 22.0))), ray_impact_direction)
 		game.projectiles.append({
 			"kind": "ghostfire_ray",
 			"position": target_enemy.global_position,
@@ -1026,8 +1499,8 @@ static func cast_scorching_ray_spell(game: Node, hero: Variant, target_world_pos
 			"color": hand_card.get("color", Color("ffb366")),
 			"radius": 18.0,
 			"impact_radius": 18.0,
-			"lifetime_left": 0.22,
-			"blast_duration": 0.22,
+			"lifetime_left": SCORCHING_RAY_EFFECT_DURATION,
+			"blast_duration": SCORCHING_RAY_EFFECT_DURATION,
 			"width": 16.0,
 		})
 
@@ -1062,10 +1535,10 @@ static func explode_fireball_projectile(game: Node, projectile: Dictionary) -> v
 		var enemy_distance: float = enemy_offset.length()
 		if enemy_distance > impact_radius:
 			continue
-		enemy.take_damage(damage)
 		var push_direction: Vector2 = enemy_offset.normalized() if enemy_distance > 0.001 else GAME_DUNGEON_BUILDER.random_room_offset(game, 1.0).normalized()
 		if push_direction == Vector2.ZERO:
 			push_direction = Vector2.RIGHT
+		enemy.take_damage(damage, push_direction)
 		var distance_ratio: float = 1.0 - clampf(enemy_distance / impact_radius, 0.0, 1.0)
 		var pushed_position: Vector2 = game.clamp_point_to_room(enemy.global_position + push_direction * push_distance * (0.35 + distance_ratio * 0.65), room_coord)
 		enemy.global_position = pushed_position
@@ -1102,7 +1575,7 @@ static func explode_fireball_projectile(game: Node, projectile: Dictionary) -> v
 	})
 	game.add_resource_floating_text(target_position, "Fireball" if hit_any else "Miss", Color(projectile.get("color", Color("ff9a5e"))))
 
-static func explode_enemy_fireball(game: Node, room_coord: Vector2i, target_position: Vector2, damage: float, impact_radius: float, push_force: float, source_label: String) -> Array[String]:
+static func explode_enemy_fireball(game: Node, room_coord: Vector2i, target_position: Vector2, damage: float, impact_radius: float, _push_force: float, source_label: String) -> Array[String]:
 	var defeated_heroes: Array[String] = []
 	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
 		return defeated_heroes
@@ -1116,14 +1589,10 @@ static func explode_enemy_fireball(game: Node, room_coord: Vector2i, target_posi
 			continue
 		var distance_ratio: float = 1.0 - clampf(hero_distance / maxf(impact_radius, 0.001), 0.0, 1.0)
 		var applied_damage: float = damage * (0.7 + distance_ratio * 0.3)
-		if try_auto_cast_fatal_shield(game, hero, applied_damage):
+		var defeated: bool = hero.take_damage(applied_damage, false)
+		if defeated and try_auto_cast_fatal_shield(game, hero, applied_damage):
 			hit_any = true
 			continue
-		var defeated: bool = hero.take_damage(applied_damage)
-		var push_direction: Vector2 = hero_offset.normalized() if hero_distance > 0.001 else GAME_DUNGEON_BUILDER.random_room_offset(game, 1.0).normalized()
-		if push_direction == Vector2.ZERO:
-			push_direction = Vector2.RIGHT
-		game.knockback_actor(hero, push_direction, push_force * (0.45 + distance_ratio * 0.55), 0.16 + distance_ratio * 0.12, room_coord)
 		if defeated:
 			defeated_heroes.append(hero.hero_name)
 		hit_any = true
@@ -1154,19 +1623,36 @@ static func spawn_axe_card_projectile(game: Node, hero: Variant, target_world_po
 	var direction: Vector2 = (target_world_position - hero.global_position).normalized()
 	if direction == Vector2.ZERO:
 		direction = Vector2.RIGHT
+	var axe_pierce: int = maxi(0, int(hand_card.get("pierce", maxi(0, int(hand_card.get("max_pierce", 3)) - 1))))
+	var axe_max_pierce: int = axe_pierce + 1
 	hero.trigger_attack(target_world_position, "melee")
 	game.projectiles.append({
 		"kind": "axe",
 		"position": hero.global_position,
 		"previous": hero.global_position,
 		"velocity": direction * float(hand_card.get("speed", 760.0)),
-		"damage": float(hand_card.get("damage", 20.0)),
+		"damage": float(hand_card.get("damage", 40.0)),
 		"color": hand_card.get("color", Color("ffd27a")),
 		"width": 7.0,
 		"radius": float(hand_card.get("radius", 17.0)),
+		"pierce": axe_pierce,
+		"max_pierce": axe_max_pierce,
+		"pierced_count": 0,
+		"knockback_force": float(hand_card.get("knockback_force", 220.0)),
+		"knockback_duration": float(hand_card.get("knockback_duration", 0.18)),
+		"final_hit_knockback_multiplier": float(hand_card.get("final_hit_knockback_multiplier", 1.9)),
+		"final_hit_effect_kind": String(hand_card.get("final_hit_effect_kind", "shield_flash")),
+		"final_hit_effect_radius": float(hand_card.get("final_hit_effect_radius", 42.0)),
+		"final_hit_effect_duration": float(hand_card.get("final_hit_effect_duration", 0.24)),
+		"final_hit_effect_width": float(hand_card.get("final_hit_effect_width", 3.2)),
+		"final_hit_effect_color": hand_card.get("final_hit_effect_color", hand_card.get("color", Color("ffd27a"))),
+		"final_hit_label": String(hand_card.get("final_hit_label", "Final Hit")),
+		"final_hit_label_color": hand_card.get("final_hit_label_color", hand_card.get("color", Color("ffd27a"))),
+		"expire_after_hit": false,
 		"room": hero.current_room,
 		"lifetime_left": float(hand_card.get("lifetime", 2.2)),
 		"remaining_bounces": int(hand_card.get("bounces", 2)),
+		"bounces": int(hand_card.get("bounces", 2)),
 		"rotation_angle": 0.0,
 		"spin_speed": 18.0,
 		"hit_enemy_uids": [],
@@ -1178,6 +1664,8 @@ static func spawn_dagger_card_projectiles(game: Node, hero: Variant, target_worl
 	var center_direction: Vector2 = (target_world_position - hero.global_position).normalized()
 	if center_direction == Vector2.ZERO:
 		center_direction = Vector2.RIGHT
+	var dagger_pierce: int = maxi(0, int(hand_card.get("pierce", maxi(0, int(hand_card.get("max_pierce", 99)) - 1))))
+	var dagger_max_pierce: int = dagger_pierce + 1
 	hero.trigger_attack(target_world_position, "laser")
 	var spread: float = float(hand_card.get("spread", 0.16))
 	for projectile_index in range(count):
@@ -1188,13 +1676,17 @@ static func spawn_dagger_card_projectiles(game: Node, hero: Variant, target_worl
 			"position": hero.global_position,
 			"previous": hero.global_position,
 			"velocity": direction * float(hand_card.get("speed", 1020.0)),
-			"damage": float(hand_card.get("damage", 10.0)) + float(hero.combo_points) * 1.5,
+			"damage": float(hand_card.get("damage", 20.0)) + float(hero.combo_points) * 1.5,
 			"color": hand_card.get("color", Color("d7f0ff")),
 			"width": 4.0,
 			"radius": 9.0,
+			"pierce": dagger_pierce,
+			"max_pierce": dagger_max_pierce,
+			"pierced_count": 0,
 			"room": hero.current_room,
 			"lifetime_left": float(hand_card.get("lifetime", 1.45)),
 			"remaining_bounces": int(hand_card.get("bounces", 1)),
+			"bounces": int(hand_card.get("bounces", 1)),
 			"rotation_angle": direction.angle(),
 			"spin_speed": 0.0,
 			"hit_enemy_uids": [],

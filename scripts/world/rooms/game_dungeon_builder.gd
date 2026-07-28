@@ -1,8 +1,9 @@
 extends RefCounted
 
+const GAME_INVENTORY_ITEM_FLOW: GDScript = preload("res://scripts/world/inventory/game_inventory_item_flow.gd")
+
 static func is_in_bounds(game: Node, room_coord: Vector2i) -> bool:
 	return room_coord.x >= 0 and room_coord.y >= 0 and room_coord.x < game.GRID_SIZE.x and room_coord.y < game.GRID_SIZE.y
-
 static func random_room_offset(game: Node, radius: float) -> Vector2:
 	return Vector2(
 		game.rng.randf_range(-radius, radius),
@@ -51,7 +52,7 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 	game.room_action_menu.clear()
 	if reset_resources:
 		game.floor_index = 1
-		game.dust = 4
+		game.dust = 20
 		game.food = 10
 		game.industry = 14
 		game.science = 0
@@ -77,6 +78,7 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 		crystal["opened"] = true
 		crystal["lit"] = true
 		crystal["permanent_light"] = true
+		crystal["permanent_light_seeded"] = true
 		crystal["temporary_light_turns"] = 0
 		crystal["wave_torch_until_wave"] = -1
 		crystal["crystal"] = true
@@ -110,10 +112,43 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 	game.finalize_room_slot_distribution()
 	game.assign_exit_room()
 	game.assign_research_crystals()
+	assign_floor_merchant(game)
+	game.spawn_starting_room_test_items()
 	game.normalize_runtime_rooms_slot_capacity()
 	game.refresh_room_lighting_states()
 	game.refresh_camera_bounds()
 	game.invalidate_static_dungeon_layer()
+
+static func spawn_starting_room_test_items(game: Node) -> void:
+	if not game.rooms.has(game.crystal_room):
+		return
+	var item_ids: Array[String] = []
+	for item_id_variant in game.item_defs.keys():
+		var item_id: String = String(item_id_variant)
+		item_ids.append(item_id)
+	if item_ids.is_empty():
+		return
+	item_ids.sort()
+	var room_coord: Vector2i = game.crystal_room
+	var room_data: Dictionary = Dictionary(game.rooms[room_coord]).duplicate(true)
+	var center_position: Vector2 = game.room_walkable_center(room_coord)
+	var items_per_ring: int = 12
+	var base_radius: float = 40.0
+	var ring_spacing: float = 44.0
+	for item_index in range(item_ids.size()):
+		var ring_index: int = item_index / items_per_ring
+		var in_ring_index: int = item_index % items_per_ring
+		var ring_start: int = ring_index * items_per_ring
+		var ring_count: int = mini(items_per_ring, item_ids.size() - ring_start)
+		var angle: float = TAU * float(in_ring_index) / float(maxi(ring_count, 1))
+		var radius: float = base_radius + float(ring_index) * ring_spacing
+		var drop_position: Vector2 = game.clamp_point_to_room(center_position + Vector2(cos(angle), sin(angle)) * radius, room_coord)
+		room_data["ground_items"].append(game.make_ground_item(item_ids[item_index], drop_position))
+	game.rooms[room_coord] = room_data
+
+static func spawn_starting_room_test_spell_scrolls(game: Node) -> void:
+	# Backward-compatible alias for older call sites.
+	spawn_starting_room_test_items(game)
 
 static func roll_room_template(game: Node) -> String:
 	var roll: float = game.rng.randf()
@@ -294,6 +329,7 @@ static func create_room(game: Node, room_coord: Vector2i, template_id: String, d
 	var minor_slots: int = 2
 	var major_slots: int = 0
 	var template_name: String = "Nook"
+	var seeded_permanent_light: bool = room_coord != game.crystal_room and game.rng.randf() < game.PRELIT_ROOM_CHANCE
 	room_size = Vector2(template_metadata.get("room_size", room_size))
 	minor_slots = int(template_metadata.get("minor_slots", minor_slots))
 	major_slots = int(template_metadata.get("major_slots", major_slots))
@@ -304,8 +340,9 @@ static func create_room(game: Node, room_coord: Vector2i, template_id: String, d
 		"neighbors": [],
 		"center": world_center if world_center != Vector2.INF else game.room_center(room_coord),
 		"opened": false,
-		"lit": false,
-		"permanent_light": false,
+		"lit": seeded_permanent_light,
+		"permanent_light": seeded_permanent_light,
+		"permanent_light_seeded": seeded_permanent_light,
 		"temporary_light_turns": 0,
 		"wave_torch_until_wave": -1,
 		"crystal": false,
@@ -334,6 +371,10 @@ static func create_room(game: Node, room_coord: Vector2i, template_id: String, d
 		"neurostun_time_left": 0.0,
 		"warning_timer_left": 0.0,
 		"ground_items": [],
+		"merchant_theme": "",
+		"merchant_stock": [],
+		"merchant_buyback": [],
+		"merchant_buyback_doors_opened": 0,
 	}
 	if template_metadata.has("major_slot_normalized"):
 		room_data["major_slot_normalized"] = Vector2(template_metadata["major_slot_normalized"])
@@ -578,30 +619,60 @@ static func assign_research_crystals(game: Node) -> void:
 		var room_coord: Vector2i = room_coord_variant
 		game.rooms[room_coord]["research_crystal"] = false
 		game.rooms[room_coord]["research_crystal_spent"] = false
+	var first_discovered_room: Vector2i = game.INVALID_ROOM
+	if game.floor_index == 1 and game.rooms.has(game.crystal_room):
+		var crystal_neighbors: Array = Array(game.rooms[game.crystal_room].get("neighbors", []))
+		if not crystal_neighbors.is_empty():
+			first_discovered_room = Vector2i(crystal_neighbors[0])
+	var eligible_rooms: Array[Vector2i] = []
 	var candidates: Array[Vector2i] = []
 	for room_coord_variant in game.rooms.keys():
 		var room_coord: Vector2i = room_coord_variant
 		if room_coord == game.crystal_room:
 			continue
-		var room: Dictionary = game.rooms[room_coord]
-		if int(room.get("major_slots", 0)) <= 0:
+		if game.floor_index == 1 and room_coord == first_discovered_room:
 			continue
+		var room: Dictionary = game.rooms[room_coord]
 		if game.effective_minor_slot_count(room_coord) <= 0:
 			continue
-		candidates.append(room_coord)
+		eligible_rooms.append(room_coord)
+		if int(room.get("major_slots", 0)) > 0:
+			candidates.append(room_coord)
+	if candidates.is_empty() and not eligible_rooms.is_empty():
+		var promoted_room: Vector2i = eligible_rooms[game.rng.randi_range(0, eligible_rooms.size() - 1)]
+		game.rooms[promoted_room]["major_slots"] = max(1, int(game.rooms[promoted_room].get("major_slots", 0)))
+		candidates.append(promoted_room)
 	if candidates.is_empty():
 		return
-	var chosen_room: Vector2i = game.INVALID_ROOM
-	if game.floor_index == 1:
-		for neighbor_variant in Array(game.rooms.get(game.crystal_room, {}).get("neighbors", [])):
-			var neighbor_room: Vector2i = neighbor_variant
-			if candidates.has(neighbor_room):
-				chosen_room = neighbor_room
-				break
-	if chosen_room == game.INVALID_ROOM:
-		chosen_room = candidates[game.rng.randi_range(0, candidates.size() - 1)]
+	var chosen_room: Vector2i = candidates[game.rng.randi_range(0, candidates.size() - 1)]
 	if chosen_room != game.INVALID_ROOM and game.rooms.has(chosen_room):
 		game.rooms[chosen_room]["research_crystal"] = true
+
+static func assign_floor_merchant(game: Node) -> void:
+	var candidate_rooms: Array[Vector2i] = []
+	for room_coord_variant in game.rooms.keys():
+		var room_coord: Vector2i = room_coord_variant
+		var room: Dictionary = game.rooms[room_coord]
+		room["merchant_theme"] = ""
+		room["merchant_stock"] = []
+		room["merchant_buyback"] = []
+		room["merchant_buyback_doors_opened"] = game.doors_opened
+		if room_coord == game.crystal_room:
+			continue
+		if not bool(room.get("opened", false)) and not bool(room.get("crystal", false)):
+			candidate_rooms.append(room_coord)
+	if candidate_rooms.is_empty():
+		return
+	var merchant_room: Vector2i = candidate_rooms[game.rng.randi_range(0, candidate_rooms.size() - 1)]
+	var merchant_themes: Array[String] = GAME_INVENTORY_ITEM_FLOW.merchant_theme_ids(game)
+	if merchant_themes.is_empty():
+		return
+	var chosen_theme: String = merchant_themes[game.rng.randi_range(0, merchant_themes.size() - 1)]
+	var room_data: Dictionary = game.rooms[merchant_room]
+	room_data["merchant_theme"] = chosen_theme
+	room_data["merchant_stock"] = GAME_INVENTORY_ITEM_FLOW.generate_merchant_stock(game, 5)
+	room_data["merchant_buyback"] = []
+	room_data["merchant_buyback_doors_opened"] = game.doors_opened
 
 static func find_path(game: Node, from_room: Vector2i, to_room: Vector2i, only_open_rooms: bool) -> Array[Vector2i]:
 	if from_room == to_room:

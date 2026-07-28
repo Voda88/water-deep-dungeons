@@ -1,7 +1,18 @@
 extends RefCounted
 
 const EFFECT_FRAME_SIZE: Vector2i = Vector2i(100, 100)
-const NECROMANCER_ATTACK_EFFECT: Texture2D = preload("res://assets/characters/packs/pack01/projectiles/magic/Necromancer_Attack02_Effect.png")
+const NECROMANCER_ATTACK_EFFECT: Texture2D = preload("res://assets/characters/packs/pack01/projectiles/magic/Necromancer_Sumon_Effect.png")
+const LOOT_CHEST_TEXTURE: Texture2D = preload("res://assets/dungeon/tileset/doors_lever_chest_animation.png")
+const LOOT_CHEST_FRAME_SIZE: Vector2i = Vector2i(32, 32)
+const LOOT_CHEST_FRAME_ORIGIN: Vector2i = Vector2i(0, 128)
+const LOOT_CHEST_ANIM_FRAME_COUNT: int = 5
+const PROJECTILE_AIM_PREVIEW_CARD_IDS: Dictionary = {
+	"fireball_card": true,
+	"magic_missile_card": true,
+	"scorching_ray_card": true,
+	"dagger_card": true,
+	"axe_card": true,
+}
 
 static func _draw(game: Node) -> void:
 	draw_room_overlays(game)
@@ -28,19 +39,105 @@ static func active_hand_drag_target_preview(game: Node) -> Dictionary:
 	var target_data: Dictionary = game.resolve_card_target(hero, hand_card, target_world_position)
 	if target_data.is_empty():
 		return {}
+	var card_id: String = String(hand_card.get("card_id", ""))
 	var preview: Dictionary = {
 		"hero": hero,
 		"card": hand_card,
 		"target_data": target_data,
-		"valid": game.hand_card_phase_allows_play(hand_card),
+		"valid": game.hand_card_phase_allows_play(hand_card) and game.card_target_is_valid(hero, hand_card, target_world_position),
 		"world_position": Vector2(target_data.get("world_position", target_world_position)),
 	}
 	var target_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
-	if bool(preview.get("valid", false)) and target_room != game.INVALID_ROOM:
+	if bool(preview.get("valid", false)) and target_room != game.INVALID_ROOM and card_id != "evasive_roll_card" and card_id != "whirling_blade_card":
 		var cast_room: Vector2i = game.best_card_cast_room(game.active_hero_room_for_commands(hero), target_room, hand_card, Vector2(preview.get("world_position", target_world_position)))
 		preview["cast_room"] = cast_room
 		preview["valid"] = cast_room != game.INVALID_ROOM
 	return preview
+
+static func card_uses_projectile_target_indicator(card_id: String) -> bool:
+	return PROJECTILE_AIM_PREVIEW_CARD_IDS.has(card_id)
+
+static func draw_shield_bash_sector_indicator(game: Node, preview: Dictionary, target_position: Vector2, fill_color: Color, outline_color: Color) -> void:
+	var preview_hero: Variant = preview.get("hero", null)
+	if preview_hero == null or not is_instance_valid(preview_hero):
+		return
+	var card_preview: Dictionary = Dictionary(preview.get("card", {}))
+	var origin: Vector2 = preview_hero.global_position
+	var aim_direction: Vector2 = (target_position - origin).normalized()
+	if aim_direction == Vector2.ZERO:
+		aim_direction = Vector2.LEFT if bool(preview_hero.get("visual_facing_left")) else Vector2.RIGHT
+	var impact_radius: float = maxf(float(card_preview.get("impact_radius", 138.0)), 18.0)
+	var arc_angle_degrees: float = clampf(float(card_preview.get("arc_angle_deg", 110.0)), 10.0, 180.0)
+	var half_arc_radians: float = deg_to_rad(arc_angle_degrees * 0.5)
+	var start_angle: float = aim_direction.angle() - half_arc_radians
+	var end_angle: float = aim_direction.angle() + half_arc_radians
+	var point_count: int = maxi(16, int(round(arc_angle_degrees / 5.0)))
+	var sector_points: PackedVector2Array = PackedVector2Array([origin])
+	for point_index in range(point_count + 1):
+		var interpolation: float = float(point_index) / float(point_count)
+		var angle: float = lerpf(start_angle, end_angle, interpolation)
+		sector_points.append(origin + Vector2.RIGHT.rotated(angle) * impact_radius)
+	var sector_fill: Color = fill_color
+	sector_fill.a = 0.2 if bool(preview.get("valid", false)) else 0.1
+	game.draw_colored_polygon(sector_points, sector_fill)
+	var left_edge: Vector2 = origin + Vector2.RIGHT.rotated(start_angle) * impact_radius
+	var right_edge: Vector2 = origin + Vector2.RIGHT.rotated(end_angle) * impact_radius
+	game.draw_line(origin, left_edge, outline_color, 2.4, true)
+	game.draw_line(origin, right_edge, outline_color, 2.4, true)
+	game.draw_arc(origin, impact_radius, start_angle, end_angle, point_count * 2, outline_color, 3.0, true)
+	game.draw_line(origin, origin + aim_direction * impact_radius, Color(outline_color.r, outline_color.g, outline_color.b, outline_color.a * 0.72), 1.8, true)
+	var pulse: float = 0.5 + 0.5 * sin(float(Time.get_ticks_msec()) / 120.0)
+	var reticle_radius: float = 8.0 + pulse * 3.2
+	game.draw_arc(target_position, reticle_radius, 0.0, TAU, 28, Color(outline_color.r, outline_color.g, outline_color.b, outline_color.a * 0.76), 1.8, true)
+
+static func draw_projectile_target_indicator(game: Node, preview: Dictionary, target_position: Vector2, target_room: Vector2i, preview_color: Color, outline_color: Color) -> void:
+	var preview_hero: Variant = preview.get("hero", null)
+	if preview_hero == null or not is_instance_valid(preview_hero):
+		return
+	var card_preview: Dictionary = Dictionary(preview.get("card", {}))
+	var card_id: String = String(card_preview.get("card_id", ""))
+	var valid_preview: bool = bool(preview.get("valid", false))
+	var origin: Vector2 = preview_hero.global_position
+	var aim_direction: Vector2 = (target_position - origin).normalized()
+	if aim_direction == Vector2.ZERO:
+		aim_direction = Vector2.RIGHT
+	var guide_glow: Color = Color(preview_color.r, preview_color.g, preview_color.b, 0.28 if valid_preview else 0.14)
+	var guide_core: Color = Color(0.98, 0.99, 1.0, 0.78 if valid_preview else 0.38)
+	game.draw_line(origin, target_position, guide_glow, 9.0, true)
+	game.draw_line(origin, target_position, guide_core, 3.2, true)
+
+	if card_id == "dagger_card":
+		var dagger_count: int = maxi(1, int(card_preview.get("projectile_count", 3)))
+		var dagger_spread: float = float(card_preview.get("spread", 0.16))
+		var guide_length: float = minf(maxf(origin.distance_to(target_position), 56.0), 220.0)
+		for projectile_index in range(dagger_count):
+			var offset_ratio: float = 0.0 if dagger_count == 1 else (float(projectile_index) / float(dagger_count - 1) - 0.5) * 2.0
+			var spread_direction: Vector2 = aim_direction.rotated(offset_ratio * dagger_spread)
+			var spread_end: Vector2 = origin + spread_direction * guide_length
+			game.draw_line(origin, spread_end, Color(preview_color.r, preview_color.g, preview_color.b, 0.5 if valid_preview else 0.22), 2.0, true)
+
+	if card_id == "magic_missile_card" or card_id == "scorching_ray_card":
+		var shot_count: int = clampi(maxi(1, int(card_preview.get("projectile_count", 3))), 1, 8)
+		var ring_radius: float = 10.0 + float(shot_count) * 1.8
+		for shot_index in range(shot_count):
+			var angle: float = TAU * float(shot_index) / float(shot_count)
+			var marker_position: Vector2 = target_position + Vector2.RIGHT.rotated(angle) * ring_radius
+			game.draw_circle(marker_position, 2.8, Color(preview_color.r, preview_color.g, preview_color.b, 0.86 if valid_preview else 0.42))
+
+	var pulse: float = 0.5 + 0.5 * sin(float(Time.get_ticks_msec()) / 115.0)
+	var reticle_radius: float = 12.0 + pulse * 4.0
+	game.draw_arc(target_position, reticle_radius, 0.0, TAU, 36, outline_color, 2.4, true)
+	game.draw_line(target_position + Vector2(-reticle_radius - 6.0, 0.0), target_position + Vector2(-reticle_radius + 1.0, 0.0), outline_color, 2.0, true)
+	game.draw_line(target_position + Vector2(reticle_radius - 1.0, 0.0), target_position + Vector2(reticle_radius + 6.0, 0.0), outline_color, 2.0, true)
+	game.draw_line(target_position + Vector2(0.0, -reticle_radius - 6.0), target_position + Vector2(0.0, -reticle_radius + 1.0), outline_color, 2.0, true)
+	game.draw_line(target_position + Vector2(0.0, reticle_radius - 1.0), target_position + Vector2(0.0, reticle_radius + 6.0), outline_color, 2.0, true)
+
+	if target_room != game.INVALID_ROOM and game.rooms.has(target_room):
+		var room_bounds: Rect2 = game.room_rect(target_room).grow(-8.0)
+		if room_bounds.has_point(target_position):
+			var room_center: Vector2 = room_bounds.get_center()
+			var room_center_hint: Vector2 = room_center + (target_position - room_center).normalized() * 18.0
+			game.draw_line(room_center, room_center_hint, Color(preview_color.r, preview_color.g, preview_color.b, 0.44 if valid_preview else 0.22), 1.8, true)
 
 static func draw_active_hand_card_target_preview(game: Node) -> void:
 	var preview: Dictionary = active_hand_drag_target_preview(game)
@@ -50,6 +147,7 @@ static func draw_active_hand_card_target_preview(game: Node) -> void:
 	if target_data.is_empty():
 		return
 	var card_preview: Dictionary = Dictionary(preview.get("card", {}))
+	var card_id: String = String(card_preview.get("card_id", ""))
 	var preview_color: Color = card_preview.get("color", Color("9fe7ff"))
 	var outline_color: Color = preview_color
 	var fill_color: Color = preview_color
@@ -64,20 +162,49 @@ static func draw_active_hand_card_target_preview(game: Node) -> void:
 	if target_data.has("room"):
 		var target_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
 		if target_room != game.INVALID_ROOM and game.rooms.has(target_room):
+			var projectile_card_preview: bool = card_uses_projectile_target_indicator(card_id)
+			var shield_bash_preview: bool = card_id == "shield_bash_card"
 			var room_highlight_rect: Rect2 = game.room_rect(target_room).grow(-8.0)
 			game.draw_rect(room_highlight_rect, fill_color, true)
 			game.draw_rect(room_highlight_rect, outline_color, false, 4.0)
 			var target_position: Vector2 = Vector2(preview.get("world_position", game.room_center(target_room)))
-			var indicator_radius: float = clampf(float(card_preview.get("impact_radius", card_preview.get("radius", 28.0))), 22.0, 86.0)
-			var indicator_fill: Color = fill_color
-			indicator_fill.a = 0.18 if bool(preview.get("valid", false)) else 0.12
-			game.draw_circle(target_position, indicator_radius, indicator_fill)
-			game.draw_arc(target_position, indicator_radius, 0.0, TAU, 40, outline_color, 3.0, true)
+			if shield_bash_preview:
+				draw_shield_bash_sector_indicator(game, preview, target_position, fill_color, outline_color)
+			else:
+				var indicator_radius: float = clampf(float(card_preview.get("impact_radius", card_preview.get("radius", 28.0))), 22.0, 86.0)
+				if projectile_card_preview:
+					indicator_radius = clampf(float(card_preview.get("radius", card_preview.get("impact_radius", 16.0))), 10.0, 34.0)
+				var indicator_fill: Color = fill_color
+				indicator_fill.a = 0.18 if bool(preview.get("valid", false)) else 0.12
+				game.draw_circle(target_position, indicator_radius, indicator_fill)
+				game.draw_arc(target_position, indicator_radius, 0.0, TAU, 40, outline_color, 3.0, true)
+			if projectile_card_preview:
+				draw_projectile_target_indicator(game, preview, target_position, target_room, preview_color, outline_color)
+			if card_id == "lightning_bolt_card":
+				var preview_hero: Variant = preview.get("hero", null)
+				if preview_hero != null and is_instance_valid(preview_hero):
+					var bounce_count: int = maxi(0, int(card_preview.get("bounce_count", 2)))
+					var bolt_points: Array = game.build_lightning_bolt_points(preview_hero.global_position, target_position, target_room, bounce_count)
+					if bolt_points.size() >= 2:
+						for point_index in range(1, bolt_points.size()):
+							var segment_start: Vector2 = Vector2(bolt_points[point_index - 1])
+							var segment_end: Vector2 = Vector2(bolt_points[point_index])
+							game.draw_line(segment_start, segment_end, Color(1.0, 0.98, 0.86, 0.82 if bool(preview.get("valid", false)) else 0.42), 8.0, true)
+							game.draw_line(segment_start, segment_end, Color(preview_color.r, preview_color.g, preview_color.b, 0.92 if bool(preview.get("valid", false)) else 0.5), 4.8, true)
+						for point_variant in bolt_points:
+							game.draw_circle(Vector2(point_variant), 4.2, Color(preview_color.r, preview_color.g, preview_color.b, 0.75 if bool(preview.get("valid", false)) else 0.42))
 	if target_data.has("hero"):
 		var target_hero: Variant = target_data.get("hero", null)
 		if target_hero != null and is_instance_valid(target_hero):
 			game.draw_circle(target_hero.global_position, 30.0, fill_color)
 			game.draw_arc(target_hero.global_position, 30.0, 0.0, TAU, 36, outline_color, 4.0, true)
+	if card_id == "speed_dash_card":
+		var dash_hero: Variant = preview.get("hero", null)
+		if dash_hero != null and is_instance_valid(dash_hero):
+			var pulse: float = 0.5 + 0.5 * sin(float(Time.get_ticks_msec()) / 90.0)
+			var dash_radius: float = 26.0 + pulse * 5.5
+			game.draw_circle(dash_hero.global_position, dash_radius + 7.0, Color(preview_color.r, preview_color.g, preview_color.b, 0.12 if bool(preview.get("valid", false)) else 0.06))
+			game.draw_arc(dash_hero.global_position, dash_radius, 0.0, TAU, 44, outline_color, 3.2, true)
 
 static func screen_to_world(game: Node, screen_position: Vector2) -> Vector2:
 	return game.get_viewport().get_canvas_transform().affine_inverse() * screen_position
@@ -124,20 +251,14 @@ static func draw_room_spawn_warning_effects(game: Node, room_coord: Vector2i, vi
 			continue
 		var positions: Array = Array(pending_spawn.get("positions", []))
 		var spawned_count: int = int(pending_spawn.get("spawned", 0))
-		var spawn_interval: float = maxf(float(pending_spawn.get("interval", game.WAVE_STAGGER_ENEMY_INTERVAL)), 0.001)
-		var next_delay: float = maxf(float(pending_spawn.get("delay_left", 0.0)), 0.0)
 		for spawn_index in range(spawned_count, positions.size()):
 			var spawn_position: Vector2 = Vector2(positions[spawn_index])
 			if not view_rect.has_point(spawn_position):
 				continue
 			var index_offset: int = spawn_index - spawned_count
-			var time_until_spawn: float = next_delay + float(index_offset) * spawn_interval
-			var pulse_alpha: float = clampf(0.62 - float(index_offset) * 0.08, 0.16, 0.62)
-			var pulse_wave: float = 0.72 + 0.28 * sin(float(Time.get_ticks_msec()) / 120.0 + float(index_offset) * 0.55)
-			var ring_radius: float = 16.0 + clampf(time_until_spawn * 18.0, 0.0, 22.0)
-			game.draw_circle(spawn_position, ring_radius, Color(1.0, 0.54, 0.36, 0.05 * pulse_wave))
-			game.draw_arc(spawn_position, ring_radius, 0.0, TAU, 28, Color(1.0, 0.66, 0.52, pulse_alpha * pulse_wave), 2.2, true)
-			draw_effect_strip(game, NECROMANCER_ATTACK_EFFECT, effect_frame, spawn_position + Vector2(0.0, -4.0), Vector2(96.0, 96.0), Color(1.0, 0.63, 0.44, pulse_alpha))
+			var pulse_alpha: float = clampf(0.94 - float(index_offset) * 0.08, 0.72, 0.94)
+			var pulse_wave: float = 0.9 + 0.1 * sin(float(Time.get_ticks_msec()) / 95.0 + float(index_offset) * 0.55)
+			draw_effect_strip(game, NECROMANCER_ATTACK_EFFECT, effect_frame, spawn_position + Vector2(0.0, -4.0), Vector2(124.0, 124.0), Color(1.0, 0.95, 0.86, minf(pulse_alpha * pulse_wave, 1.0)))
 
 static func draw_floating_resource_texts(game: Node) -> void:
 	var view_rect: Rect2 = current_view_world_rect(game, 96.0)
@@ -227,6 +348,76 @@ static func draw_growth_region(game: Node, rect: Rect2, fill: Color, edge: Color
 	var radius: float = minf(rect.size.x, rect.size.y) * 0.18
 	game.draw_circle(center + Vector2(-rect.size.x * 0.16, 0.0), radius, Color(edge.r, edge.g, edge.b, 0.18))
 	game.draw_circle(center + Vector2(rect.size.x * 0.12, rect.size.y * 0.06), radius * 0.92, Color(edge.r, edge.g, edge.b, 0.15))
+
+static func room_loot_chest_position(game: Node, room_coord: Vector2i, room: Dictionary) -> Vector2:
+	if not Array(room.get("ground_items", [])).is_empty():
+		var first_ground_item: Dictionary = Dictionary(room["ground_items"][0])
+		return game.clamp_point_to_room(Vector2(first_ground_item.get("position", game.room_center(room_coord))), room_coord)
+	return game.room_walkable_center(room_coord)
+
+static func draw_room_loot_chest(game: Node, room_coord: Vector2i, room: Dictionary, lit: bool) -> void:
+	var item_count: int = int(Array(room.get("ground_items", [])).size())
+	if item_count <= 0:
+		return
+	var chest_position: Vector2 = room_loot_chest_position(game, room_coord, room)
+	if LOOT_CHEST_TEXTURE != null:
+		var chest_frame_index: int = int(floor(float(Time.get_ticks_msec()) / 135.0)) % LOOT_CHEST_ANIM_FRAME_COUNT
+		var source_rect: Rect2 = Rect2(
+			float(LOOT_CHEST_FRAME_ORIGIN.x + chest_frame_index * LOOT_CHEST_FRAME_SIZE.x),
+			float(LOOT_CHEST_FRAME_ORIGIN.y),
+			float(LOOT_CHEST_FRAME_SIZE.x),
+			float(LOOT_CHEST_FRAME_SIZE.y)
+		)
+		var draw_rect: Rect2 = Rect2(chest_position + Vector2(-18.0, -16.0), Vector2(36.0, 36.0))
+		game.draw_texture_rect_region(LOOT_CHEST_TEXTURE, draw_rect, source_rect, Color(1.0, 1.0, 1.0, 0.96), false, true)
+	else:
+		game.draw_rect(Rect2(chest_position + Vector2(-12.0, -2.0), Vector2(24.0, 16.0)), Color("9f6b2c"), true)
+		game.draw_rect(Rect2(chest_position + Vector2(-12.0, -2.0), Vector2(24.0, 16.0)), Color("f3d79e"), false, 2.0)
+	game.draw_string(ThemeDB.fallback_font, chest_position + Vector2(-14.0, 32.0), "Loot x%d" % item_count, HORIZONTAL_ALIGNMENT_LEFT, 52.0, 12, Color("fff0c7" if lit else "d7be8d"))
+
+static func room_wave_torch_waves_left(game: Node, room: Dictionary) -> int:
+	var expiry_wave: int = int(room.get("wave_torch_until_wave", -1))
+	if expiry_wave < 0:
+		return 0
+	if game.wave_index < expiry_wave:
+		return expiry_wave - game.wave_index
+	if game.wave_index == expiry_wave and game.wave_in_progress():
+		return 1
+	return 0
+
+static func draw_room_light_marker(game: Node, room_coord: Vector2i, room: Dictionary) -> void:
+	if room_coord == game.crystal_room or not bool(room.get("lit", false)):
+		return
+	var marker_base: Vector2 = game.room_rect(room_coord).position + Vector2(28.0, 28.0)
+	var permanent_light: bool = bool(room.get("permanent_light", false))
+	var temporary_turns_left: int = int(room.get("temporary_light_turns", 0))
+	var wave_torch_waves_left: int = room_wave_torch_waves_left(game, room)
+	var temporary_light_active: bool = temporary_turns_left > 0 or wave_torch_waves_left > 0
+	if not permanent_light and not temporary_light_active:
+		game.draw_circle(marker_base, 11.0, Color("fff49c"))
+		return
+	var shaft_start: Vector2 = marker_base + Vector2(0.0, 7.0)
+	var shaft_end: Vector2 = marker_base + Vector2(0.0, 18.0)
+	game.draw_line(shaft_start, shaft_end, Color("7f6144"), 3.0, true)
+	var flame_shell: Color = Color("ffab47") if permanent_light else Color("7ed8ff")
+	var flame_core: Color = Color("fff0bc") if permanent_light else Color("ebf8ff")
+	var glow_color: Color = Color(flame_shell.r, flame_shell.g, flame_shell.b, 0.26)
+	game.draw_circle(marker_base + Vector2(0.0, 2.0), 9.0, glow_color)
+	game.draw_circle(marker_base + Vector2(0.0, 2.0), 6.0, flame_shell)
+	game.draw_circle(marker_base + Vector2(0.0, 0.5), 3.2, flame_core)
+	var marker_label: String = ""
+	if permanent_light:
+		marker_label = "P"
+	elif wave_torch_waves_left > 0:
+		marker_label = str(wave_torch_waves_left)
+	elif temporary_turns_left > 0:
+		marker_label = str(temporary_turns_left)
+	if marker_label != "":
+		var label_shadow: Color = Color(0.02, 0.05, 0.08, 0.62)
+		var label_color: Color = Color("ffe6c0") if permanent_light else Color("d9f5ff")
+		var label_position: Vector2 = marker_base + Vector2(10.0, 8.0)
+		game.draw_string(ThemeDB.fallback_font, label_position + Vector2(1.0, 1.0), marker_label, HORIZONTAL_ALIGNMENT_LEFT, 22.0, 12, label_shadow)
+		game.draw_string(ThemeDB.fallback_font, label_position, marker_label, HORIZONTAL_ALIGNMENT_LEFT, 22.0, 12, label_color)
 
 static func room_theme_palette(game: Node, theme_id: String, lit: bool, crystal_chamber: bool) -> Dictionary:
 	var palette: Dictionary = {}
@@ -366,8 +557,7 @@ static func draw_room_overlays(game: Node) -> void:
 			game.draw_circle(marker_center, 10.0, Color(marker_color.r, marker_color.g, marker_color.b, 0.18))
 			game.draw_arc(marker_center, 10.0, 0.0, TAU, 24, marker_color, 2.2, true)
 			game.draw_circle(marker_center, 4.0, marker_color)
-		if room["lit"] and room_coord != game.crystal_room:
-			game.draw_circle(rect.position + Vector2(28.0, 28.0), 11.0, Color("fff49c"))
+		draw_room_light_marker(game, room_coord, room)
 		if room["major_slots"] > 0 and room_coord != game.crystal_room:
 			var major_position: Vector2 = game.major_slot_position(room_coord)
 			var pending_major: Dictionary = game.pending_major_construction_for_room(room_coord)
@@ -408,9 +598,13 @@ static func draw_room_overlays(game: Node) -> void:
 				]), Color("87c9ff"))
 				game.draw_arc(major_position, 18.0, 0.0, TAU, 28, Color("d9f4ff"), 2.2, true)
 				if game.room_has_active_research(room_coord):
+					var shimmer: float = 0.5 + 0.5 * sin(float(Time.get_ticks_msec()) / 140.0)
+					game.draw_circle(major_position, 26.0 + 3.0 * shimmer, Color(0.54, 0.85, 1.0, 0.16 + 0.08 * shimmer))
+					game.draw_circle(major_position, 18.0 + 2.0 * shimmer, Color(0.68, 0.93, 1.0, 0.22 + 0.10 * shimmer))
 					var pulse_radius: float = lerpf(20.0, 32.0, pulse_phase)
 					var pulse_alpha: float = 0.36 * (1.0 - pulse_phase)
 					game.draw_arc(major_position, pulse_radius, 0.0, TAU, 36, Color(0.55, 0.86, 1.0, pulse_alpha), 3.0, true)
+					game.draw_arc(major_position, 24.0 + 2.0 * shimmer, 0.0, TAU, 40, Color(0.86, 0.98, 1.0, 0.46 + 0.18 * shimmer), 2.2, true)
 					game.draw_circle(major_position, 8.0 + 3.0 * sin(float(Time.get_ticks_msec()) / 170.0), Color(0.62, 0.88, 1.0, 0.18))
 			if not pending_major.is_empty():
 				var pending_ratio: float = 1.0 - (float(pending_major.get("timer_left", 0.0)) / maxf(float(pending_major.get("duration", 1.0)), 0.001))
@@ -465,15 +659,7 @@ static func draw_room_overlays(game: Node) -> void:
 				var pending_ratio_minor: float = 1.0 - (float(pending_minor.get("timer_left", 0.0)) / maxf(float(pending_minor.get("duration", 1.0)), 0.001))
 				game.draw_circle(slot_position, 8.0, Color("b3efff", 0.18))
 				game.draw_arc(slot_position, 14.0, -PI * 0.5, -PI * 0.5 + TAU * pending_ratio_minor, 24, Color("8df6ff"), 2.5, true)
-		for ground_item_variant in room["ground_items"]:
-			var ground_item: Dictionary = ground_item_variant
-			var item_rect: Rect2 = game.ground_item_draw_rect(ground_item)
-			var item_def: Dictionary = game.item_defs.get(String(ground_item.get("item_id", "")), {})
-			var item_color: Color = item_def.get("color", Color("9ed4ff"))
-			game.draw_rect(item_rect, item_color, true)
-			game.draw_rect(item_rect, Color("f1fbff"), false, 2.0)
-			game.draw_string(ThemeDB.fallback_font, item_rect.position + Vector2(4.0, item_rect.size.y * 0.65), String(item_def.get("short", "ITM")), HORIZONTAL_ALIGNMENT_LEFT, item_rect.size.x - 4.0, 12, Color("0d171d"))
-			game.draw_arc(item_rect.get_center(), maxf(item_rect.size.x, item_rect.size.y) * 0.55, 0.0, TAU, 20, Color(1.0, 1.0, 1.0, 0.18), 1.5, true)
+		draw_room_loot_chest(game, room_coord, room, bool(room.get("lit", false)))
 		if room_coord == game.opening_origin_room:
 			var progress_ratio: float = 1.0 - (game.opening_timer_left / game.DOOR_OPEN_DURATION)
 			game.draw_rect(rect, Color(1.0, 1.0, 1.0, 0.08), true)
@@ -482,7 +668,7 @@ static func draw_room_overlays(game: Node) -> void:
 		if warning_ratio > 0.0:
 			var inset: float = 12.0 + 8.0 * (1.0 - warning_ratio)
 			game.draw_rect(rect.grow(-inset), Color(1.0, 0.66, 0.52, 0.10 + 0.12 * warning_ratio), false, 4.0)
-			draw_room_spawn_warning_effects(game, room_coord, view_rect)
+		draw_room_spawn_warning_effects(game, room_coord, view_rect)
 		if room["exit"]:
 			var exit_center: Vector2 = rect.get_center() + Vector2(0.0, -12.0)
 			game.draw_circle(exit_center, 18.0, Color("203846"))
@@ -527,10 +713,31 @@ static func room_summary(game: Node, room_coord: Vector2i) -> String:
 		minor_text += ", crystal here"
 	if room["ground_items"].size() > 0:
 		minor_text += ", loot %d" % room["ground_items"].size()
-	return "%s, %s, %s, %s, %s" % [room_title(game, room_coord), String(room.get("template_name", "Room")), state, light_state, "%s, %s" % [minor_text, major_text]]
+	var merchant_suffix: String = ""
+	var merchant_theme: String = String(room.get("merchant_theme", ""))
+	if merchant_theme != "":
+		var merchant_name: String = "Merchant"
+		match merchant_theme:
+			"food":
+				merchant_name = "Food Merchant"
+			"materials":
+				merchant_name = "Materials Merchant"
+			"arcana":
+				merchant_name = "Arcana Merchant"
+			"dust":
+				merchant_name = "Dust Merchant"
+		var stock_count: int = Array(room.get("merchant_stock", [])).size()
+		var buyback_count: int = Array(room.get("merchant_buyback", [])).size()
+		merchant_suffix = ", %s (%d offers, %d buyback)" % [merchant_name, stock_count, buyback_count]
+	return "%s, %s, %s, %s, %s%s" % [room_title(game, room_coord), String(room.get("template_name", "Room")), state, light_state, "%s, %s" % [minor_text, major_text], merchant_suffix]
 
 static func can_toggle_light(game: Node, room_coord: Vector2i) -> bool:
-	return game.rooms.has(room_coord) and game.rooms[room_coord]["opened"] and room_coord != game.crystal_room and not game.game_over
+	if not game.rooms.has(room_coord) or not game.rooms[room_coord]["opened"] or room_coord == game.crystal_room or game.game_over:
+		return false
+	var room: Dictionary = game.rooms[room_coord]
+	if bool(room.get("permanent_light", false)) and bool(room.get("lit", false)):
+		return false
+	return true
 
 static func can_manage_modules(game: Node, room_coord: Vector2i) -> bool:
 	return game.rooms.has(room_coord) and game.rooms[room_coord]["opened"] and game.rooms[room_coord]["lit"] and room_coord != game.crystal_room and not game.game_over
@@ -540,29 +747,36 @@ static func can_open_build_for_room(game: Node, room_coord: Vector2i) -> bool:
 
 static func toggle_room_light(game: Node, room_coord: Vector2i) -> void:
 	if not can_toggle_light(game, room_coord):
+		if game.rooms.has(room_coord) and bool(game.rooms[room_coord].get("permanent_light", false)) and bool(game.rooms[room_coord].get("lit", false)):
+			game.status_message = "%s is permanently lit and cannot be darkened." % room_title(game, room_coord)
+			game.update_hud()
+			game.queue_redraw()
 		return
 	var room: Dictionary = game.rooms[room_coord]
 	if room["lit"]:
 		var was_permanent: bool = bool(room.get("permanent_light", false))
+		var was_seeded_permanent: bool = bool(room.get("permanent_light_seeded", false))
 		room["permanent_light"] = false
+		room["permanent_light_seeded"] = false
 		room["temporary_light_turns"] = 0
 		room["wave_torch_until_wave"] = -1
-		if was_permanent:
-			game.dust += 1
-			game.status_message = "Darkened %s. Dust returned to the pool." % room_title(game, room_coord)
+		if was_permanent and not was_seeded_permanent:
+			game.dust += game.ROOM_LIGHT_DUST_COST
+			game.status_message = "Darkened %s. %d dust returned to the pool." % [room_title(game, room_coord), game.ROOM_LIGHT_DUST_COST]
 		else:
 			game.status_message = "Darkened %s." % room_title(game, room_coord)
 	else:
-		if game.dust <= 0:
-			game.status_message = "No dust available to light that room."
+		if game.dust < game.ROOM_LIGHT_DUST_COST:
+			game.status_message = "Need %d dust to light that room." % game.ROOM_LIGHT_DUST_COST
 			game.update_hud()
 			game.queue_redraw()
 			return
-		game.dust -= 1
+		game.dust -= game.ROOM_LIGHT_DUST_COST
 		room["permanent_light"] = true
+		room["permanent_light_seeded"] = false
 		room["temporary_light_turns"] = 0
 		room["wave_torch_until_wave"] = -1
-		game.status_message = "Lit %s. It can no longer spawn a wave." % room_title(game, room_coord)
+		game.status_message = "Lit %s for %d dust. It can no longer spawn a wave." % [room_title(game, room_coord), game.ROOM_LIGHT_DUST_COST]
 	game.refresh_room_lighting_states()
 	game.update_hud()
 	game.queue_redraw()
@@ -574,13 +788,14 @@ static func ensure_room_lit_for_build(game: Node, room_coord: Vector2i) -> bool:
 	var room: Dictionary = game.rooms[room_coord]
 	if room["lit"]:
 		return true
-	if game.dust <= 0:
-		game.status_message = "%s is dark. Build needs 1 dust to light it first." % room_title(game, room_coord)
+	if game.dust < game.ROOM_LIGHT_DUST_COST:
+		game.status_message = "%s is dark. Build needs %d dust to light it first." % [room_title(game, room_coord), game.ROOM_LIGHT_DUST_COST]
 		return false
-	game.dust -= 1
+	game.dust -= game.ROOM_LIGHT_DUST_COST
 	room["permanent_light"] = true
+	room["permanent_light_seeded"] = false
 	room["temporary_light_turns"] = 0
 	room["wave_torch_until_wave"] = -1
-	game.status_message = "Lit %s for building." % room_title(game, room_coord)
+	game.status_message = "Lit %s for building (%d dust)." % [room_title(game, room_coord), game.ROOM_LIGHT_DUST_COST]
 	game.refresh_room_lighting_states()
 	return true

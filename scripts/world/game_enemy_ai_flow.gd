@@ -1,25 +1,37 @@
 extends RefCounted
 
+const ROOM_TARGET_LOCK_HERO_INDEX_META: StringName = &"room_target_lock_hero_index"
+const ROOM_TARGET_LOCK_ROOM_META: StringName = &"room_target_lock_room"
+const ROOM_TARGET_LOCK_ROOM_HEROES_META: StringName = &"room_target_lock_room_heroes"
+
 static func advance_enemy_routes(game: Node, delta: float) -> void:
 	for enemy in game.enemies:
 		if not game.enemy_is_active(enemy):
 			continue
 		if enemy.has_method("set_situational_speed_multiplier"):
 			enemy.set_situational_speed_multiplier(enemy_situational_speed_multiplier(game, enemy))
-		enemy.attack_cooldown_left = maxf(enemy.attack_cooldown_left - delta, 0.0)
+		var cooldown_tick_scale: float = 1.0
+		if enemy.has_method("attack_cooldown_tick_scale"):
+			cooldown_tick_scale = maxf(float(enemy.attack_cooldown_tick_scale()), 0.0)
+		enemy.attack_cooldown_left = maxf(enemy.attack_cooldown_left - delta * cooldown_tick_scale, 0.0)
 		if enemy.pending_room != game.INVALID_ROOM:
 			if enemy.is_idle():
 				enemy.moving_between_rooms = false
 				enemy.previous_room = enemy.current_room
 				enemy.current_room = enemy.pending_room
 				enemy.pending_room = game.INVALID_ROOM
+				enemy.next_room = enemy.current_room
+				# Rebuild route from the new room side to avoid doorway backstep jitter.
+				enemy.move_steps.clear()
 			else:
 				continue
 		var target_room: Vector2i = target_room_for_enemy(game, enemy)
 		if target_room == game.INVALID_ROOM:
 			enemy.move_steps.clear()
 			continue
-		var target_position: Vector2 = enemy_target_position(game, enemy)
+		# Keep movement target anchored to the chosen room so doorway transitions
+		# cannot temporarily pull enemies back across a threshold.
+		var target_position: Vector2 = game.clamp_point_to_room(enemy_target_position(game, enemy), target_room)
 		var attack_start_distance: float = enemy_attack_start_distance(game, enemy)
 		if not enemy.is_idle():
 			if enemy.current_room == target_room:
@@ -81,7 +93,7 @@ static func target_room_for_enemy(game: Node, enemy: Variant) -> Vector2i:
 				return game.crystal_room
 			return hero_room_for_enemy_targeting(game, archer_target)
 		game.ENEMY_TYPE_ORC, game.ENEMY_TYPE_ORC_SHAMAN:
-			if enemy.current_room == game.crystal_room and heroes_in_room(game, enemy.current_room).is_empty():
+			if enemy.current_room == game.crystal_room and heroes_in_room_strict(game, Vector2i(enemy.current_room)).is_empty():
 				return game.crystal_room
 			var orc_target: Variant = orc_target_hero(game, enemy)
 			if orc_target != null:
@@ -128,7 +140,7 @@ static func enemy_target_position(game: Node, enemy: Variant) -> Vector2:
 				return archer_target.global_position
 			return game.crystal_world_position()
 		game.ENEMY_TYPE_ORC, game.ENEMY_TYPE_ORC_SHAMAN:
-			if enemy.current_room == game.crystal_room and heroes_in_room(game, enemy.current_room).is_empty():
+			if enemy.current_room == game.crystal_room and heroes_in_room_strict(game, Vector2i(enemy.current_room)).is_empty():
 				return game.crystal_world_position()
 			var orc_target: Variant = orc_target_hero(game, enemy)
 			if orc_target != null:
@@ -173,8 +185,25 @@ static func melee_attack_resolution_distance(game: Node, attacker: Variant, targ
 static func hero_room_for_enemy_targeting(game: Node, hero: Variant) -> Vector2i:
 	if hero == null or not is_instance_valid(hero):
 		return game.INVALID_ROOM
-	if hero.pending_room != game.HERO_INVALID_ROOM and game.rooms.has(hero.pending_room) and game.room_rect(hero.pending_room).has_point(hero.global_position):
-		return hero.pending_room
+	if hero.pending_room != game.HERO_INVALID_ROOM and game.rooms.has(hero.pending_room) and game.rooms.has(hero.current_room):
+		var room_delta: Vector2i = Vector2i(hero.pending_room) - Vector2i(hero.current_room)
+		if absi(room_delta.x) + absi(room_delta.y) == 1:
+			var transition_axis: Vector2 = game.room_center(hero.pending_room) - game.room_center(hero.current_room)
+			if transition_axis.length_squared() > 0.001:
+				transition_axis = transition_axis.normalized()
+				var current_side_doorway: Vector2 = game.doorway_position(hero.current_room, hero.pending_room)
+				var pending_side_doorway: Vector2 = game.doorway_position(hero.pending_room, hero.current_room)
+				var doorway_midpoint: Vector2 = (current_side_doorway + pending_side_doorway) * 0.5
+				var side_projection: float = (hero.global_position - doorway_midpoint).dot(transition_axis)
+				if side_projection > 8.0:
+					return hero.pending_room
+				if side_projection < -8.0:
+					return hero.current_room
+				return hero.current_room
+		var current_distance: float = hero.global_position.distance_to(game.room_center(hero.current_room))
+		var pending_distance: float = hero.global_position.distance_to(game.room_center(hero.pending_room))
+		if pending_distance + 24.0 < current_distance:
+			return hero.pending_room
 	return hero.current_room
 
 static func hero_is_in_room(game: Node, hero: Variant, room_coord: Vector2i) -> bool:
@@ -212,6 +241,109 @@ static func heroes_in_room(game: Node, room_coord: Vector2i) -> Array:
 			room_heroes.append(hero)
 	return room_heroes
 
+static func heroes_in_room_strict(game: Node, room_coord: Vector2i) -> Array:
+	var room_heroes: Array = []
+	for hero in game.heroes:
+		if not game.hero_is_active(hero):
+			continue
+		if Vector2i(hero.current_room) == room_coord:
+			room_heroes.append(hero)
+	return room_heroes
+
+static func hero_from_room_candidates_by_index(room_heroes: Array, hero_index: int) -> Variant:
+	if hero_index < 0:
+		return null
+	for hero in room_heroes:
+		if int(hero.hero_index) == hero_index:
+			return hero
+	return null
+
+static func clear_room_target_lock(enemy: Variant) -> void:
+	if enemy == null or not is_instance_valid(enemy):
+		return
+	if enemy.has_meta(ROOM_TARGET_LOCK_HERO_INDEX_META):
+		enemy.remove_meta(ROOM_TARGET_LOCK_HERO_INDEX_META)
+	if enemy.has_meta(ROOM_TARGET_LOCK_ROOM_META):
+		enemy.remove_meta(ROOM_TARGET_LOCK_ROOM_META)
+	if enemy.has_meta(ROOM_TARGET_LOCK_ROOM_HEROES_META):
+		enemy.remove_meta(ROOM_TARGET_LOCK_ROOM_HEROES_META)
+
+static func room_hero_index_signature(room_heroes: Array) -> Array:
+	var signature: Array = []
+	for hero in room_heroes:
+		signature.append(int(hero.hero_index))
+	signature.sort()
+	return signature
+
+static func set_room_target_lock(enemy: Variant, room_coord: Vector2i, hero: Variant, room_heroes: Array) -> void:
+	if enemy == null or hero == null or not is_instance_valid(enemy) or not is_instance_valid(hero):
+		return
+	enemy.set_meta(ROOM_TARGET_LOCK_ROOM_META, room_coord)
+	enemy.set_meta(ROOM_TARGET_LOCK_HERO_INDEX_META, int(hero.hero_index))
+	enemy.set_meta(ROOM_TARGET_LOCK_ROOM_HEROES_META, room_hero_index_signature(room_heroes))
+
+static func choose_orc_rider_local_target(game: Node, enemy: Variant, room_heroes: Array) -> Variant:
+	var local_choice: Variant = null
+	var local_rank: int = 999
+	var local_distance: float = INF
+	for hero in room_heroes:
+		var priority_rank: int = orc_rider_target_priority_rank(game, hero)
+		var distance_value: float = enemy.global_position.distance_to(hero.global_position)
+		if local_choice == null \
+		or priority_rank < local_rank \
+		or (priority_rank == local_rank and distance_value < local_distance):
+			local_choice = hero
+			local_rank = priority_rank
+			local_distance = distance_value
+	return local_choice
+
+static func choose_orc_local_target(enemy: Variant, room_heroes: Array) -> Variant:
+	var local_choice: Variant = null
+	var local_rank: int = 999
+	var local_distance: float = INF
+	for hero in room_heroes:
+		var priority_rank: int = 1 if bool(hero.carrying_crystal) else 0
+		var distance_value: float = enemy.global_position.distance_to(hero.global_position)
+		if local_choice == null \
+		or priority_rank < local_rank \
+		or (priority_rank == local_rank and distance_value < local_distance):
+			local_choice = hero
+			local_rank = priority_rank
+			local_distance = distance_value
+	return local_choice
+
+static func locked_room_target_hero(game: Node, enemy: Variant, is_orc_rider: bool) -> Variant:
+	if enemy == null or not is_instance_valid(enemy):
+		return null
+	var current_room: Vector2i = Vector2i(enemy.current_room)
+	var room_heroes: Array = heroes_in_room_strict(game, current_room)
+	if room_heroes.is_empty():
+		clear_room_target_lock(enemy)
+		return null
+	var room_signature: Array = room_hero_index_signature(room_heroes)
+	if enemy.has_meta(ROOM_TARGET_LOCK_ROOM_META):
+		var locked_room: Vector2i = Vector2i(enemy.get_meta(ROOM_TARGET_LOCK_ROOM_META, game.INVALID_ROOM))
+		if locked_room != current_room:
+			clear_room_target_lock(enemy)
+	if enemy.has_meta(ROOM_TARGET_LOCK_ROOM_HEROES_META):
+		var locked_signature: Array = Array(enemy.get_meta(ROOM_TARGET_LOCK_ROOM_HEROES_META, []))
+		if locked_signature != room_signature:
+			clear_room_target_lock(enemy)
+	if enemy.has_meta(ROOM_TARGET_LOCK_HERO_INDEX_META):
+		var locked_hero_index: int = int(enemy.get_meta(ROOM_TARGET_LOCK_HERO_INDEX_META, -1))
+		var locked_hero: Variant = hero_from_room_candidates_by_index(room_heroes, locked_hero_index)
+		if locked_hero != null:
+			return locked_hero
+		clear_room_target_lock(enemy)
+	var next_target: Variant = null
+	if is_orc_rider:
+		next_target = choose_orc_rider_local_target(game, enemy, room_heroes)
+	else:
+		next_target = choose_orc_local_target(enemy, room_heroes)
+	if next_target != null:
+		set_room_target_lock(enemy, current_room, next_target, room_heroes)
+	return next_target
+
 static func default_room_hero_target(game: Node, room_coord: Vector2i, origin: Vector2) -> Variant:
 	var chosen_hero: Variant = null
 	var chosen_rank: int = 999
@@ -235,20 +367,20 @@ static func enemy_room_hero_candidates(game: Node, enemy: Variant) -> Array:
 static func local_enemy_override_target(game: Node, enemy: Variant) -> Variant:
 	if enemy == null or not is_instance_valid(enemy):
 		return null
-	var room_heroes: Array = enemy_room_hero_candidates(game, enemy)
+	var room_heroes: Array = heroes_in_room_strict(game, Vector2i(enemy.current_room))
 	if room_heroes.is_empty():
 		return null
 	match String(enemy.enemy_role):
 		game.ENEMY_TYPE_ORC_RIDER:
-			return orc_rider_target_hero(game, enemy)
+			return locked_room_target_hero(game, enemy, true)
 		game.ENEMY_TYPE_SKELETON_ARCHER:
 			return skeleton_archer_target_hero(game, enemy)
 		game.ENEMY_TYPE_ORC, game.ENEMY_TYPE_ORC_SHAMAN:
-			return orc_target_hero(game, enemy)
+			return locked_room_target_hero(game, enemy, false)
 		game.ENEMY_TYPE_BAT, game.ENEMY_TYPE_GOLEM:
 			return null
 		_:
-			return default_room_hero_target(game, enemy.current_room, enemy.global_position)
+			return default_room_hero_target(game, Vector2i(enemy.current_room), enemy.global_position)
 
 static func priority_hunter_target_hero(game: Node, enemy: Variant) -> Variant:
 	var room_heroes: Array = enemy_room_hero_candidates(game, enemy)
@@ -292,21 +424,9 @@ static func priority_hunter_target_hero(game: Node, enemy: Variant) -> Variant:
 	return chosen_hero
 
 static func orc_rider_target_hero(game: Node, enemy: Variant) -> Variant:
-	var room_heroes: Array = enemy_room_hero_candidates(game, enemy)
-	if not room_heroes.is_empty():
-		var local_choice: Variant = null
-		var local_rank: int = 999
-		var local_distance: float = INF
-		for hero in room_heroes:
-			var priority_rank: int = orc_rider_target_priority_rank(game, hero)
-			var distance_value: float = enemy.global_position.distance_to(hero.global_position)
-			if local_choice == null \
-			or priority_rank < local_rank \
-			or (priority_rank == local_rank and distance_value < local_distance):
-				local_choice = hero
-				local_rank = priority_rank
-				local_distance = distance_value
-		return local_choice
+	var room_target: Variant = locked_room_target_hero(game, enemy, true)
+	if room_target != null:
+		return room_target
 	var chosen_hero: Variant = null
 	var chosen_rank: int = 999
 	var chosen_path_length: int = 99999
@@ -333,21 +453,9 @@ static func orc_rider_target_hero(game: Node, enemy: Variant) -> Variant:
 	return chosen_hero
 
 static func orc_target_hero(game: Node, enemy: Variant) -> Variant:
-	var room_heroes: Array = enemy_room_hero_candidates(game, enemy)
-	if not room_heroes.is_empty():
-		var local_choice: Variant = null
-		var local_rank: int = 999
-		var local_distance: float = INF
-		for hero in room_heroes:
-			var priority_rank: int = 1 if bool(hero.carrying_crystal) else 0
-			var distance_value: float = enemy.global_position.distance_to(hero.global_position)
-			if local_choice == null \
-			or priority_rank < local_rank \
-			or (priority_rank == local_rank and distance_value < local_distance):
-				local_choice = hero
-				local_rank = priority_rank
-				local_distance = distance_value
-		return local_choice
+	var room_target: Variant = locked_room_target_hero(game, enemy, false)
+	if room_target != null:
+		return room_target
 	var chosen_hero: Variant = null
 	var chosen_rank: int = 999
 	var chosen_path_length: int = 99999
@@ -431,11 +539,6 @@ static func skeleton_archer_goal_position(game: Node, enemy: Variant) -> Vector2
 	var archer_target: Variant = skeleton_archer_target_hero(game, enemy)
 	if archer_target == null or not hero_is_in_room(game, archer_target, enemy.current_room):
 		return game.clamp_point_to_room(enemy.global_position, enemy.current_room)
-	var desired_range: float = 182.0
-	var separation: Vector2 = enemy.global_position - archer_target.global_position
-	if separation.length() < desired_range:
-		var fallback_direction: Vector2 = separation.normalized() if separation.length() > 0.001 else Vector2.LEFT
-		return game.clamp_point_to_room(archer_target.global_position + fallback_direction * desired_range, enemy.current_room)
 	return game.clamp_point_to_room(enemy.global_position, enemy.current_room)
 
 static func module_target_position(game: Node, room_coord: Vector2i, origin: Vector2) -> Vector2:

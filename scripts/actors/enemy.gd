@@ -14,6 +14,12 @@ const SPRITE_FRAME_SIZE: Vector2i = Vector2i(100, 100)
 const MELEE_IMPACT_FRAME: float = 2.0
 const MELEE_ATTACK_FPS: float = 13.0
 const MELEE_ATTACK_SPEED_SCALE: float = 0.82
+const ENEMY_ATTACK_DAMAGE_MULTIPLIER: float = 0.5
+const ENEMY_ATTACK_COOLDOWN_MULTIPLIER: float = 0.5
+const OVERKILL_KNOCKBACK_FORCE_PER_DAMAGE: float = 18.0
+const OVERKILL_KNOCKBACK_MAX_FORCE: float = 620.0
+const OVERKILL_KNOCKBACK_DURATION_PER_DAMAGE: float = 0.008
+const OVERKILL_KNOCKBACK_MAX_DURATION: float = 0.34
 
 static var enemy_sprite_frames_cache: Dictionary = {}
 
@@ -42,6 +48,10 @@ var enemy_role: String = TYPE_ORC
 var body_color: Color = Color("ff7764")
 var base_move_speed: float = 60.0
 var situational_speed_multiplier: float = 1.0
+var recovering_slow_time_left: float = 0.0
+var recovering_slow_duration: float = 0.0
+var recovering_slow_move_multiplier: float = 1.0
+var recovering_slow_attack_speed_multiplier: float = 1.0
 var attack_effect_left: float = 0.0
 var hurt_effect_left: float = 0.0
 var visual_facing_left: bool = false
@@ -186,7 +196,35 @@ func update_sprite_state(move_offset: Vector2) -> void:
 func effective_move_speed() -> float:
 	if rooted_time_left > 0.0:
 		return 0.0
-	return move_speed * situational_speed_multiplier
+	return move_speed * situational_speed_multiplier * current_recovering_slow_move_multiplier()
+
+func recovering_slow_strength() -> float:
+	if recovering_slow_time_left <= 0.0 or recovering_slow_duration <= 0.0:
+		return 0.0
+	return clampf(recovering_slow_time_left / recovering_slow_duration, 0.0, 1.0)
+
+func current_recovering_slow_move_multiplier() -> float:
+	var strength: float = recovering_slow_strength()
+	return lerpf(1.0, recovering_slow_move_multiplier, strength)
+
+func current_recovering_slow_attack_speed_multiplier() -> float:
+	var strength: float = recovering_slow_strength()
+	return clampf(lerpf(1.0, recovering_slow_attack_speed_multiplier, strength), 0.0, 1.0)
+
+func effective_attack_cooldown_multiplier() -> float:
+	return 1.0 / maxf(current_recovering_slow_attack_speed_multiplier(), 0.001)
+
+func attack_cooldown_tick_scale() -> float:
+	return current_recovering_slow_attack_speed_multiplier()
+
+func apply_recovering_slow_debuff(duration: float, move_multiplier: float, attack_speed_multiplier: float) -> void:
+	if duration <= 0.0 or death_started:
+		return
+	recovering_slow_duration = maxf(recovering_slow_duration, duration)
+	recovering_slow_time_left = maxf(recovering_slow_time_left, duration)
+	recovering_slow_move_multiplier = minf(recovering_slow_move_multiplier, clampf(move_multiplier, 0.0, 1.0))
+	recovering_slow_attack_speed_multiplier = minf(recovering_slow_attack_speed_multiplier, clampf(attack_speed_multiplier, 0.0, 1.0))
+	queue_redraw()
 
 func set_situational_speed_multiplier(multiplier: float) -> void:
 	situational_speed_multiplier = clampf(multiplier, 0.15, 2.5)
@@ -319,13 +357,17 @@ func set_role(role_name: String) -> void:
 	enemy_role = String(role_def.get("id", TYPE_ORC))
 	move_speed = float(role_def.get("move_speed", 48.0))
 	max_health = float(role_def.get("max_health", 34.0))
-	attack_damage = float(role_def.get("attack_damage", 10.0))
-	attack_cooldown = float(role_def.get("attack_cooldown", 1.0))
+	attack_damage = float(role_def.get("attack_damage", 10.0)) * ENEMY_ATTACK_DAMAGE_MULTIPLIER
+	attack_cooldown = maxf(float(role_def.get("attack_cooldown", 1.0)) * ENEMY_ATTACK_COOLDOWN_MULTIPLIER, 0.05)
 	attack_range = float(role_def.get("attack_range", 70.0))
 	weight = float(role_def.get("weight", 1.28))
 	body_color = role_def.get("body_color", Color("7fad5b"))
 	base_move_speed = move_speed
 	situational_speed_multiplier = 1.0
+	recovering_slow_time_left = 0.0
+	recovering_slow_duration = 0.0
+	recovering_slow_move_multiplier = 1.0
+	recovering_slow_attack_speed_multiplier = 1.0
 	current_health = max_health
 	ensure_sprite_setup()
 	apply_role_visuals()
@@ -335,13 +377,41 @@ func set_role(role_name: String) -> void:
 func is_idle() -> bool:
 	return global_position.distance_to(destination) < 6.0
 
-func take_damage(amount: float) -> bool:
+func resolve_overkill_knockback_direction(hit_direction: Vector2) -> Vector2:
+	var resolved_direction: Vector2 = hit_direction.normalized()
+	if resolved_direction != Vector2.ZERO:
+		return resolved_direction
+	if velocity.length() > 6.0:
+		resolved_direction = velocity.normalized()
+		if resolved_direction != Vector2.ZERO:
+			return resolved_direction
+	var destination_offset: Vector2 = destination - global_position
+	if destination_offset.length() > 0.001:
+		resolved_direction = destination_offset.normalized()
+		if resolved_direction != Vector2.ZERO:
+			return resolved_direction
+	return Vector2.RIGHT
+
+func apply_overkill_knockback(overkill_damage: float, hit_direction: Vector2) -> void:
+	if overkill_damage <= 0.0:
+		return
+	var force: float = minf(overkill_damage * OVERKILL_KNOCKBACK_FORCE_PER_DAMAGE, OVERKILL_KNOCKBACK_MAX_FORCE)
+	if force <= 0.0:
+		return
+	var duration: float = clampf(0.12 + overkill_damage * OVERKILL_KNOCKBACK_DURATION_PER_DAMAGE, 0.12, OVERKILL_KNOCKBACK_MAX_DURATION)
+	apply_knockback_impulse(resolve_overkill_knockback_direction(hit_direction) * force, duration)
+
+func take_damage(amount: float, hit_direction: Vector2 = Vector2.ZERO) -> bool:
 	if death_started:
 		return true
-	current_health -= amount
+	var applied_damage: float = maxf(amount, 0.0)
+	var health_before: float = current_health
+	current_health = maxf(current_health - applied_damage, 0.0)
 	hurt_effect_left = maxf(hurt_effect_left, 0.22)
 	if current_health <= 0.0:
 		begin_death()
+		var overkill_damage: float = maxf(applied_damage - health_before, 0.0)
+		apply_overkill_knockback(overkill_damage, hit_direction)
 		return true
 	queue_redraw()
 	return false
@@ -360,6 +430,11 @@ func _physics_process(delta: float) -> void:
 	attack_effect_left = maxf(attack_effect_left - delta, 0.0)
 	hurt_effect_left = maxf(hurt_effect_left - delta, 0.0)
 	rooted_time_left = maxf(rooted_time_left - delta, 0.0)
+	recovering_slow_time_left = maxf(recovering_slow_time_left - delta, 0.0)
+	if recovering_slow_time_left <= 0.0 and recovering_slow_duration > 0.0:
+		recovering_slow_duration = 0.0
+		recovering_slow_move_multiplier = 1.0
+		recovering_slow_attack_speed_multiplier = 1.0
 	var offset: Vector2 = destination - global_position
 	var desired_velocity: Vector2 = Vector2.ZERO
 	if offset.length() < 4.0:
@@ -383,3 +458,5 @@ func _draw() -> void:
 		draw_arc(Vector2(0.0, 2.0), 19.0, 0.0, TAU, 20, Color(0.92, 0.98, 1.0, 0.7), 1.8, true)
 		draw_line(Vector2(-13.0, -8.0), Vector2(13.0, 12.0), Color(0.95, 0.98, 1.0, 0.55), 1.5, true)
 		draw_line(Vector2(-13.0, 12.0), Vector2(13.0, -8.0), Color(0.95, 0.98, 1.0, 0.55), 1.5, true)
+	if recovering_slow_time_left > 0.0 and rooted_time_left <= 0.0:
+		draw_arc(Vector2.ZERO, 21.0, -PI * 0.5, -PI * 0.5 + TAU * recovering_slow_strength(), 18, Color(0.62, 0.8, 1.0, 0.9), 2.0, true)

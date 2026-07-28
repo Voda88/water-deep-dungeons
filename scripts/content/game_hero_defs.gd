@@ -61,12 +61,12 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 				"name": "Fighter",
 				"title": "Melee Fighter",
 				"move_speed": 248.0,
-				"max_health": 142.0,
+				"max_health": 170.0,
 				"attack_damage": 28.0,
 				"attack_range": 70.0,
 				"attack_cooldown": 1.0,
 				"attack_style": "melee",
-				"weight": 2.45,
+				"weight": 2.8,
 				"melee_windup": 0.24,
 				"body_color": Color("ff9a7a"),
 				"core_color": Color("fff2dd"),
@@ -221,13 +221,22 @@ static func hero_builtin_card_generators(game: Node, hero: Variant) -> Array:
 		return []
 	var generators: Array = [{
 		"card_id": "emergency_snack_card",
-		"door_interval": 1,
-		"generation_mode": "door_interval",
+		"generation_mode": "single",
 		"initial_queued_cards": 1,
 		"max_stored_cards": 1,
+		"persistent_card": true,
 		"source_type": "hero_builtin",
 		"hero_index": hero.hero_index,
 		"generator_key": "hero:%d:emergency_snack_card" % hero.hero_index,
+	}, {
+		"card_id": "arcane_reset_card",
+		"generation_mode": "single",
+		"initial_queued_cards": 1,
+		"max_stored_cards": 1,
+		"persistent_card": true,
+		"source_type": "hero_builtin",
+		"hero_index": hero.hero_index,
+		"generator_key": "hero:%d:arcane_reset_card" % hero.hero_index,
 	}]
 	if hero.hero_class_id == game.HERO_CLASS_WIZARD:
 		generators.append({

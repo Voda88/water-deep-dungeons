@@ -81,6 +81,7 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 			"position": projectile.get("position", Vector2.ZERO),
 			"previous": projectile.get("previous", Vector2.ZERO),
 			"target_position": projectile.get("target_position", Vector2.ZERO),
+			"motion_mode": String(projectile.get("motion_mode", "")),
 			"velocity": projectile.get("velocity", Vector2.ZERO),
 			"damage": float(projectile.get("damage", 0.0)),
 			"speed": float(projectile.get("speed", game.PROJECTILE_SPEED)),
@@ -92,7 +93,19 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 			"points": Array(projectile.get("points", [])).duplicate(true),
 			"lifetime_left": float(projectile.get("lifetime_left", 0.0)),
 			"blast_duration": float(projectile.get("blast_duration", 0.0)),
+			"pierce": int(projectile.get("pierce", maxi(0, int(projectile.get("max_pierce", 1)) - 1))),
+			"max_pierce": int(projectile.get("max_pierce", int(projectile.get("pierce", 0)) + 1)),
+			"pierced_count": int(projectile.get("pierced_count", 0)),
+			"bounces": int(projectile.get("bounces", 0)),
 			"remaining_bounces": int(projectile.get("remaining_bounces", 0)),
+			"expire_after_hit": bool(projectile.get("expire_after_hit", false)),
+			"final_hit_effect_kind": String(projectile.get("final_hit_effect_kind", "")),
+			"final_hit_effect_radius": float(projectile.get("final_hit_effect_radius", 0.0)),
+			"final_hit_effect_duration": float(projectile.get("final_hit_effect_duration", 0.0)),
+			"final_hit_effect_width": float(projectile.get("final_hit_effect_width", 0.0)),
+			"final_hit_effect_color": projectile.get("final_hit_effect_color", projectile.get("color", Color.WHITE)),
+			"final_hit_label": String(projectile.get("final_hit_label", "")),
+			"final_hit_label_color": projectile.get("final_hit_label_color", projectile.get("color", Color.WHITE)),
 			"rotation_angle": float(projectile.get("rotation_angle", 0.0)),
 			"spin_speed": float(projectile.get("spin_speed", 0.0)),
 			"hit_enemy_uids": Array(projectile.get("hit_enemy_uids", [])).duplicate(true),
@@ -147,7 +160,7 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 		"major_module_levels": game.major_module_levels.duplicate(true),
 		"active_research": game.active_research.duplicate(true),
 		"crystal_health": game.crystal_health,
-		"stamina_use_enabled": game.stamina_use_enabled,
+		"stamina_use_enabled": false,
 		"opened_rooms": game.opened_rooms,
 		"wave_index": game.wave_index,
 		"doors_opened": game.doors_opened,
@@ -196,7 +209,7 @@ static func apply_network_snapshot(game: Node, snapshot: Dictionary) -> void:
 	game.major_module_levels = game.normalized_major_module_levels(Dictionary(snapshot.get("major_module_levels", game.initialized_major_module_levels())).duplicate(true))
 	game.active_research = Dictionary(snapshot.get("active_research", {})).duplicate(true)
 	game.crystal_health = float(snapshot.get("crystal_health", game.crystal_health))
-	game.stamina_use_enabled = bool(snapshot.get("stamina_use_enabled", game.stamina_use_enabled))
+	game.stamina_use_enabled = false
 	game.opened_rooms = int(snapshot.get("opened_rooms", game.opened_rooms))
 	game.wave_index = int(snapshot.get("wave_index", game.wave_index))
 	game.doors_opened = int(snapshot.get("doors_opened", game.doors_opened))
@@ -383,6 +396,34 @@ static func server_request_room_construction(game: Node, hero_index: int, room_c
 	game.request_room_construction_for_hero(hero_index, room_coord, module_type)
 	broadcast_network_snapshot(game)
 
+static func server_request_room_merchant_action(game: Node, hero_index: int, room_coord: Vector2i, action_kind: String, item_or_offer_uid: int) -> void:
+	if not game.multiplayer.is_server():
+		return
+	var sender_peer_id: int = game.multiplayer.get_remote_sender_id()
+	if not peer_can_control_hero(game, sender_peer_id, hero_index):
+		return
+	var accepted: bool = false
+	match action_kind:
+		"buy":
+			accepted = game.request_room_merchant_buy_for_hero(hero_index, room_coord, item_or_offer_uid)
+		"sell":
+			accepted = game.request_room_merchant_sell_for_hero(hero_index, room_coord, item_or_offer_uid)
+		"buyback":
+			accepted = game.request_room_merchant_buyback_for_hero(hero_index, room_coord, item_or_offer_uid)
+		_:
+			accepted = false
+	if accepted:
+		broadcast_network_snapshot(game)
+
+static func server_request_room_resource_trade(game: Node, hero_index: int, room_coord: Vector2i, target_hero_index: int, resource_id: String, amount: int) -> void:
+	if not game.multiplayer.is_server():
+		return
+	var sender_peer_id: int = game.multiplayer.get_remote_sender_id()
+	if not peer_can_control_hero(game, sender_peer_id, hero_index):
+		return
+	if game.request_room_resource_trade_for_hero(hero_index, room_coord, target_hero_index, resource_id, amount):
+		broadcast_network_snapshot(game)
+
 static func server_request_hero_class(game: Node, hero_index: int, class_id: String) -> void:
 	if not game.multiplayer.is_server():
 		return
@@ -462,11 +503,11 @@ static func server_request_exit_floor(game: Node, hero_index: int) -> void:
 	game.update_hud()
 	broadcast_network_snapshot(game)
 
-static func server_request_set_stamina_use_enabled(game: Node, enabled: bool) -> void:
+static func server_request_set_stamina_use_enabled(game: Node, _enabled: bool) -> void:
 	if not game.multiplayer.is_server():
 		return
-	game.stamina_use_enabled = enabled
-	game.status_message = "Stamina use %s." % ("enabled" if game.stamina_use_enabled else "disabled")
+	game.stamina_use_enabled = false
+	game.status_message = "Stamina has been removed."
 	game.update_hud()
 	broadcast_network_snapshot(game)
 
