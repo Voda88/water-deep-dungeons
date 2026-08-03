@@ -10,7 +10,7 @@ const PRIEST_ATTACK_EFFECT: Texture2D = preload("res://assets/characters/packs/p
 const GHOSTFIRE_BEAM_EFFECT: Texture2D = preload("res://assets/characters/packs/pack02/projectiles/Ghostfire_Beam.png")
 const FLOOR_ENEMY_TYPE_COUNT: int = 4
 const MIN_PREWARM_ENEMIES_PER_TYPE: int = 4
-const BASE_PREWARM_TOTAL: int = 24
+const BASE_PREWARM_TOTAL: int = 100
 
 static func launch_wave(game: Node, entered_room: Vector2i) -> void:
 	var dark_rooms: Array[Vector2i] = []
@@ -18,6 +18,8 @@ static func launch_wave(game: Node, entered_room: Vector2i) -> void:
 		var room_coord: Vector2i = room_coord_variant
 		var room: Dictionary = game.rooms[room_coord]
 		if room_coord == game.crystal_room or not room["opened"] or room["lit"]:
+			continue
+		if String(room.get("merchant_theme", "")) != "" or bool(room.get("research_crystal", false)) or Array(room.get("ground_items", [])).size() > 0:
 			continue
 		dark_rooms.append(room_coord)
 	if dark_rooms.is_empty():
@@ -27,23 +29,47 @@ static func launch_wave(game: Node, entered_room: Vector2i) -> void:
 		game.update_hud()
 		return
 	game.wave_index += 1
-	var spawn_room_count: int = mini(mini(1 + int(floor(float(max(game.wave_index - 1, 0)) / 2.0)), dark_rooms.size()), game.DOOR_WAVE_POINTS)
-	var total_wave_points: int = game.DOOR_WAVE_POINTS
+	var dark_room_count: int = dark_rooms.size()
+	var wave_strength_bonus: int = maxi(dark_room_count - 1, 0)
+	var base_wave_points: int = game.DOOR_WAVE_POINTS
 	var chosen_rooms: Array[Vector2i] = []
-	while chosen_rooms.size() < spawn_room_count and not dark_rooms.is_empty():
-		var room_index: int = game.rng.randi_range(0, dark_rooms.size() - 1)
-		chosen_rooms.append(dark_rooms[room_index])
-		dark_rooms.remove_at(room_index)
 	var delayed_room_order: int = 0
-	for spawn_index in range(chosen_rooms.size()):
-		var room_coord: Vector2i = chosen_rooms[spawn_index]
-		var wave_points: int = maxi(1, int(floor(float(total_wave_points) / float(chosen_rooms.size()))))
-		if spawn_index < total_wave_points % chosen_rooms.size():
-			wave_points += 1
-		var immediate: bool = room_coord == entered_room
-		queue_wave_spawn(game, room_coord, wave_points, immediate, delayed_room_order)
-		if not immediate:
-			delayed_room_order += 1
+	if dark_rooms.has(entered_room):
+		chosen_rooms.append(entered_room)
+		dark_rooms.erase(entered_room)
+		var bonus_spawn_room_count: int = mini(wave_strength_bonus, dark_rooms.size())
+		while chosen_rooms.size() < 1 + bonus_spawn_room_count and not dark_rooms.is_empty():
+			var room_index: int = game.rng.randi_range(0, dark_rooms.size() - 1)
+			chosen_rooms.append(dark_rooms[room_index])
+			dark_rooms.remove_at(room_index)
+		queue_wave_spawn(game, entered_room, base_wave_points, true, delayed_room_order)
+		var bonus_room_count: int = chosen_rooms.size() - 1
+		if bonus_room_count > 0:
+			var bonus_points_per_room: int = int(floor(float(wave_strength_bonus) / float(bonus_room_count)))
+			var bonus_remainder: int = wave_strength_bonus % bonus_room_count
+			for bonus_index in range(bonus_room_count):
+				var room_coord: Vector2i = chosen_rooms[bonus_index + 1]
+				var wave_points: int = bonus_points_per_room
+				if bonus_index < bonus_remainder:
+					wave_points += 1
+				queue_wave_spawn(game, room_coord, maxi(1, wave_points), false, delayed_room_order)
+				delayed_room_order += 1
+	else:
+		var spawn_room_count: int = mini(1 + wave_strength_bonus, dark_room_count)
+		var total_wave_points: int = base_wave_points + wave_strength_bonus
+		while chosen_rooms.size() < spawn_room_count and not dark_rooms.is_empty():
+			var room_index: int = game.rng.randi_range(0, dark_rooms.size() - 1)
+			chosen_rooms.append(dark_rooms[room_index])
+			dark_rooms.remove_at(room_index)
+		for spawn_index in range(chosen_rooms.size()):
+			var room_coord: Vector2i = chosen_rooms[spawn_index]
+			var wave_points: int = maxi(1, int(floor(float(total_wave_points) / float(chosen_rooms.size()))))
+			if spawn_index < total_wave_points % chosen_rooms.size():
+				wave_points += 1
+			var immediate: bool = room_coord == entered_room
+			queue_wave_spawn(game, room_coord, wave_points, immediate, delayed_room_order)
+			if not immediate:
+				delayed_room_order += 1
 	game.status_message = "Wave %d emerged from %d dark room%s." % [game.wave_index, chosen_rooms.size(), "" if chosen_rooms.size() == 1 else "s"]
 	game.update_hud()
 
@@ -53,66 +79,58 @@ static func queue_wave_spawn(game: Node, room_coord: Vector2i, wave_points: int,
 	var spawn_plan: Array[String] = build_enemy_spawn_plan(game, wave_points, false)
 	if spawn_plan.is_empty():
 		return
-	if immediate:
-		for enemy_type in spawn_plan:
-			spawn_wave_enemy(game, room_coord, enemy_type)
-		return
-	var room_delay: float = 0.0 if immediate else game.WAVE_WARNING_DURATION + float(spawn_order) * game.WAVE_STAGGER_ROOM_INTERVAL
-	game.rooms[room_coord]["warning_timer_left"] = room_delay
-	var spawn_positions: Array = build_spawn_positions(game, room_coord, spawn_plan.size())
+	var marker_lead: float = maxf(float(game.WAVE_PRESPAWN_MARKER_LEAD), 0.0)
+	var crystal_is_carried: bool = game.crystal_holder != null and is_instance_valid(game.crystal_holder)
+	var room_stagger_interval: float = game.WAVE_STAGGER_ROOM_INTERVAL if crystal_is_carried else 0.0
+	var room_delay: float = 0.0 if immediate else float(spawn_order + 1) * room_stagger_interval
+	var first_spawn_delay: float = room_delay + marker_lead
+	game.rooms[room_coord]["warning_timer_left"] = first_spawn_delay
 	game.pending_enemy_spawns.append({
 		"room": room_coord,
 		"spawn_source": "door_wave",
 		"remaining": spawn_plan.size(),
-		"delay_left": room_delay,
+		"delay_left": first_spawn_delay,
 		"interval": game.WAVE_STAGGER_ENEMY_INTERVAL,
 		"total_count": spawn_plan.size(),
 		"spawned": 0,
 		"plan": spawn_plan,
-		"positions": spawn_positions,
+		"positions": [],
 	})
-
-static func apply_pressure_spawn_backoff_to_other_rooms(game: Node, pending_spawns: Array, source_index: int, source_room: Vector2i) -> void:
-	var extra_delay: float = maxf(game.CRYSTAL_PRESSURE_OTHER_ROOM_DELAY_PER_SPAWN, 0.0)
-	if extra_delay <= 0.0:
-		return
-	for pending_index in range(pending_spawns.size()):
-		if pending_index == source_index:
-			continue
-		var other_spawn: Dictionary = pending_spawns[pending_index]
-		if String(other_spawn.get("spawn_source", "")) != "crystal_pressure":
-			continue
-		if int(other_spawn.get("remaining", 0)) <= 0:
-			continue
-		var other_room: Vector2i = Vector2i(other_spawn.get("room", game.INVALID_ROOM))
-		if other_room == source_room:
-			continue
-		other_spawn["delay_left"] = float(other_spawn.get("delay_left", 0.0)) + extra_delay
-		pending_spawns[pending_index] = other_spawn
 
 static func advance_pending_enemy_spawns(game: Node, delta: float) -> void:
 	for room_coord_variant in game.rooms.keys():
 		var room_coord: Vector2i = room_coord_variant
 		game.rooms[room_coord]["warning_timer_left"] = maxf(float(game.rooms[room_coord].get("warning_timer_left", 0.0)) - delta, 0.0)
 	var pending_spawns: Array = game.pending_enemy_spawns
+	var spawn_budget_base: int = int(floor(float(game.ENEMY_SPAWN_FRAME_BUDGET) * 0.5))
+	var spawn_budget: int = maxi(1, spawn_budget_base)
+	var preview_budget: int = maxi(1, int(game.ENEMY_SPAWN_PREVIEW_FRAME_BUDGET))
 	for pending_index in range(pending_spawns.size()):
 		var pending_spawn: Dictionary = pending_spawns[pending_index]
 		pending_spawn["delay_left"] = float(pending_spawn["delay_left"]) - delta
-		while int(pending_spawn["remaining"]) > 0 and float(pending_spawn["delay_left"]) <= 0.0:
+		if preview_budget > 0:
+			var preview_positions: Array = Array(pending_spawn.get("positions", []))
+			var preview_room: Vector2i = Vector2i(pending_spawn.get("room", game.INVALID_ROOM))
+			var preview_target_count: int = int(pending_spawn.get("total_count", preview_positions.size()))
+			while preview_budget > 0 and preview_positions.size() < preview_target_count and game.rooms.has(preview_room):
+				preview_positions.append(game.random_walkable_point(preview_room))
+				preview_budget -= 1
+			pending_spawn["positions"] = preview_positions
+		if spawn_budget > 0 and int(pending_spawn["remaining"]) > 0 and float(pending_spawn["delay_left"]) <= 0.0:
 			var plan: Array = Array(pending_spawn.get("plan", []))
 			var positions: Array = Array(pending_spawn.get("positions", []))
 			var spawn_index: int = int(pending_spawn.get("spawned", 0))
-			if spawn_index < 0 or spawn_index >= plan.size():
-				break
-			var spawn_position: Vector2 = Vector2.INF
-			if spawn_index >= 0 and spawn_index < positions.size():
-				spawn_position = Vector2(positions[spawn_index])
-			spawn_wave_enemy_at(game, Vector2i(pending_spawn["room"]), String(plan[spawn_index]), spawn_position)
-			if String(pending_spawn.get("spawn_source", "")) == "crystal_pressure":
-				apply_pressure_spawn_backoff_to_other_rooms(game, pending_spawns, pending_index, Vector2i(pending_spawn["room"]))
-			pending_spawn["spawned"] = int(pending_spawn["spawned"]) + 1
-			pending_spawn["remaining"] = int(pending_spawn["remaining"]) - 1
-			pending_spawn["delay_left"] = float(pending_spawn["delay_left"]) + float(pending_spawn["interval"])
+			if spawn_index >= 0 and spawn_index < plan.size():
+				var spawn_position: Vector2 = Vector2.INF
+				if spawn_index < positions.size():
+					spawn_position = Vector2(positions[spawn_index])
+				spawn_wave_enemy_at(game, Vector2i(pending_spawn["room"]), String(plan[spawn_index]), spawn_position)
+				pending_spawn["spawned"] = int(pending_spawn["spawned"]) + 1
+				pending_spawn["remaining"] = int(pending_spawn["remaining"]) - 1
+				pending_spawn["delay_left"] = float(pending_spawn["delay_left"]) + float(pending_spawn["interval"])
+				spawn_budget -= 1
+			else:
+				pending_spawn["remaining"] = 0
 		pending_spawns[pending_index] = pending_spawn
 	var active_spawns: Array = []
 	for pending_spawn_variant in pending_spawns:
@@ -136,46 +154,76 @@ static func dark_rooms_for_crystal_pressure(game: Node) -> Array[Vector2i]:
 		var room: Dictionary = game.rooms[room_coord]
 		if room_coord == game.crystal_room or not room["opened"] or room["lit"]:
 			continue
+		if String(room.get("merchant_theme", "")) != "" or bool(room.get("research_crystal", false)) or Array(room.get("ground_items", [])).size() > 0:
+			continue
 		dark_rooms.append(room_coord)
 	return dark_rooms
 
 static func crystal_pressure_interval_for_dark_room_count(game: Node, dark_room_count: int) -> float:
-	var count: int = maxi(dark_room_count, 1)
-	return game.CRYSTAL_PRESSURE_INTERVAL_PER_DARK_ROOM * float(count)
+	return game.CRYSTAL_PRESSURE_INTERVAL
 
 static func crystal_pressure_interval_for_current_dark_rooms(game: Node) -> float:
 	return crystal_pressure_interval_for_dark_room_count(game, dark_rooms_for_crystal_pressure(game).size())
+
+static func active_enemy_count(game: Node) -> int:
+	var active_count: int = 0
+	for enemy_variant in Array(game.enemies):
+		var enemy: Variant = enemy_variant
+		if game.enemy_is_active(enemy):
+			active_count += 1
+	return active_count
+
+static func pending_enemy_count(game: Node) -> int:
+	var pending_count: int = 0
+	for pending_spawn_variant in Array(game.pending_enemy_spawns):
+		var pending_spawn: Dictionary = pending_spawn_variant
+		pending_count += maxi(0, int(pending_spawn.get("remaining", 0)))
+	return pending_count
+
+static func crystal_pressure_monster_count(game: Node) -> int:
+	return active_enemy_count(game) + pending_enemy_count(game)
 
 static func trigger_crystal_pressure(game: Node) -> void:
 	var dark_rooms: Array[Vector2i] = dark_rooms_for_crystal_pressure(game)
 	if dark_rooms.is_empty():
 		game.crystal_pressure_timer_left = crystal_pressure_interval_for_dark_room_count(game, 1)
 		return
-	for room_coord in dark_rooms:
-		queue_pressure_spawn(game, room_coord, game.CRYSTAL_PRESSURE_ENEMIES_PER_ROOM + int(floor(float(max(game.floor_index - 1, 0)) / 2.0)))
+	var remaining_capacity: int = game.CRYSTAL_PRESSURE_MAX_MONSTERS - crystal_pressure_monster_count(game)
+	if remaining_capacity <= 0:
+		game.crystal_pressure_timer_left = crystal_pressure_interval_for_dark_room_count(game, dark_rooms.size())
+		return
+	var chosen_room: Vector2i = dark_rooms[game.rng.randi_range(0, dark_rooms.size() - 1)]
+	var pressure_spawn_points: int = game.CRYSTAL_PRESSURE_ENEMIES_PER_ROOM + int(floor(float(max(game.floor_index - 1, 0)) / 2.0))
+	var queued_count: int = queue_pressure_spawn(game, chosen_room, pressure_spawn_points, remaining_capacity)
 	game.crystal_pressure_timer_left = crystal_pressure_interval_for_dark_room_count(game, dark_rooms.size())
-	game.status_message = "The crystal agitates %d dark room%s." % [dark_rooms.size(), "" if dark_rooms.size() == 1 else "s"]
+	if queued_count <= 0:
+		return
+	game.status_message = "The crystal agitates %s." % game.room_title(chosen_room)
 	game.update_hud()
 
-static func queue_pressure_spawn(game: Node, room_coord: Vector2i, count: int) -> void:
+static func queue_pressure_spawn(game: Node, room_coord: Vector2i, count: int, max_spawn_entities: int = -1) -> int:
 	if not game.rooms.has(room_coord) or count <= 0:
-		return
+		return 0
 	var spawn_plan: Array[String] = build_enemy_spawn_plan(game, count, true)
+	if max_spawn_entities >= 0 and spawn_plan.size() > max_spawn_entities:
+		spawn_plan.resize(max_spawn_entities)
 	if spawn_plan.is_empty():
-		return
-	game.rooms[room_coord]["warning_timer_left"] = maxf(float(game.rooms[room_coord].get("warning_timer_left", 0.0)), game.CRYSTAL_PRESSURE_WARNING_DURATION)
-	var spawn_positions: Array = build_spawn_positions(game, room_coord, spawn_plan.size())
+		return 0
+	var marker_lead: float = maxf(float(game.WAVE_PRESPAWN_MARKER_LEAD), 0.0)
+	var first_spawn_delay: float = maxf(float(game.CRYSTAL_PRESSURE_WARNING_DURATION), 0.0) + marker_lead
+	game.rooms[room_coord]["warning_timer_left"] = maxf(float(game.rooms[room_coord].get("warning_timer_left", 0.0)), first_spawn_delay)
 	game.pending_enemy_spawns.append({
 		"room": room_coord,
 		"spawn_source": "crystal_pressure",
 		"remaining": spawn_plan.size(),
-		"delay_left": game.CRYSTAL_PRESSURE_WARNING_DURATION,
+		"delay_left": first_spawn_delay,
 		"interval": game.WAVE_STAGGER_ENEMY_INTERVAL,
 		"total_count": spawn_plan.size(),
 		"spawned": 0,
 		"plan": spawn_plan,
-		"positions": spawn_positions,
+		"positions": [],
 	})
+	return spawn_plan.size()
 
 static func enemy_pack_size(game: Node, enemy_type: String) -> int:
 	return GAME_ENEMY_DEFS.enemy_pack_size(enemy_type)
@@ -658,17 +706,6 @@ static func process_modules(game: Node, delta: float) -> void:
 							conversion_direction = Vector2.RIGHT
 						conversion_target.take_damage(maxf(float(conversion_target.current_health) + 4.0, 1.0), conversion_direction)
 						var betrayal_radius: float = 72.0 + float(clampi(game.minor_module_level(module_type), 1, 4)) * 8.0
-						for betrayal_enemy in game.enemies:
-							if betrayal_enemy == conversion_target:
-								continue
-							if not enemy_is_targetable_by_module(game, betrayal_enemy, room_coord):
-								continue
-							if betrayal_enemy.global_position.distance_to(conversion_center) > betrayal_radius:
-								continue
-							var betrayal_direction: Vector2 = (betrayal_enemy.global_position - conversion_center).normalized()
-							if betrayal_direction == Vector2.ZERO:
-								betrayal_direction = Vector2.RIGHT
-							betrayal_enemy.take_damage(game.minor_module_damage(module_type), betrayal_direction)
 						game.add_resource_floating_text(conversion_center + Vector2(0.0, -22.0), "Converted", Color("8effc4"))
 						game.projectiles.append({
 							"kind": "gas_pulse",

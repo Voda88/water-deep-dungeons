@@ -9,6 +9,8 @@ static func _unhandled_input(game: Node, event: InputEvent) -> void:
 		return
 	if game.merchant_overlay != null and game.merchant_overlay.visible:
 		return
+	if event is InputEventKey and handle_pc_hero_hotkeys(game, event):
+		return
 	if game.inventory_overlay != null and game.inventory_overlay.visible:
 		handle_inventory_input(game, event)
 		return
@@ -20,6 +22,29 @@ static func _unhandled_input(game: Node, event: InputEvent) -> void:
 		game.handle_mouse_button(event)
 	elif event is InputEventMouseMotion:
 		game.handle_mouse_motion(event)
+
+static func handle_pc_hero_hotkeys(game: Node, event: InputEventKey) -> bool:
+	if event == null or not event.pressed or event.echo:
+		return false
+	var keycode: int = int(event.keycode)
+	if keycode == 0:
+		keycode = int(event.physical_keycode)
+	var hero_index: int = -1
+	match keycode:
+		KEY_1, KEY_KP_1:
+			hero_index = 0
+		KEY_2, KEY_KP_2:
+			hero_index = 1
+		KEY_3, KEY_KP_3:
+			hero_index = 2
+		KEY_4, KEY_KP_4:
+			hero_index = 3
+	if hero_index < 0:
+		return false
+	if hero_index >= game.heroes.size() or not game.can_local_control_hero_index(hero_index):
+		return true
+	game.select_hero_by_index(hero_index)
+	return true
 
 static func handle_inventory_input(game: Node, event: InputEvent) -> void:
 	if game.inventory_overlay == null or not game.inventory_overlay.visible:

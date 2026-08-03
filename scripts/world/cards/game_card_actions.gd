@@ -38,7 +38,7 @@ static func reaction_priority_value(hand_card: Dictionary) -> int:
 	return int(hand_card.get("reaction_priority", 0))
 
 static func play_reaction_card_for_hero_at_index(game: Node, hero: Variant, hand_index: int, trigger_id: String = "") -> bool:
-	if hero == null or not is_instance_valid(hero) or hand_index < 0 or hand_index >= hero.hand_cards.size():
+	if hero == null or not is_instance_valid(hero) or hero.carrying_crystal or hand_index < 0 or hand_index >= hero.hand_cards.size():
 		return false
 	var hand_card: Dictionary = (hero.hand_cards[hand_index] as Dictionary).duplicate(true)
 	if not game.hand_card_phase_allows_play(hand_card):
@@ -91,6 +91,8 @@ static func first_reaction_card_index_for_trigger(game: Node, hero: Variant, tri
 	return best_index
 
 static func trigger_first_reaction_card(game: Node, hero: Variant, trigger_id: String) -> bool:
+	if hero == null or not is_instance_valid(hero) or hero.carrying_crystal:
+		return false
 	var hand_index: int = first_reaction_card_index_for_trigger(game, hero, trigger_id)
 	if hand_index < 0:
 		return false
@@ -617,6 +619,8 @@ static func hand_card_phase_allows_play(game: Node, hand_card: Dictionary) -> bo
 			return true
 
 static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Dictionary, target_data: Dictionary) -> bool:
+	if hero == null or not is_instance_valid(hero) or hero.carrying_crystal:
+		return false
 	var target_world_position: Vector2 = Vector2(target_data.get("world_position", hero.global_position))
 	if hand_card_starts_spell_study(game, hero, hand_card, target_data):
 		return game.begin_spell_scroll_study(hero, String(hand_card.get("learn_spell_id", "")))
@@ -1220,6 +1224,8 @@ static func cast_shield_spell(game: Node, hero: Variant, hand_card: Dictionary) 
 
 static func try_auto_cast_fatal_shield(game: Node, hero: Variant, incoming_damage: float) -> bool:
 	if hero == null or not is_instance_valid(hero):
+		return false
+	if hero.carrying_crystal:
 		return false
 	if hero.current_health > 0.0 or hero.invulnerability_time_left > 0.0:
 		return false

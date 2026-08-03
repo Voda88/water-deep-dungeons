@@ -11,7 +11,7 @@ const MINOR_MODULE_BOUNTY_SCIENCE: String = "bounty_arcana"
 const MAJOR_MODULE_FOOD: String = "food"
 const MAJOR_MODULE_SCIENCE: String = "science"
 const MAJOR_MODULE_INDUSTRY: String = "industry"
-const BALLISTA_LEVEL_DAMAGE: Array[float] = [9.0, 10.0, 12.0, 14.0]
+const BALLISTA_LEVEL_DAMAGE: Array[float] = [4.5, 5.0, 6.0, 7.0]
 const MINOR_MODULE_BOUNTY_THRESHOLDS: Array[int] = [6, 5, 4, 3]
 const MINOR_MODULE_KIP_MAX_DAMAGE_BY_LEVEL: Array[int] = [100, 130, 160, 190]
 
@@ -177,6 +177,8 @@ static func is_major_module_type(module_type: String) -> bool:
 
 static func minor_module_base_cost(module_type: String) -> int:
 	match canonical_minor_module_type(module_type):
+		MINOR_MODULE_TURRET:
+			return 3
 		MINOR_MODULE_PULSE:
 			return 20
 		MINOR_MODULE_CANNON:
@@ -236,7 +238,7 @@ static func minor_module_damage(module_type: String, minor_module_levels: Dictio
 		MINOR_MODULE_KIP:
 			return 16.0 + float(level - 1) * 5.0
 		MINOR_MODULE_CONVERSION:
-			return 6.0 + float(level - 1) * 2.0
+			return 0.0
 		MINOR_MODULE_BOUNTY_INDUSTRY, MINOR_MODULE_BOUNTY_FOOD, MINOR_MODULE_BOUNTY_SCIENCE:
 			return 0.0
 		_:

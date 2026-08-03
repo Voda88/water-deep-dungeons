@@ -634,10 +634,8 @@ static func request_deferred_room_action_for_hero(game: Node, hero_index: int, r
 	for extra_key_variant in extra_request.keys():
 		action_request[extra_key_variant] = extra_request[extra_key_variant]
 	game.pending_room_action_requests[hero.hero_index] = action_request
-	var target_position: Vector2 = room_action_staging_position(game, room_coord)
 	if command_room == room_coord:
-		var room_action_path: Array[Vector2i] = [room_coord]
-		game.issue_hero_steps(hero, game.build_steps_for_path(room_action_path, hero.global_position, target_position))
+		hero.move_steps.clear()
 	else:
 		var path: Array[Vector2i] = game.find_path(command_room, room_coord, true)
 		if path.size() <= 1:
@@ -646,6 +644,7 @@ static func request_deferred_room_action_for_hero(game: Node, hero_index: int, r
 			game.update_hud()
 			game.queue_redraw()
 			return false
+		var target_position: Vector2 = game.hero_room_entry_target_position(path, hero, room_coord)
 		game.issue_hero_steps(hero, game.build_steps_for_path(path, hero.global_position, target_position))
 	var action_label: String = action_label_override
 	if action_label == "":
@@ -678,7 +677,6 @@ static func request_deferred_room_card_for_hero(game: Node, hero_index: int, roo
 	if command_room == room_coord:
 		hero.move_steps.clear()
 	else:
-		var target_position: Vector2 = game.room_action_staging_position(room_coord)
 		var path: Array[Vector2i] = game.find_path(command_room, room_coord, true)
 		if path.size() <= 1:
 			clear_pending_room_action_request(game, hero.hero_index)
@@ -686,6 +684,7 @@ static func request_deferred_room_card_for_hero(game: Node, hero_index: int, roo
 			game.update_hud()
 			game.queue_redraw()
 			return false
+		var target_position: Vector2 = game.hero_room_entry_target_position(path, hero, room_coord)
 		game.issue_hero_steps(hero, game.build_steps_for_path(path, hero.global_position, target_position))
 	game.status_message = "%s moving to cast into %s." % [hero.hero_name, game.room_title(target_room)]
 	game.update_hud()

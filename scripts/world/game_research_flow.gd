@@ -27,7 +27,7 @@ static func research_option_cost(game: Node, module_type: String, next_level: in
 
 static func research_option_description(game: Node, module_type: String, next_level: int, is_major: bool) -> String:
 	if is_major:
-		return "Upgrade to level %d.\nEach online %s yields %d per door." % [next_level, game.research_display_name(module_type).to_lower(), game.major_module_door_yield(next_level)]
+		return "Upgrade to level %d.\nEach online %s yields %d after wave recovery." % [next_level, game.research_display_name(module_type).to_lower(), game.major_module_door_yield(next_level)]
 	match game.canonical_minor_module_type(module_type):
 		game.MINOR_MODULE_TURRET:
 			return "Unlocks or upgrades the arrow turret.\nLevel %d: %d damage, 0.5s cooldown." % [next_level, int(game.BALLISTA_LEVEL_DAMAGE[clampi(next_level - 1, 0, 3)])]
@@ -38,7 +38,7 @@ static func research_option_description(game: Node, module_type: String, next_le
 		game.MINOR_MODULE_KIP:
 			return "Arcana turret beam.\nDamage equals stored Arcana up to a level-based cap; level %d raises the cap." % next_level
 		game.MINOR_MODULE_CONVERSION:
-			return "Soulbind conversion spire.\nLevel %d converts one enemy and splashes nearby foes." % next_level
+			return "Soulbind conversion spire.\nLevel %d converts one enemy; no direct damage." % next_level
 		game.MINOR_MODULE_BOUNTY_INDUSTRY:
 			return "Salvage sigil.\nEarn materials every few enemy kills in the room; level %d lowers the kill requirement." % next_level
 		game.MINOR_MODULE_BOUNTY_FOOD:
@@ -103,6 +103,44 @@ static func research_resource_label(resource_id: String) -> String:
 		_:
 			return resource_id.capitalize()
 
+static func module_damage_at_level(game: Node, module_type: String, level: int) -> float:
+	if level <= 0:
+		return 0.0
+	match game.canonical_minor_module_type(module_type):
+		game.MINOR_MODULE_TURRET:
+			var damage_index: int = clampi(level - 1, 0, game.BALLISTA_LEVEL_DAMAGE.size() - 1)
+			return float(game.BALLISTA_LEVEL_DAMAGE[damage_index])
+		game.MINOR_MODULE_PULSE:
+			return 1.0 + float(level) * 0.7
+		game.MINOR_MODULE_CANNON:
+			return 8.0 + float(level - 1) * 3.0
+		game.MINOR_MODULE_CONVERSION:
+			return 0.0
+		_:
+			return 0.0
+
+static func module_cooldown_at_level(game: Node, module_type: String, level: int) -> float:
+	if level <= 0:
+		return 0.0
+	match game.canonical_minor_module_type(module_type):
+		game.MINOR_MODULE_TURRET:
+			return 0.5
+		game.MINOR_MODULE_PULSE:
+			return 1.1 - float(level - 1) * 0.08
+		game.MINOR_MODULE_CANNON:
+			return 1.45 - float(level - 1) * 0.12
+		game.MINOR_MODULE_KIP:
+			return 1.5
+		game.MINOR_MODULE_CONVERSION:
+			return 3.4 - float(level - 1) * 0.35
+		_:
+			return 0.0
+
+static func module_conversion_radius_at_level(level: int) -> float:
+	if level <= 0:
+		return 0.0
+	return 72.0 + float(clampi(level, 1, 4)) * 8.0
+
 static func research_option_stats_text(game: Node, option: Dictionary) -> String:
 	var module_type: String = String(option.get("module_type", ""))
 	var next_level: int = int(option.get("next_level", 1))
@@ -110,39 +148,51 @@ static func research_option_stats_text(game: Node, option: Dictionary) -> String
 	if bool(option.get("is_major", false)):
 		var current_yield: int = game.major_module_door_yield(current_level)
 		var next_yield: int = game.major_module_door_yield(next_level)
-		return "Current level %d -> %d\nPer-module door yield %d -> %d." % [current_level, next_level, current_yield, next_yield]
+		return "Current level %d -> %d\nPer-module wave yield %d -> %d." % [current_level, next_level, current_yield, next_yield]
 	match game.canonical_minor_module_type(module_type):
 		game.MINOR_MODULE_TURRET:
-			var next_damage: int = int(game.BALLISTA_LEVEL_DAMAGE[clampi(next_level - 1, 0, game.BALLISTA_LEVEL_DAMAGE.size() - 1)])
-			var next_dps: int = int(round(float(next_damage) / 0.5))
-			return "Current level %d -> %d\nAttack Power %d\nAttack Cooldown 0.5\nDPS %d" % [current_level, next_level, next_damage, next_dps]
+			var current_damage: float = module_damage_at_level(game, module_type, current_level)
+			var next_damage: float = module_damage_at_level(game, module_type, next_level)
+			var current_cooldown: float = module_cooldown_at_level(game, module_type, current_level)
+			var next_cooldown: float = module_cooldown_at_level(game, module_type, next_level)
+			var current_dps: float = current_damage / current_cooldown if current_cooldown > 0.0 else 0.0
+			var next_dps: float = next_damage / next_cooldown if next_cooldown > 0.0 else 0.0
+			return "Current level %d -> %d\nAttack Power %.1f -> %.1f\nAttack Cooldown %.2fs -> %.2fs\nDPS %.1f -> %.1f" % [current_level, next_level, current_damage, next_damage, current_cooldown, next_cooldown, current_dps, next_dps]
 		game.MINOR_MODULE_PULSE:
-			var pulse_level: int = clampi(next_level, 1, 4)
-			var pulse_damage: float = 1.0 + float(pulse_level) * 0.7
-			var pulse_slow_duration: float = 1.4 + float(pulse_level) * 0.2
-			var pulse_cooldown: float = 1.1 - float(pulse_level - 1) * 0.08
-			return "Current level %d -> %d\nRoom-wide blight gas\nPer tick damage %.1f\nSlow field %.1fs\nCooldown %.2fs" % [current_level, next_level, pulse_damage, pulse_slow_duration, pulse_cooldown]
+			var current_pulse_damage: float = module_damage_at_level(game, module_type, current_level)
+			var next_pulse_damage: float = module_damage_at_level(game, module_type, next_level)
+			var current_pulse_slow_duration: float = 1.4 + float(current_level) * 0.2 if current_level > 0 else 0.0
+			var next_pulse_slow_duration: float = 1.4 + float(next_level) * 0.2
+			var current_pulse_cooldown: float = module_cooldown_at_level(game, module_type, current_level)
+			var next_pulse_cooldown: float = module_cooldown_at_level(game, module_type, next_level)
+			return "Current level %d -> %d\nRoom-wide blight gas\nPer tick damage %.1f -> %.1f\nSlow field %.1fs -> %.1fs\nCooldown %.2fs -> %.2fs" % [current_level, next_level, current_pulse_damage, next_pulse_damage, current_pulse_slow_duration, next_pulse_slow_duration, current_pulse_cooldown, next_pulse_cooldown]
 		game.MINOR_MODULE_CANNON:
-			var mortar_level: int = clampi(next_level, 1, 4)
-			var mortar_damage: float = 8.0 + float(mortar_level - 1) * 3.0
-			var mortar_cooldown: float = 1.45 - float(mortar_level - 1) * 0.12
-			return "Current level %d -> %d\nRuneburst splash shell\nSplash damage %.1f\nCooldown %.2fs" % [current_level, next_level, mortar_damage, mortar_cooldown]
+			var current_mortar_damage: float = module_damage_at_level(game, module_type, current_level)
+			var next_mortar_damage: float = module_damage_at_level(game, module_type, next_level)
+			var current_mortar_cooldown: float = module_cooldown_at_level(game, module_type, current_level)
+			var next_mortar_cooldown: float = module_cooldown_at_level(game, module_type, next_level)
+			return "Current level %d -> %d\nRuneburst splash shell\nSplash damage %.1f -> %.1f\nCooldown %.2fs -> %.2fs" % [current_level, next_level, current_mortar_damage, next_mortar_damage, current_mortar_cooldown, next_mortar_cooldown]
 		game.MINOR_MODULE_KIP:
-			var current_arcana_cap: int = game.minor_module_kip_max_damage(current_level)
+			var current_arcana_cap: int = game.minor_module_kip_max_damage(current_level) if current_level > 0 else 0
 			var next_arcana_cap: int = game.minor_module_kip_max_damage(next_level)
 			var stored_arcana_damage: int = maxi(game.science, 0)
 			var effective_current_damage: int = mini(stored_arcana_damage, current_arcana_cap)
-			return "Current level %d -> %d\nArcana beam turret\nDamage = min(stored Arcana, cap) = min(%d, %d) = %d\nMax damage cap %d -> %d\nCooldown 1.50s" % [current_level, next_level, stored_arcana_damage, current_arcana_cap, effective_current_damage, current_arcana_cap, next_arcana_cap]
+			var effective_next_damage: int = mini(stored_arcana_damage, next_arcana_cap)
+			var current_kip_cooldown: float = module_cooldown_at_level(game, module_type, current_level)
+			var next_kip_cooldown: float = module_cooldown_at_level(game, module_type, next_level)
+			return "Current level %d -> %d\nArcana beam turret\nMax damage cap %d -> %d\nDamage at current Arcana (%d): %d -> %d\nCooldown %.2fs -> %.2fs" % [current_level, next_level, current_arcana_cap, next_arcana_cap, stored_arcana_damage, effective_current_damage, effective_next_damage, current_kip_cooldown, next_kip_cooldown]
 		game.MINOR_MODULE_CONVERSION:
-			var conversion_level: int = clampi(next_level, 1, 4)
-			var conversion_damage: float = 6.0 + float(conversion_level - 1) * 2.0
-			var conversion_cooldown: float = 3.4 - float(conversion_level - 1) * 0.35
-			return "Current level %d -> %d\nConverts one enemy on proc\nSplash damage %d\nCooldown %.2fs" % [current_level, next_level, int(conversion_damage), conversion_cooldown]
+			var current_conversion_radius: float = module_conversion_radius_at_level(current_level)
+			var next_conversion_radius: float = module_conversion_radius_at_level(next_level)
+			var current_conversion_cooldown: float = module_cooldown_at_level(game, module_type, current_level)
+			var next_conversion_cooldown: float = module_cooldown_at_level(game, module_type, next_level)
+			return "Current level %d -> %d\nConverts one enemy on proc\nConversion pulse radius %.0f -> %.0f\nCooldown %.2fs -> %.2fs" % [current_level, next_level, current_conversion_radius, next_conversion_radius, current_conversion_cooldown, next_conversion_cooldown]
 		game.MINOR_MODULE_BOUNTY_INDUSTRY, game.MINOR_MODULE_BOUNTY_FOOD, game.MINOR_MODULE_BOUNTY_SCIENCE:
 			var resource_label: String = research_resource_label(game.minor_module_bounty_resource_id(module_type))
 			var threshold_by_level: Array[int] = [6, 5, 4, 3]
-			var threshold: int = threshold_by_level[clampi(next_level - 1, 0, threshold_by_level.size() - 1)]
-			return "Current level %d -> %d\nPassive bounty module\n+1 %s every %d kills in room" % [current_level, next_level, resource_label, threshold]
+			var current_threshold: int = threshold_by_level[clampi(max(current_level, 1) - 1, 0, threshold_by_level.size() - 1)]
+			var next_threshold: int = threshold_by_level[clampi(next_level - 1, 0, threshold_by_level.size() - 1)]
+			return "Current level %d -> %d\nPassive bounty module\n+1 %s every %d -> %d kills in room" % [current_level, next_level, resource_label, current_threshold, next_threshold]
 		_:
 			return "Current level %d -> %d" % [current_level, next_level]
 

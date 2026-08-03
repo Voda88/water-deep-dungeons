@@ -121,7 +121,7 @@ const INVENTORY_CANVAS_SIZE: Vector2i = Vector2i(9, 8)
 const INVENTORY_BASE_ORIGIN: Vector2i = Vector2i(3, 3)
 const INVENTORY_BASE_SIZE: Vector2i = Vector2i(2, 2)
 const DOOR_REWARD_FOOD_BASE: int = 4
-const DOOR_REWARD_INDUSTRY_BASE: int = 4
+const DOOR_REWARD_INDUSTRY_BASE: int = 5
 const DOOR_REWARD_SCIENCE_BASE: int = 4
 const DOOR_REWARD_FOOD_MODULE: int = 3
 const DOOR_REWARD_INDUSTRY_MODULE: int = 3
@@ -132,13 +132,23 @@ const ROOM_OPEN_DUST_MIN: int = 2
 const ROOM_OPEN_DUST_MAX: int = 9
 const PRELIT_ROOM_CHANCE: float = 0.24
 const WAVE_WARNING_DURATION: float = 1.0
-const WAVE_STAGGER_ROOM_INTERVAL: float = 2.0
+const WAVE_PRESPAWN_MARKER_LEAD: float = 2.0
+const WAVE_STAGGER_ROOM_INTERVAL: float = 5.0
 const WAVE_STAGGER_ENEMY_INTERVAL: float = 0.1
-const CRYSTAL_PRESSURE_INTERVAL: float = 6.0
-const CRYSTAL_PRESSURE_INTERVAL_PER_DARK_ROOM: float = 10.0
-const CRYSTAL_PRESSURE_WARNING_DURATION: float = 0.65
+const ENEMY_SPAWN_FRAME_BUDGET: int = 3
+const ENEMY_SPAWN_PREVIEW_FRAME_BUDGET: int = 5
+const ENEMY_AI_THINK_THRESHOLD: int = 20
+const ENEMY_AI_THINK_HEAVY_THRESHOLD: int = 32
+const ENEMY_AI_THINK_INTERVAL_DESKTOP: float = 0.035
+const ENEMY_AI_THINK_INTERVAL_HEAVY_DESKTOP: float = 0.06
+const ENEMY_AI_THINK_INTERVAL_MOBILE: float = 0.075
+const ENEMY_AI_THINK_INTERVAL_HEAVY_MOBILE: float = 0.12
+const CRYSTAL_DUST_DAMAGE_BASE_HIT: float = 0.25
+const CRYSTAL_PRESSURE_PICKUP_DELAY: float = 2.0
+const CRYSTAL_PRESSURE_INTERVAL: float = 2.0
+const CRYSTAL_PRESSURE_WARNING_DURATION: float = 0.0
 const CRYSTAL_PRESSURE_ENEMIES_PER_ROOM: int = 3
-const CRYSTAL_PRESSURE_OTHER_ROOM_DELAY_PER_SPAWN: float = 2.0
+const CRYSTAL_PRESSURE_MAX_MONSTERS: int = 36
 const ROOM_ACTION_HOLD_START_DELAY: float = 0.2
 const ROOM_ACTION_HOLD_LOADER_DURATION: float = 0.1
 const ROOM_ACTION_SUBMENU_HOLD_DURATION: float = 0.17
@@ -249,7 +259,8 @@ var crystal_holder: Variant = null
 var crystal_ground_room: Vector2i = INVALID_ROOM
 var crystal_prompt_visible: bool = false
 var crystal_pressure_timer_left: float = 0.0
-var dust: int = 20
+var crystal_dust_damage_fraction: float = 0.0
+var dust: int = 24
 var food: int = 10
 var industry: int = 14
 var science: int = 0
@@ -259,6 +270,7 @@ var opened_rooms: int = 0
 var wave_index: int = 0
 var doors_opened: int = 0
 var floor_major_modules_built_count: int = 0
+var floor_opened_door_event_counts: Dictionary = {}
 var game_over: bool = false
 var status_message: String = "Drag to pan, open rooms, then use Build to place modules on room slots."
 var build_menu_open: bool = false
@@ -338,6 +350,7 @@ var pending_room_loot_requests: Dictionary = {}
 var pending_room_action_requests: Dictionary = {}
 var door_wave_auto_heal_pending: bool = false
 var door_wave_healing_active: bool = false
+var door_wave_major_payout_pending: bool = false
 var pending_room_constructions: Array = []
 var next_enemy_uid: int = 1
 var next_item_uid: int = 1
@@ -1055,6 +1068,12 @@ func apply_wave_torch_light_to_room(room_coord: Vector2i) -> bool:
 func apply_portable_item_effects_on_door_open() -> void:
 	GAME_FLOOR_FLOW.apply_portable_item_effects_on_door_open(self)
 
+func crystal_dust_damage_for_enemy(enemy: Variant) -> float:
+	return GAME_FLOOR_FLOW.crystal_dust_damage_for_enemy(self, enemy)
+
+func apply_crystal_damage_from_enemy(enemy: Variant) -> Dictionary:
+	return GAME_FLOOR_FLOW.apply_crystal_damage_from_enemy(self, enemy)
+
 func resolve_card_generator_mode(generator: Dictionary, card_def: Dictionary = {}) -> String:
 	var resolved_card_def: Dictionary = card_def
 	if resolved_card_def.is_empty():
@@ -1560,8 +1579,8 @@ func trigger_crystal_pressure() -> void:
 func crystal_pressure_interval_for_current_dark_rooms() -> float:
 	return GAME_COMBAT_FLOW.crystal_pressure_interval_for_current_dark_rooms(self)
 
-func queue_pressure_spawn(room_coord: Vector2i, count: int) -> void:
-	GAME_COMBAT_FLOW.queue_pressure_spawn(self, room_coord, count)
+func queue_pressure_spawn(room_coord: Vector2i, count: int, max_spawn_entities: int = -1) -> int:
+	return GAME_COMBAT_FLOW.queue_pressure_spawn(self, room_coord, count, max_spawn_entities)
 
 func enemy_pack_size(enemy_type: String) -> int:
 	return GAME_ENEMY_DEFS.enemy_pack_size(enemy_type)
@@ -2695,8 +2714,8 @@ func request_selected_hero_pick_up_crystal() -> void:
 	crystal_holder.carrying_crystal = true
 	crystal_ground_room = INVALID_ROOM
 	crystal_prompt_visible = false
-	crystal_pressure_timer_left = crystal_pressure_interval_for_current_dark_rooms()
-	status_message = "%s picked up the crystal. Dark rooms will keep spawning." % hero.hero_name
+	crystal_pressure_timer_left = CRYSTAL_PRESSURE_PICKUP_DELAY
+	status_message = "%s picked up the crystal. Dark rooms will agitate every 2 seconds." % hero.hero_name
 	update_hud()
 	queue_redraw()
 

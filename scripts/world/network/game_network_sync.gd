@@ -167,6 +167,7 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 		"wave_index": game.wave_index,
 		"doors_opened": game.doors_opened,
 		"floor_major_modules_built_count": game.floor_major_modules_built_count,
+		"floor_opened_door_event_counts": game.floor_opened_door_event_counts.duplicate(true),
 		"game_over": game.game_over,
 		"status_message": game.status_message,
 		"crystal_ground_room": game.crystal_ground_room,
@@ -219,6 +220,7 @@ static func apply_network_snapshot(game: Node, snapshot: Dictionary) -> void:
 	game.wave_index = int(snapshot.get("wave_index", game.wave_index))
 	game.doors_opened = int(snapshot.get("doors_opened", game.doors_opened))
 	game.floor_major_modules_built_count = maxi(int(snapshot.get("floor_major_modules_built_count", game.estimate_floor_major_modules_built_count())), 0)
+	game.floor_opened_door_event_counts = Dictionary(snapshot.get("floor_opened_door_event_counts", {})).duplicate(true)
 	game.game_over = bool(snapshot.get("game_over", game.game_over))
 	game.status_message = String(snapshot.get("status_message", game.status_message))
 	game.crystal_ground_room = snapshot.get("crystal_ground_room", game.INVALID_ROOM)
@@ -493,8 +495,8 @@ static func server_request_pick_up_crystal(game: Node, hero_index: int) -> void:
 	game.crystal_holder.carrying_crystal = true
 	game.crystal_ground_room = game.INVALID_ROOM
 	game.crystal_prompt_visible = false
-	game.crystal_pressure_timer_left = game.crystal_pressure_interval_for_current_dark_rooms()
-	game.status_message = "%s picked up the crystal. Dark rooms will keep spawning." % hero.hero_name
+	game.crystal_pressure_timer_left = game.CRYSTAL_PRESSURE_PICKUP_DELAY
+	game.status_message = "%s picked up the crystal. Dark rooms will agitate every 2 seconds." % hero.hero_name
 	game.update_hud()
 	broadcast_network_snapshot(game)
 

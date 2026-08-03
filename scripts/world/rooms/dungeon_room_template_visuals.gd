@@ -1,5 +1,26 @@
 extends RefCounted
 
+const ROOM_COLOR_FILTER_PRESETS: Dictionary = {
+	"seeded_blue": {
+		"target": Color("7aaee0"),
+		"backdrop_strength": 0.28,
+		"lit_modulate": Color("d8ecff"),
+		"dark_modulate": Color("9eb5cc"),
+	},
+	"moss_green": {
+		"target": Color("78a985"),
+		"backdrop_strength": 0.24,
+		"lit_modulate": Color("def7e3"),
+		"dark_modulate": Color("9fbaa7"),
+	},
+	"ember_amber": {
+		"target": Color("b89461"),
+		"backdrop_strength": 0.24,
+		"lit_modulate": Color("ffe9cf"),
+		"dark_modulate": Color("c3ae95"),
+	},
+}
+
 static func room_theme_palette(room: Node, theme_id: String, lit: bool, crystal_chamber: bool) -> Dictionary:
 	if room.runtime_game != null and room.runtime_game.has_method("room_theme_palette"):
 		return room.runtime_game.room_theme_palette(theme_id, lit, crystal_chamber)
@@ -15,6 +36,44 @@ static func room_theme_palette(room: Node, theme_id: String, lit: bool, crystal_
 			"floor_outline": Color("fff5df"),
 		}
 	return palette
+
+static func current_room_color_filter_id(room: Node) -> String:
+	if not room.runtime_room.is_empty():
+		var explicit_filter: String = String(room.runtime_room.get("color_filter_id", ""))
+		if explicit_filter != "":
+			return explicit_filter
+		if bool(room.runtime_room.get("lit", false)) and bool(room.runtime_room.get("permanent_light", false)) and bool(room.runtime_room.get("permanent_light_seeded", false)):
+			return "seeded_blue"
+	return ""
+
+static func color_filter_preset(filter_id: String) -> Dictionary:
+	return Dictionary(ROOM_COLOR_FILTER_PRESETS.get(filter_id, {}))
+
+static func apply_color_filter(base_color: Color, filter_id: String, strength_override: float = -1.0) -> Color:
+	var preset: Dictionary = color_filter_preset(filter_id)
+	if preset.is_empty():
+		return base_color
+	var target: Color = Color(preset.get("target", base_color))
+	var blend_strength: float = clampf(strength_override if strength_override >= 0.0 else float(preset.get("backdrop_strength", 0.22)), 0.0, 1.0)
+	return base_color.lerp(target, blend_strength)
+
+static func multiplied_color(a: Color, b: Color) -> Color:
+	return Color(a.r * b.r, a.g * b.g, a.b * b.b, a.a * b.a)
+
+static func room_lit_modulate_color(room: Node) -> Color:
+	var filter_id: String = current_room_color_filter_id(room)
+	var preset: Dictionary = color_filter_preset(filter_id)
+	if preset.is_empty():
+		return Color.WHITE
+	return Color(preset.get("lit_modulate", Color.WHITE))
+
+static func room_dark_modulate_color(room: Node) -> Color:
+	var filter_id: String = current_room_color_filter_id(room)
+	var preset: Dictionary = color_filter_preset(filter_id)
+	if preset.is_empty():
+		return room.dark_room_modulate
+	var dark_filter_modulate: Color = Color(preset.get("dark_modulate", Color.WHITE))
+	return multiplied_color(room.dark_room_modulate, dark_filter_modulate)
 
 static func current_theme_id(room: Node) -> String:
 	if not room.runtime_room.is_empty():
@@ -96,7 +155,8 @@ static func sync_control_input_passthrough(room: Node) -> void:
 
 static func sync_backdrop_visuals(room: Node) -> void:
 	var palette: Dictionary = room_theme_palette(room, current_theme_id(room), current_lit(room), current_crystal(room))
-	var base_fill: Color = Color(palette.get("base_fill", room.PREVIEW_BACKGROUND))
+	var filter_id: String = current_room_color_filter_id(room)
+	var base_fill: Color = apply_color_filter(Color(palette.get("base_fill", room.PREVIEW_BACKGROUND)), filter_id)
 	var backdrop_node: ColorRect = room.get_node_or_null(room.BACKDROP_NODE_PATH)
 	if backdrop_node != null:
 		backdrop_node.color = Color(base_fill.r, base_fill.g, base_fill.b, 0.94)
@@ -107,15 +167,16 @@ static func sync_backdrop_visuals(room: Node) -> void:
 
 static func sync_tilemap_lighting(room: Node) -> void:
 	var lit: bool = current_lit(room)
+	var room_modulate: Color = room_lit_modulate_color(room) if lit else room_dark_modulate_color(room)
 	var dungeon_tilemap: CanvasItem = room.get_node_or_null(room.DUNGEON_TILEMAP_NODE_PATH) as CanvasItem
 	if dungeon_tilemap != null:
-		dungeon_tilemap.modulate = Color.WHITE if lit else room.dark_room_modulate
+		dungeon_tilemap.modulate = room_modulate
 	var water_tilemap: CanvasItem = room.get_node_or_null(room.WATER_TILEMAP_NODE_PATH) as CanvasItem
 	if water_tilemap != null:
-		water_tilemap.modulate = Color.WHITE if lit else room.dark_room_modulate
+		water_tilemap.modulate = room_modulate
 	var door_art_root: CanvasItem = room.get_node_or_null(room.DOOR_ART_ROOT_PATH) as CanvasItem
 	if door_art_root != null:
-		door_art_root.modulate = Color.WHITE if lit else room.dark_room_modulate
+		door_art_root.modulate = room_modulate
 
 static func sync_door_art(room: Node) -> void:
 	var door_art_root: Node = room.get_node_or_null(room.DOOR_ART_ROOT_PATH)

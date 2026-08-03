@@ -101,6 +101,16 @@ static func roll_ground_item_id(game: Node) -> String:
 static func spawn_ground_loot(game: Node, room_coord: Vector2i) -> void:
 	if not game.rooms.has(room_coord):
 		return
+	if room_has_merchant(game, room_coord):
+		return
+	if bool(game.rooms[room_coord].get("research_crystal", false)):
+		return
+	for pending_spawn_variant in Array(game.pending_enemy_spawns):
+		var pending_spawn: Dictionary = pending_spawn_variant
+		if Vector2i(pending_spawn.get("room", game.INVALID_ROOM)) != room_coord:
+			continue
+		if String(pending_spawn.get("spawn_source", "")) == "door_wave" and int(pending_spawn.get("remaining", 0)) > 0:
+			return
 	if game.rng.randf() > 0.72:
 		return
 	var loot_count: int = game.rng.randi_range(3, 6)

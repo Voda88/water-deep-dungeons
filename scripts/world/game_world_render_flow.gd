@@ -247,6 +247,7 @@ static func draw_effect_strip(surface: CanvasItem, texture: Texture2D, frame_ind
 static func draw_room_spawn_warning_effects(game: Node, room_coord: Vector2i, view_rect: Rect2) -> void:
 	if NECROMANCER_ATTACK_EFFECT == null:
 		return
+	var marker_lead: float = maxf(float(game.WAVE_PRESPAWN_MARKER_LEAD), 0.0)
 	var effect_frame: int = animated_effect_frame_index(NECROMANCER_ATTACK_EFFECT, 0.052)
 	for pending_spawn_variant in game.pending_enemy_spawns:
 		var pending_spawn: Dictionary = pending_spawn_variant
@@ -254,11 +255,16 @@ static func draw_room_spawn_warning_effects(game: Node, room_coord: Vector2i, vi
 			continue
 		var positions: Array = Array(pending_spawn.get("positions", []))
 		var spawned_count: int = int(pending_spawn.get("spawned", 0))
+		var delay_left: float = float(pending_spawn.get("delay_left", 0.0))
+		var interval: float = maxf(float(pending_spawn.get("interval", game.WAVE_STAGGER_ENEMY_INTERVAL)), 0.0)
 		for spawn_index in range(spawned_count, positions.size()):
+			var index_offset: int = spawn_index - spawned_count
+			var time_until_spawn: float = maxf(delay_left, 0.0) + float(index_offset) * interval
+			if time_until_spawn > marker_lead:
+				continue
 			var spawn_position: Vector2 = Vector2(positions[spawn_index])
 			if not view_rect.has_point(spawn_position):
 				continue
-			var index_offset: int = spawn_index - spawned_count
 			var pulse_alpha: float = clampf(0.94 - float(index_offset) * 0.08, 0.72, 0.94)
 			var pulse_wave: float = 0.9 + 0.1 * sin(float(Time.get_ticks_msec()) / 95.0 + float(index_offset) * 0.55)
 			draw_effect_strip(game, NECROMANCER_ATTACK_EFFECT, effect_frame, spawn_position + Vector2(0.0, -4.0), Vector2(124.0, 124.0), Color(1.0, 0.95, 0.86, minf(pulse_alpha * pulse_wave, 1.0)))
@@ -410,6 +416,7 @@ static func draw_room_light_marker(game: Node, room_coord: Vector2i, room: Dicti
 		return
 	var marker_base: Vector2 = game.room_rect(room_coord).position + Vector2(28.0, 28.0)
 	var permanent_light: bool = bool(room.get("permanent_light", false))
+	var seeded_permanent_light: bool = permanent_light and bool(room.get("permanent_light_seeded", false))
 	var temporary_turns_left: int = int(room.get("temporary_light_turns", 0))
 	var wave_torch_waves_left: int = room_wave_torch_waves_left(game, room)
 	var temporary_light_active: bool = temporary_turns_left > 0 or wave_torch_waves_left > 0
@@ -419,8 +426,14 @@ static func draw_room_light_marker(game: Node, room_coord: Vector2i, room: Dicti
 	var shaft_start: Vector2 = marker_base + Vector2(0.0, 7.0)
 	var shaft_end: Vector2 = marker_base + Vector2(0.0, 18.0)
 	game.draw_line(shaft_start, shaft_end, Color("7f6144"), 3.0, true)
-	var flame_shell: Color = Color("ffab47") if permanent_light else Color("7ed8ff")
-	var flame_core: Color = Color("fff0bc") if permanent_light else Color("ebf8ff")
+	var flame_shell: Color = Color("ffab47")
+	var flame_core: Color = Color("fff0bc")
+	if seeded_permanent_light:
+		flame_shell = Color("73c8ff")
+		flame_core = Color("e5f7ff")
+	elif not permanent_light:
+		flame_shell = Color("7ed8ff")
+		flame_core = Color("ebf8ff")
 	var glow_color: Color = Color(flame_shell.r, flame_shell.g, flame_shell.b, 0.26)
 	game.draw_circle(marker_base + Vector2(0.0, 2.0), 9.0, glow_color)
 	game.draw_circle(marker_base + Vector2(0.0, 2.0), 6.0, flame_shell)
@@ -434,7 +447,7 @@ static func draw_room_light_marker(game: Node, room_coord: Vector2i, room: Dicti
 		marker_label = str(temporary_turns_left)
 	if marker_label != "":
 		var label_shadow: Color = Color(0.02, 0.05, 0.08, 0.62)
-		var label_color: Color = Color("ffe6c0") if permanent_light else Color("d9f5ff")
+		var label_color: Color = Color("d8f2ff") if seeded_permanent_light else (Color("ffe6c0") if permanent_light else Color("d9f5ff"))
 		var label_position: Vector2 = marker_base + Vector2(10.0, 8.0)
 		game.draw_string(ThemeDB.fallback_font, label_position + Vector2(1.0, 1.0), marker_label, HORIZONTAL_ALIGNMENT_LEFT, 22.0, 12, label_shadow)
 		game.draw_string(ThemeDB.fallback_font, label_position, marker_label, HORIZONTAL_ALIGNMENT_LEFT, 22.0, 12, label_color)
@@ -557,7 +570,7 @@ static func draw_room_overlays(game: Node) -> void:
 		var rect: Rect2 = game.room_rect(room_coord)
 		if not view_rect.intersects(rect):
 			continue
-		var warning_ratio: float = float(room.get("warning_timer_left", 0.0)) / maxf(game.WAVE_WARNING_DURATION, 0.001)
+		var warning_ratio: float = clampf(float(room.get("warning_timer_left", 0.0)) / maxf(game.WAVE_WARNING_DURATION, 0.001), 0.0, 1.0)
 		var room_has_hero: bool = false
 		var room_has_selected_hero: bool = false
 		for hero in game.heroes:
@@ -756,7 +769,7 @@ static func can_toggle_light(game: Node, room_coord: Vector2i) -> bool:
 	if not game.rooms.has(room_coord) or not game.rooms[room_coord]["opened"] or room_coord == game.crystal_room or game.game_over:
 		return false
 	var room: Dictionary = game.rooms[room_coord]
-	if bool(room.get("permanent_light", false)) and bool(room.get("lit", false)):
+	if bool(room.get("permanent_light", false)) and bool(room.get("permanent_light_seeded", false)) and bool(room.get("lit", false)):
 		return false
 	return true
 

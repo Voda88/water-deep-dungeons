@@ -38,6 +38,7 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 	game.doors_opened = 0
 	game.wave_index = 0
 	game.floor_major_modules_built_count = 0
+	game.floor_opened_door_event_counts.clear()
 	game.exit_room = game.INVALID_ROOM
 	game.crystal_holder = null
 	game.crystal_ground_room = game.crystal_room
@@ -45,6 +46,7 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 	game.crystal_pressure_timer_left = 0.0
 	game.door_wave_auto_heal_pending = false
 	game.door_wave_healing_active = false
+	game.door_wave_major_payout_pending = false
 	game.opening_room = game.INVALID_ROOM
 	game.opening_origin_room = game.INVALID_ROOM
 	game.opening_hero = null
@@ -54,10 +56,11 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 	game.room_action_menu.clear()
 	if reset_resources:
 		game.floor_index = 1
-		game.dust = 20
-		game.food = 20
-		game.industry = 20
-		game.science = 20
+		game.dust = 24
+		game.crystal_dust_damage_fraction = 0.0
+		game.food = 10
+		game.industry = 18
+		game.science = 10
 		game.research_reroll_count = 0
 		game.rejoin_claimable_hero_indices.clear()
 		game.crystal_health = 100.0
@@ -377,6 +380,7 @@ static func create_room(game: Node, room_coord: Vector2i, template_id: String, d
 		"research_crystal_spent": false,
 		"neurostun_time_left": 0.0,
 		"warning_timer_left": 0.0,
+		"color_filter_id": "",
 		"ground_items": [],
 		"merchant_theme": "",
 		"merchant_stock": [],
@@ -774,6 +778,7 @@ static func assign_floor_merchant(game: Node) -> void:
 	room_data["merchant_stock"] = GAME_INVENTORY_ITEM_FLOW.generate_merchant_stock(game, 5)
 	room_data["merchant_buyback"] = []
 	room_data["merchant_buyback_doors_opened"] = game.doors_opened
+	room_data["ground_items"] = []
 	game.rooms[merchant_room] = room_data
 
 static func find_path(game: Node, from_room: Vector2i, to_room: Vector2i, only_open_rooms: bool) -> Array[Vector2i]:

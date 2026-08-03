@@ -112,8 +112,8 @@ static func enemy_role_definition(enemy_type: String) -> Dictionary:
 			return {
 				"id": TYPE_BAT,
 				"move_speed": 57.0,
-				"max_health": 34.0,
-				"attack_damage": 6.0,
+				"max_health": 68.0,
+				"attack_damage": 12.0,
 				"attack_cooldown": 1.0,
 				"attack_range": 36.0,
 				"weight": 0.55,
@@ -167,8 +167,8 @@ static func enemy_role_definition(enemy_type: String) -> Dictionary:
 			return {
 				"id": TYPE_ORC,
 				"move_speed": 48.0,
-				"max_health": 34.0,
-				"attack_damage": 10.0,
+				"max_health": 68.0,
+				"attack_damage": 20.0,
 				"attack_cooldown": 1.0,
 				"attack_range": 70.0,
 				"weight": 1.28,
@@ -180,9 +180,9 @@ static func enemy_pack_size(enemy_type: String) -> int:
 		TYPE_ORC_RIDER:
 			return 1
 		TYPE_ORC:
-			return 5
+			return 3
 		TYPE_BAT:
-			return 6
+			return 3
 		TYPE_SKELETON_ARCHER:
 			return 2
 		TYPE_DEMON_D:

@@ -317,6 +317,16 @@ static func advance_hero_movement(game: Node) -> void:
 					game.selected_room = hero.current_room
 			else:
 				continue
+		if hero.pending_open_room != game.HERO_INVALID_ROOM:
+			var pending_open_room: Vector2i = hero.pending_open_room
+			var pending_room_is_open: bool = game.rooms.has(pending_open_room) and bool(game.rooms[pending_open_room].get("opened", false))
+			if not game.rooms.has(pending_open_room) or pending_room_is_open:
+				hero.pending_open_room = game.HERO_INVALID_ROOM
+				hero.pending_open_origin_room = game.HERO_INVALID_ROOM
+				hero.move_steps.clear()
+				hero.player_command_locked = false
+				hero.set_destination(hero.global_position)
+				continue
 		if game.opening_room == game.INVALID_ROOM and hero.pending_open_room != game.HERO_INVALID_ROOM and hero.is_idle() and hero.move_steps.is_empty():
 			var breach_room: Vector2i = hero.pending_open_room
 			var from_room: Vector2i = hero.pending_open_origin_room
