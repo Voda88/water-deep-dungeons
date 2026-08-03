@@ -232,8 +232,6 @@ static func room_action_button_layout(game: Node) -> Array:
 		and game.rooms.has(room_coord) \
 		and bool(game.rooms[room_coord].get("opened", false))
 	var merchant_here: bool = GAME_INVENTORY_ITEM_FLOW.room_has_merchant(game, room_coord)
-	if merchant_here:
-		GAME_INVENTORY_ITEM_FLOW.ensure_room_merchant_state(game, room_coord)
 	var merchant_resource_id: String = GAME_INVENTORY_ITEM_FLOW.merchant_resource_id_for_room(game, room_coord)
 	var merchant_resource_short: String = merchant_resource_short_label(merchant_resource_id)
 	match mode:
@@ -253,18 +251,24 @@ static func room_action_button_layout(game: Node) -> Array:
 			var action_specs: Array = game.available_minor_module_action_specs()
 			for action_spec_variant in action_specs:
 				var action_spec: Dictionary = action_spec_variant
+				var action_id: String = String(action_spec.get("id", ""))
+				var module_type: String = game.minor_module_type_for_action(action_id)
+				var cost: int = game.minor_module_cost(module_type)
 				minor_buttons.append({
-					"id": String(action_spec.get("id", "")),
-					"label": String(action_spec.get("label", "")),
+					"id": action_id,
+					"label": "%s\n%dM" % [game.build_type_label(module_type), cost],
 					"fill": Color(action_spec.get("fill", Color("89f2ff"))),
 				})
 			minor_buttons.append({"id": "submenu_back_build", "label": "Back", "fill": Color("d7dfeb")})
 			return with_spread_angles(minor_buttons, -3.10, -1.52)
 		"build_major":
+			var major_food_cost: int = game.major_module_action_cost(room_coord, game.MAJOR_MODULE_FOOD)
+			var major_science_cost: int = game.major_module_action_cost(room_coord, game.MAJOR_MODULE_SCIENCE)
+			var major_industry_cost: int = game.major_module_action_cost(room_coord, game.MAJOR_MODULE_INDUSTRY)
 			return with_spread_angles([
-				{"id": "build_major_food", "label": "Food", "angle": -3.10, "fill": Color("8ee28a")},
-				{"id": "build_major_science", "label": "Arcana", "angle": -2.58, "fill": Color("8bc1ff")},
-				{"id": "build_major_industry", "label": "Materials", "angle": -2.06, "fill": Color("f1c26b")},
+				{"id": "build_major_food", "label": "Food\n%dM" % major_food_cost, "angle": -3.10, "fill": Color("8ee28a")},
+				{"id": "build_major_science", "label": "Arcana\n%dM" % major_science_cost, "angle": -2.58, "fill": Color("8bc1ff")},
+				{"id": "build_major_industry", "label": "Materials\n%dM" % major_industry_cost, "angle": -2.06, "fill": Color("f1c26b")},
 				{"id": "submenu_back_build", "label": "Back", "angle": -1.54, "fill": Color("d7dfeb")},
 			])
 		"merchant_root":
@@ -404,7 +408,12 @@ static func room_action_angle_near_reference(_game: Node, angle: float, referenc
 static func room_action_button_screen_center(game: Node, button_data: Dictionary) -> Vector2:
 	var menu_center: Vector2 = room_action_menu_screen_center(game)
 	var angle: float = float(button_data.get("angle", 0.0))
-	return menu_center + Vector2(cos(angle), sin(angle)) * game.ROOM_ACTION_LABEL_RADIUS * room_action_overlay_scale(game)
+	var overlay_scale: float = room_action_overlay_scale(game)
+	var label_radius: float = game.ROOM_ACTION_LABEL_RADIUS * overlay_scale
+	label_radius -= 18.0 * overlay_scale
+	var minimum_radius: float = game.ROOM_ACTION_DEADZONE_RADIUS * overlay_scale + 26.0 * overlay_scale
+	label_radius = maxf(label_radius, minimum_radius)
+	return menu_center + Vector2(cos(angle), sin(angle)) * label_radius
 
 static func room_action_button_at_screen_position(game: Node, screen_position: Vector2) -> String:
 	if game.room_action_menu.is_empty():
@@ -530,7 +539,7 @@ static func perform_room_action(game: Node, room_coord: Vector2i, action_id: Str
 			game.queue_redraw()
 		"crystal_carry_confirm_action":
 			close_room_action_menu(game)
-			game._on_crystal_action_button_pressed()
+			game.request_selected_hero_pick_up_crystal()
 		"merchant_page_prev":
 			game.room_action_menu["merchant_page"] = max(0, int(game.room_action_menu.get("merchant_page", 0)) - 1)
 			game.queue_redraw()
@@ -709,4 +718,19 @@ static func draw_room_action_menu(game: Node) -> void:
 		game.draw_arc(menu_center_world, sector_inner_radius_world, start_angle, end_angle, 18, outline_color, outline_width * 0.85, true)
 		game.draw_line(menu_center_world + Vector2(cos(start_angle), sin(start_angle)) * sector_inner_radius_world, menu_center_world + Vector2(cos(start_angle), sin(start_angle)) * sector_outer_radius_world, outline_color, outline_width * 0.8, true)
 		game.draw_line(menu_center_world + Vector2(cos(end_angle), sin(end_angle)) * sector_inner_radius_world, menu_center_world + Vector2(cos(end_angle), sin(end_angle)) * sector_outer_radius_world, outline_color, outline_width * 0.8, true)
-		game.draw_string(ThemeDB.fallback_font, button_center_world + Vector2(0.0, 8.0) * overlay_scale * game.camera.zoom.x, String(sector_data.get("label", "")), HORIZONTAL_ALIGNMENT_CENTER, 104.0 * overlay_scale * game.camera.zoom.x, int(round(26.0 * overlay_scale * game.camera.zoom.x)), Color("eef8ff"))
+		var label_text: String = String(sector_data.get("label", ""))
+		var label_rows: PackedStringArray = label_text.split("\n", false)
+		var single_line_width: float = 148.0 * overlay_scale * game.camera.zoom.x
+		var multiline_row_width: float = 160.0 * overlay_scale * game.camera.zoom.x
+		if label_rows.size() <= 1:
+			var single_position: Vector2 = Vector2(button_center_world.x - single_line_width * 0.5, button_center_world.y + 8.0 * overlay_scale * game.camera.zoom.x)
+			game.draw_string(ThemeDB.fallback_font, single_position, label_text, HORIZONTAL_ALIGNMENT_CENTER, single_line_width, int(round(22.0 * overlay_scale * game.camera.zoom.x)), Color("eef8ff"))
+			continue
+		var row_spacing: float = 14.0 * overlay_scale * game.camera.zoom.x
+		var row_anchor_y: float = button_center_world.y + 4.0 * overlay_scale * game.camera.zoom.x
+		var row_start_y: float = row_anchor_y - row_spacing * float(label_rows.size() - 1) * 0.5
+		for row_index in range(label_rows.size()):
+			var row_text: String = String(label_rows[row_index])
+			var row_font_size: int = int(round((18.0 if row_index == 0 else 16.0) * overlay_scale * game.camera.zoom.x))
+			var row_position: Vector2 = Vector2(button_center_world.x - multiline_row_width * 0.5, row_start_y + row_spacing * float(row_index))
+			game.draw_string(ThemeDB.fallback_font, row_position, row_text, HORIZONTAL_ALIGNMENT_CENTER, multiline_row_width, row_font_size, Color("eef8ff"))

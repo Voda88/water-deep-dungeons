@@ -5,7 +5,6 @@ static func ensure_runtime_ui(game: Node) -> void:
 	ensure_hero_select_toggle_button(game)
 	ensure_calm_speed_bar(game)
 	ensure_hero_bar_panel(game)
-	ensure_crystal_action_button(game)
 	ensure_exit_button(game)
 	ensure_restart_button_hold_fill(game)
 	ensure_inventory_overlay(game)
@@ -71,18 +70,6 @@ static func ensure_hero_bar_panel(game: Node) -> void:
 	game.hero_bar.add_theme_constant_override("separation", 6)
 	game.hero_bar.alignment = BoxContainer.ALIGNMENT_END
 	game.hero_bar_panel.add_child(game.hero_bar)
-
-static func ensure_crystal_action_button(game: Node) -> void:
-	if game.crystal_action_button != null:
-		return
-	var ui_root: Node = game.get_node(^"UI")
-	game.crystal_action_button = Button.new()
-	game.crystal_action_button.visible = false
-	game.crystal_action_button.custom_minimum_size = Vector2(132.0, 56.0)
-	game.crystal_action_button.add_theme_font_size_override("font_size", 20)
-	game.crystal_action_button.text = "Carry"
-	game.crystal_action_button.pressed.connect(game._on_crystal_action_button_pressed)
-	ui_root.add_child(game.crystal_action_button)
 
 static func ensure_exit_button(game: Node) -> void:
 	if game.exit_button != null:

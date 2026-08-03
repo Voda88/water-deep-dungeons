@@ -547,6 +547,20 @@ static func process_modules(game: Node, delta: float) -> void:
 		var room_coord: Vector2i = room_coord_variant
 		var room: Dictionary = game.rooms[room_coord]
 		room["neurostun_time_left"] = maxf(float(room.get("neurostun_time_left", 0.0)) - delta, 0.0)
+		if float(room.get("neurostun_time_left", 0.0)) <= 0.0:
+			room["neurostun_damage_per_second"] = 0.0
+		else:
+			var neurostun_dps: float = maxf(float(room.get("neurostun_damage_per_second", 0.0)), 0.0)
+			if neurostun_dps > 0.0:
+				for enemy in game.enemies:
+					if not enemy_is_targetable_by_module(game, enemy, room_coord):
+						continue
+					var dot_direction: Vector2 = (enemy.global_position - game.room_center(room_coord)).normalized()
+					if dot_direction == Vector2.ZERO:
+						dot_direction = Vector2.RIGHT
+					enemy.take_damage(neurostun_dps * delta, dot_direction)
+					if enemy.has_method("apply_recovering_slow_debuff"):
+						enemy.apply_recovering_slow_debuff(0.16, 1.0, 0.58)
 		if not room["opened"] or not room["lit"]:
 			game.rooms[room_coord] = room
 			continue
@@ -570,6 +584,7 @@ static func process_modules(game: Node, delta: float) -> void:
 				game.MINOR_MODULE_PULSE:
 					var gas_hit: bool = false
 					var gas_slow_duration: float = 1.4 + float(clampi(game.minor_module_level(module_type), 1, 4)) * 0.2
+					var gas_damage_per_second: float = game.minor_module_damage(module_type)
 					for enemy in game.enemies:
 						if not enemy_is_targetable_by_module(game, enemy, room_coord):
 							continue
@@ -582,6 +597,7 @@ static func process_modules(game: Node, delta: float) -> void:
 						gas_hit = true
 					if gas_hit:
 						room["neurostun_time_left"] = maxf(float(room.get("neurostun_time_left", 0.0)), gas_slow_duration)
+						room["neurostun_damage_per_second"] = maxf(float(room.get("neurostun_damage_per_second", 0.0)), gas_damage_per_second)
 						module_data["cooldown"] = game.minor_module_cooldown(module_type)
 						game.projectiles.append({
 							"kind": "gas_pulse",
@@ -627,8 +643,11 @@ static func process_modules(game: Node, delta: float) -> void:
 				game.MINOR_MODULE_KIP:
 					var arcana_target: Variant = strongest_enemy_for_module(game, room_coord, slot_position, 620.0)
 					if arcana_target != null:
+						var arcana_level: int = clampi(game.minor_module_level(module_type), 1, 4)
+						var arcana_damage_cap: float = float(game.minor_module_kip_max_damage(arcana_level))
+						var arcana_damage: float = minf(maxf(float(game.science), 0.0), arcana_damage_cap)
 						module_data["cooldown"] = game.minor_module_cooldown(module_type)
-						spawn_laser_projectile(game, slot_position, arcana_target, game.minor_module_damage(module_type), game.minor_module_color(module_type), game.minor_module_projectile_width(module_type), game.minor_module_projectile_speed(module_type))
+						spawn_laser_projectile(game, slot_position, arcana_target, arcana_damage, game.minor_module_color(module_type), game.minor_module_projectile_width(module_type), game.minor_module_projectile_speed(module_type))
 				game.MINOR_MODULE_CONVERSION:
 					var conversion_target: Variant = strongest_enemy_for_module(game, room_coord, slot_position, 620.0)
 					if conversion_target != null:

@@ -8,6 +8,7 @@ const TYPE_ORC_RIDER: String = "orc_rider"
 const TYPE_ORC: String = "orc"
 const TYPE_BAT: String = "bat"
 const TYPE_GOLEM: String = "golem"
+const TYPE_DEMON_D: String = "demon_d"
 const TYPE_ORC_SHAMAN: String = "orc_shaman"
 const TYPE_SKELETON_ARCHER: String = "skeleton_archer"
 const SPRITE_FRAME_SIZE: Vector2i = Vector2i(100, 100)

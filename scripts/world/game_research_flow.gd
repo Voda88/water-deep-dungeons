@@ -36,7 +36,7 @@ static func research_option_description(game: Node, module_type: String, next_le
 		game.MINOR_MODULE_CANNON:
 			return "Runeburst mortar shell.\nLevel %d increases splash damage and cadence." % next_level
 		game.MINOR_MODULE_KIP:
-			return "Arcana turret beam.\nLevel %d increases single-target burst damage." % next_level
+			return "Arcana turret beam.\nDamage equals stored Arcana up to a level-based cap; level %d raises the cap." % next_level
 		game.MINOR_MODULE_CONVERSION:
 			return "Soulbind conversion spire.\nLevel %d converts one enemy and splashes nearby foes." % next_level
 		game.MINOR_MODULE_BOUNTY_INDUSTRY:
@@ -90,6 +90,19 @@ static func build_research_option(game: Node, module_type: String, is_major: boo
 		"description": research_option_description(game, module_type, next_level, is_major),
 	}
 
+static func research_resource_label(resource_id: String) -> String:
+	match resource_id:
+		"food":
+			return "Food"
+		"industry":
+			return "Materials"
+		"science":
+			return "Arcana"
+		"dust":
+			return "Dust"
+		_:
+			return resource_id.capitalize()
+
 static func research_option_stats_text(game: Node, option: Dictionary) -> String:
 	var module_type: String = String(option.get("module_type", ""))
 	var next_level: int = int(option.get("next_level", 1))
@@ -115,17 +128,18 @@ static func research_option_stats_text(game: Node, option: Dictionary) -> String
 			var mortar_cooldown: float = 1.45 - float(mortar_level - 1) * 0.12
 			return "Current level %d -> %d\nRuneburst splash shell\nSplash damage %.1f\nCooldown %.2fs" % [current_level, next_level, mortar_damage, mortar_cooldown]
 		game.MINOR_MODULE_KIP:
-			var arcana_level: int = clampi(next_level, 1, 4)
-			var arcana_damage: float = 16.0 + float(arcana_level - 1) * 5.0
-			var arcana_cooldown: float = 1.15 - float(arcana_level - 1) * 0.1
-			return "Current level %d -> %d\nArcana beam turret\nDamage %d\nCooldown %.2fs" % [current_level, next_level, int(arcana_damage), arcana_cooldown]
+			var current_arcana_cap: int = game.minor_module_kip_max_damage(current_level)
+			var next_arcana_cap: int = game.minor_module_kip_max_damage(next_level)
+			var stored_arcana_damage: int = maxi(game.science, 0)
+			var effective_current_damage: int = mini(stored_arcana_damage, current_arcana_cap)
+			return "Current level %d -> %d\nArcana beam turret\nDamage = min(stored Arcana, cap) = min(%d, %d) = %d\nMax damage cap %d -> %d\nCooldown 1.50s" % [current_level, next_level, stored_arcana_damage, current_arcana_cap, effective_current_damage, current_arcana_cap, next_arcana_cap]
 		game.MINOR_MODULE_CONVERSION:
 			var conversion_level: int = clampi(next_level, 1, 4)
 			var conversion_damage: float = 6.0 + float(conversion_level - 1) * 2.0
 			var conversion_cooldown: float = 3.4 - float(conversion_level - 1) * 0.35
 			return "Current level %d -> %d\nConverts one enemy on proc\nSplash damage %d\nCooldown %.2fs" % [current_level, next_level, int(conversion_damage), conversion_cooldown]
 		game.MINOR_MODULE_BOUNTY_INDUSTRY, game.MINOR_MODULE_BOUNTY_FOOD, game.MINOR_MODULE_BOUNTY_SCIENCE:
-			var resource_label: String = game.merchant_resource_label(game.minor_module_bounty_resource_id(module_type))
+			var resource_label: String = research_resource_label(game.minor_module_bounty_resource_id(module_type))
 			var threshold_by_level: Array[int] = [6, 5, 4, 3]
 			var threshold: int = threshold_by_level[clampi(next_level - 1, 0, threshold_by_level.size() - 1)]
 			return "Current level %d -> %d\nPassive bounty module\n+1 %s every %d kills in room" % [current_level, next_level, resource_label, threshold]
@@ -140,7 +154,8 @@ static func roll_research_offer_choices(game: Node) -> Array:
 		if game.major_module_level(module_type) < 4:
 			major_candidates.append(module_type)
 	if not major_candidates.is_empty():
-		options.append(build_research_option(game, major_candidates[game.rng.randi_range(0, major_candidates.size() - 1)], true))
+		var major_pick_index: int = game.rng.randi_range(0, major_candidates.size() - 1)
+		options.append(build_research_option(game, major_candidates[major_pick_index], true))
 	var minor_candidates: Array[String] = []
 	for module_type_variant in game.minor_module_catalog():
 		var module_type: String = String(module_type_variant)

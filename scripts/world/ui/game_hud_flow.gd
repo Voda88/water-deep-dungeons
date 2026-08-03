@@ -25,7 +25,7 @@ static func rebuild_hero_bar(game: Node) -> void:
 	game.hero_buttons.clear()
 	for hero_index in range(game.heroes.size()):
 		var hero_button: Button = Button.new()
-		hero_button.custom_minimum_size = Vector2(92.0, 118.0)
+		hero_button.custom_minimum_size = Vector2(102.0, 118.0)
 		hero_button.toggle_mode = true
 		hero_button.clip_contents = true
 		hero_button.text = ""
@@ -55,7 +55,7 @@ static func rebuild_hero_bar(game: Node) -> void:
 		status_label.offset_right = -4.0
 		status_label.offset_bottom = -22.0
 		status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		status_label.add_theme_font_size_override("font_size", 12)
+		status_label.add_theme_font_size_override("font_size", 11)
 		hero_button.add_child(status_label)
 		var health_bar: ProgressBar = ProgressBar.new()
 		health_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -202,7 +202,7 @@ static func update_hero_button_text(game: Node) -> void:
 		if status_label != null:
 			var status_text: String = "DEAD"
 			if alive:
-				status_text = hero.hero_name.substr(0, mini(hero.hero_name.length(), 6))
+				status_text = hero.hero_name
 			if alive and hero.carrying_crystal:
 				status_text += " C"
 			status_label.text = status_text
@@ -217,13 +217,6 @@ static func update_hero_button_text(game: Node) -> void:
 static func update_runtime_button_state(game: Node) -> void:
 	var inventory_open: bool = game.inventory_overlay != null and game.inventory_overlay.visible
 	var merchant_open: bool = game.merchant_overlay != null and game.merchant_overlay.visible
-	if game.crystal_action_button != null:
-		game.crystal_action_button.visible = not inventory_open and not merchant_open and game.crystal_prompt_visible and game.crystal_holder == null and game.crystal_ground_room != game.INVALID_ROOM and game.rooms.has(game.crystal_ground_room) and game.rooms[game.crystal_ground_room]["opened"] and game.can_local_control_hero_index(game.selected_hero_index)
-		game.crystal_action_button.disabled = not game.can_selected_hero_pick_up_crystal()
-		game.crystal_action_button.text = "Carry" if game.crystal_action_button.disabled == false else "Hero Needed"
-		if game.crystal_action_button.visible:
-			var crystal_screen: Vector2 = game.world_to_screen(game.crystal_world_position())
-			game.crystal_action_button.position = crystal_screen + Vector2(36.0, -36.0)
 	if game.exit_button != null:
 		game.exit_button.visible = not inventory_open and not merchant_open and game.carrier_in_exit_room() and game.crystal_holder != null and is_instance_valid(game.crystal_holder) and game.can_local_control_hero_index(game.crystal_holder.hero_index)
 		game.exit_button.disabled = not game.all_heroes_in_exit_room()

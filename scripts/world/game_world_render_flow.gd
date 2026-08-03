@@ -391,11 +391,8 @@ static func draw_room_merchant_visual(game: Node, room_coord: Vector2i, room: Di
 	var source_rect: Rect2 = Rect2(float(frame_index * MERCHANT_FRAME_SIZE.x), 0.0, float(MERCHANT_FRAME_SIZE.x), float(MERCHANT_FRAME_SIZE.y))
 	var draw_rect: Rect2 = Rect2(merchant_position + Vector2(-MERCHANT_DRAW_SIZE.x * 0.5, -MERCHANT_DRAW_SIZE.y + 30.0), MERCHANT_DRAW_SIZE)
 	var shadow_center: Vector2 = merchant_position + Vector2(0.0, 10.0)
-	game.draw_circle(shadow_center, 18.0, Color(0.03, 0.03, 0.04, 0.42 if lit else 0.30))
 	var sprite_tint: Color = Color.WHITE if lit else Color(0.73, 0.78, 0.82, 0.88)
 	game.draw_texture_rect_region(MERCHANT_DEMONESS_IDLE_TEXTURE, draw_rect, source_rect, sprite_tint, false, true)
-	var ring_color: Color = Color("8dd8ff") if lit else Color("80a1ba")
-	game.draw_arc(shadow_center, 24.0, 0.0, TAU, 32, Color(ring_color.r, ring_color.g, ring_color.b, 0.86), 2.2, true)
 	game.draw_string(ThemeDB.fallback_font, shadow_center + Vector2(-30.0, -30.0), "Merchant", HORIZONTAL_ALIGNMENT_LEFT, 68.0, 13, Color("eaf6ff"))
 
 static func room_wave_torch_waves_left(game: Node, room: Dictionary) -> int:

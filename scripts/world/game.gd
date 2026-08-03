@@ -77,6 +77,7 @@ const ENEMY_TYPE_ORC_RIDER: String = "orc_rider"
 const ENEMY_TYPE_ORC: String = "orc"
 const ENEMY_TYPE_BAT: String = "bat"
 const ENEMY_TYPE_GOLEM: String = "golem"
+const ENEMY_TYPE_DEMON_D: String = "demon_d"
 const ENEMY_TYPE_ORC_SHAMAN: String = "orc_shaman"
 const ENEMY_TYPE_SKELETON_ARCHER: String = "skeleton_archer"
 const MINOR_MODULE_TURRET: String = "ballista_turret"
@@ -90,7 +91,9 @@ const MINOR_MODULE_BOUNTY_SCIENCE: String = "bounty_arcana"
 const MAJOR_MODULE_FOOD: String = "food"
 const MAJOR_MODULE_SCIENCE: String = "science"
 const MAJOR_MODULE_INDUSTRY: String = "industry"
-const MAJOR_MODULE_COST: int = 14
+const MAJOR_MODULE_COST_BASE: int = 20
+const MAJOR_MODULE_COST_STEP: int = 5
+const MAJOR_MODULE_REPAIR_COST: int = 3
 const MINOR_MODULE_MAX_HEALTH: float = 80.0
 const MAJOR_MODULE_MAX_HEALTH: float = 180.0
 const PROJECTILE_SPEED: float = 950.0
@@ -255,6 +258,7 @@ var stamina_use_enabled: bool = false
 var opened_rooms: int = 0
 var wave_index: int = 0
 var doors_opened: int = 0
+var floor_major_modules_built_count: int = 0
 var game_over: bool = false
 var status_message: String = "Drag to pan, open rooms, then use Build to place modules on room slots."
 var build_menu_open: bool = false
@@ -304,7 +308,6 @@ var calm_speed_buttons: Array = []
 var calm_speed_option_index: int = 1
 var hero_bar_panel: PanelContainer = null
 var hero_bar: HBoxContainer = null
-var crystal_action_button: Button = null
 var exit_button: Button = null
 var hero_buttons: Array = []
 var inventory_overlay: Variant = null
@@ -827,6 +830,9 @@ func connect_rooms(a: Vector2i, b: Vector2i) -> void:
 
 func are_neighbors(a: Vector2i, b: Vector2i) -> bool:
 	return GAME_DUNGEON_BUILDER.are_neighbors(self, a, b)
+
+func reconcile_room_connections() -> void:
+	GAME_DUNGEON_BUILDER.reconcile_room_connections(self)
 
 func finalize_room_slot_distribution() -> void:
 	GAME_DUNGEON_BUILDER.finalize_room_slot_distribution(self)
@@ -2346,6 +2352,15 @@ func any_room_can_build_or_repair_major(module_type: String) -> bool:
 func major_button_text(room_coord: Vector2i, module_type: String, label: String) -> String:
 	return GAME_CONSTRUCTION_FLOW.major_button_text(self, room_coord, module_type, label)
 
+func major_module_build_cost_for_floor() -> int:
+	return GAME_CONSTRUCTION_FLOW.major_module_build_cost_for_floor(self)
+
+func major_module_action_cost(room_coord: Vector2i, module_type: String) -> int:
+	return GAME_CONSTRUCTION_FLOW.major_module_action_cost(self, room_coord, module_type)
+
+func estimate_floor_major_modules_built_count() -> int:
+	return GAME_CONSTRUCTION_FLOW.estimate_floor_major_modules_built_count(self)
+
 func canonical_minor_module_type(module_type: String) -> String:
 	return GAME_MODULE_DEFS.canonical_minor_module_type(module_type)
 
@@ -2408,7 +2423,7 @@ func available_minor_module_action_specs() -> Array:
 		var module_type: String = String(module_type_variant)
 		specs.append({
 			"id": minor_module_action_id(module_type),
-			"label": build_type_label(module_type),
+			"label": "%s %dM" % [build_type_label(module_type), minor_module_cost(module_type)],
 			"fill": minor_module_color(module_type),
 		})
 	return specs
@@ -2436,6 +2451,9 @@ func major_module_upgrade_cost(next_level: int) -> int:
 
 func major_module_door_yield(level: int) -> int:
 	return GAME_MODULE_DEFS.major_module_door_yield(level)
+
+func minor_module_kip_max_damage(level: int) -> int:
+	return GAME_MODULE_DEFS.minor_module_kip_max_damage(level)
 
 func minor_module_bounty_resource_id(module_type: String) -> String:
 	return GAME_MODULE_DEFS.minor_module_bounty_resource_id(module_type)
@@ -2662,7 +2680,7 @@ func _on_merchant_overlay_sell_requested(item_uid: int) -> void:
 func _on_merchant_overlay_buyback_requested(offer_uid: int) -> void:
 	GAME_MERCHANT_OVERLAY_FLOW._on_merchant_overlay_buyback_requested(self, offer_uid)
 
-func _on_crystal_action_button_pressed() -> void:
+func request_selected_hero_pick_up_crystal() -> void:
 	if not can_selected_hero_pick_up_crystal():
 		status_message = "Move the selected hero onto the crystal first."
 		update_hud()

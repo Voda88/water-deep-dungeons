@@ -88,20 +88,11 @@ static func build_buy_entries(game: Node, room_coord: Vector2i, selected_hero: V
 		var offer_uid: int = int(offer.get("offer_uid", -1))
 		if offer_uid < 0:
 			continue
-		var offer_kind: String = GAME_INVENTORY_ITEM_FLOW.merchant_offer_kind(offer)
 		var price: int = GAME_INVENTORY_ITEM_FLOW.merchant_offer_price(game, offer)
-		var needs_space: bool = GAME_INVENTORY_ITEM_FLOW.merchant_offer_needs_inventory_space(offer)
 		var item: Dictionary = Dictionary(offer.get("item", {})).duplicate(true)
 		var affordable: bool = resource_amount >= price
-		var has_space: bool = true
-		if needs_space:
-			has_space = selected_hero != null and is_instance_valid(selected_hero) and game.find_first_inventory_item_anchor(selected_hero, item) != game.INVALID_ROOM
-		var can_upgrade: bool = true
-		if offer_kind == "major_upgrade":
-			var module_type: String = String(offer.get("module_type", ""))
-			var target_level: int = int(offer.get("target_level", 1))
-			can_upgrade = target_level > game.major_module_level(module_type)
-		var enabled: bool = selected_hero != null and is_instance_valid(selected_hero) and resource_id != "" and affordable and has_space and can_upgrade
+		var has_space: bool = selected_hero != null and is_instance_valid(selected_hero) and game.find_first_inventory_item_anchor(selected_hero, item) != game.INVALID_ROOM
+		var enabled: bool = selected_hero != null and is_instance_valid(selected_hero) and resource_id != "" and affordable and has_space
 		var reason: String = ""
 		if selected_hero == null or not is_instance_valid(selected_hero):
 			reason = "Select a hero first."
@@ -109,8 +100,6 @@ static func build_buy_entries(game: Node, room_coord: Vector2i, selected_hero: V
 			reason = "Merchant resource is not configured."
 		elif not affordable:
 			reason = "Need %d more %s." % [price - resource_amount, resource_label]
-		elif not can_upgrade:
-			reason = "That upgrade is already applied."
 		elif not has_space:
 			reason = "%s has no inventory space." % selected_hero.hero_name
 		entries.append({

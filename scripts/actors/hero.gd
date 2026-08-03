@@ -698,7 +698,9 @@ func _physics_process(delta: float) -> void:
 func _draw() -> void:
 	if permanently_hidden_dead:
 		return
-	draw_string(ThemeDB.fallback_font, Vector2(-14.0, 34.0), hero_name, HORIZONTAL_ALIGNMENT_LEFT, 48.0, 15, Color("f4fbff"))
+	# Keep class-based names like "Fighter 1" visible and centered under the sprite.
+	var name_max_width: float = 140.0
+	draw_string(ThemeDB.fallback_font, Vector2(-name_max_width * 0.5, 34.0), hero_name, HORIZONTAL_ALIGNMENT_CENTER, name_max_width, 15, Color("f4fbff"))
 	var health_ratio: float = current_health / maxf(max_health, 0.001)
 	draw_rect(Rect2(Vector2(-22.0, -38.0), Vector2(44.0, 6.0)), Color("1a2225"), true)
 	draw_rect(Rect2(Vector2(-22.0, -38.0), Vector2(44.0 * health_ratio, 6.0)), Color("8df4b2"), true)

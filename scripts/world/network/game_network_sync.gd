@@ -166,6 +166,7 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 		"opened_rooms": game.opened_rooms,
 		"wave_index": game.wave_index,
 		"doors_opened": game.doors_opened,
+		"floor_major_modules_built_count": game.floor_major_modules_built_count,
 		"game_over": game.game_over,
 		"status_message": game.status_message,
 		"crystal_ground_room": game.crystal_ground_room,
@@ -217,6 +218,7 @@ static func apply_network_snapshot(game: Node, snapshot: Dictionary) -> void:
 	game.opened_rooms = int(snapshot.get("opened_rooms", game.opened_rooms))
 	game.wave_index = int(snapshot.get("wave_index", game.wave_index))
 	game.doors_opened = int(snapshot.get("doors_opened", game.doors_opened))
+	game.floor_major_modules_built_count = maxi(int(snapshot.get("floor_major_modules_built_count", game.estimate_floor_major_modules_built_count())), 0)
 	game.game_over = bool(snapshot.get("game_over", game.game_over))
 	game.status_message = String(snapshot.get("status_message", game.status_message))
 	game.crystal_ground_room = snapshot.get("crystal_ground_room", game.INVALID_ROOM)

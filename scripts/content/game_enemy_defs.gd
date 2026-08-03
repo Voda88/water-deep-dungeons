@@ -4,6 +4,7 @@ const TYPE_ORC_RIDER: String = "orc_rider"
 const TYPE_ORC: String = "orc"
 const TYPE_BAT: String = "bat"
 const TYPE_GOLEM: String = "golem"
+const TYPE_DEMON_D: String = "demon_d"
 const TYPE_ORC_SHAMAN: String = "orc_shaman"
 const TYPE_SKELETON_ARCHER: String = "skeleton_archer"
 
@@ -33,15 +34,22 @@ const ENEMY_SPRITE_PROFILES := {
 		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Armored Orc/Armored Orc/Armored Orc_Idle.png",
 		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Armored Orc/Armored Orc/Armored Orc_Walk.png",
 		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Armored Orc/Armored Orc/Armored Orc_Hurt.png",
-		"attack_path": "res://assets/characters/packs/pack01/characters_split_100x100/Armored Orc/Armored Orc/Armored Orc_Attack02.png",
+		"attack_path": "res://assets/characters/packs/pack01/characters_split_100x100/Armored Orc/Armored Orc/Armored Orc_Attack01.png",
 		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Armored Orc/Armored Orc/Armored Orc_Death.png",
 	},
 	TYPE_GOLEM: {
 		"idle_path": "res://assets/characters/packs/pack02/characters_split_100x100/Flame Golem/Flame Golem/Flame Golem_Idle.png",
 		"walk_path": "res://assets/characters/packs/pack02/characters_split_100x100/Flame Golem/Flame Golem/Flame Golem_Walk.png",
 		"hurt_path": "res://assets/characters/packs/pack02/characters_split_100x100/Flame Golem/Flame Golem/Flame Golem_Hurt.png",
-		"attack_path": "res://assets/characters/packs/pack02/characters_split_100x100/Flame Golem/Flame Golem/Flame Golem_Attack01.png",
+		"attack_path": "res://assets/characters/packs/pack02/characters_split_100x100/Flame Golem/Flame Golem/Flame Golem_Attack03.png",
 		"death_path": "res://assets/characters/packs/pack02/characters_split_100x100/Flame Golem/Flame Golem/Flame Golem_Death.png",
+	},
+	TYPE_DEMON_D: {
+		"idle_path": "res://assets/characters/packs/pack02/characters_split_100x100/Demon_D/Demon_D/Demon_D_Idle.png",
+		"walk_path": "res://assets/characters/packs/pack02/characters_split_100x100/Demon_D/Demon_D/Demon_D_Walk.png",
+		"hurt_path": "res://assets/characters/packs/pack02/characters_split_100x100/Demon_D/Demon_D/Demon_D_Hurt.png",
+		"attack_path": "res://assets/characters/packs/pack02/characters_split_100x100/Demon_D/Demon_D/Demon_D_Attack01.png",
+		"death_path": "res://assets/characters/packs/pack02/characters_split_100x100/Demon_D/Demon_D/Demon_D_Death.png",
 	},
 	TYPE_SKELETON_ARCHER: {
 		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Skeleton Archer/Skeleton Archer/Skeleton Archer_Idle.png",
@@ -62,6 +70,8 @@ static func normalize_enemy_type(enemy_type: String) -> String:
 			return TYPE_ORC_SHAMAN
 		"kobold":
 			return TYPE_BAT
+		"raider_demon":
+			return TYPE_DEMON_D
 	return enemy_type
 
 static func enemy_sprite_profile(enemy_type: String) -> Dictionary:
@@ -78,6 +88,8 @@ static func enemy_role_scale(enemy_type: String) -> float:
 			return 1.54
 		TYPE_SKELETON_ARCHER:
 			return 1.88
+		TYPE_DEMON_D:
+			return 2.1
 		TYPE_ORC_SHAMAN:
 			return 2.05
 		_:
@@ -117,6 +129,17 @@ static func enemy_role_definition(enemy_type: String) -> Dictionary:
 				"attack_range": 80.0,
 				"weight": 5.4,
 				"body_color": Color("8a887d"),
+			}
+		TYPE_DEMON_D:
+			return {
+				"id": TYPE_DEMON_D,
+				"move_speed": 64.0,
+				"max_health": 92.0,
+				"attack_damage": 16.0,
+				"attack_cooldown": 0.95,
+				"attack_range": 74.0,
+				"weight": 1.65,
+				"body_color": Color("d46c57"),
 			}
 		TYPE_ORC_SHAMAN:
 			return {
@@ -162,6 +185,8 @@ static func enemy_pack_size(enemy_type: String) -> int:
 			return 6
 		TYPE_SKELETON_ARCHER:
 			return 2
+		TYPE_DEMON_D:
+			return 2
 		TYPE_GOLEM:
 			return 1
 		TYPE_ORC_SHAMAN:
@@ -186,6 +211,8 @@ static func enemy_spawn_weight(enemy_type: String, pressure_spawn: bool = false)
 			return 2.8 if not pressure_spawn else 3.2
 		TYPE_SKELETON_ARCHER:
 			return 1.4 if not pressure_spawn else 1.1
+		TYPE_DEMON_D:
+			return 1.35 if not pressure_spawn else 1.25
 		TYPE_GOLEM:
 			return 0.42 if not pressure_spawn else 0.36
 		TYPE_ORC_SHAMAN:
@@ -194,7 +221,7 @@ static func enemy_spawn_weight(enemy_type: String, pressure_spawn: bool = false)
 			return 1.0
 
 static func enemy_spawn_order() -> Array[String]:
-	return [TYPE_ORC, TYPE_BAT, TYPE_SKELETON_ARCHER, TYPE_ORC_SHAMAN, TYPE_ORC_RIDER, TYPE_GOLEM]
+	return [TYPE_ORC, TYPE_BAT, TYPE_SKELETON_ARCHER, TYPE_ORC_SHAMAN, TYPE_ORC_RIDER, TYPE_GOLEM, TYPE_DEMON_D]
 
 static func enemy_dust_drop_chance(enemy_type: String) -> float:
 	match normalize_enemy_type(enemy_type):
@@ -208,11 +235,15 @@ static func enemy_dust_drop_chance(enemy_type: String) -> float:
 			return 0.7
 		TYPE_ORC_RIDER:
 			return 0.9
+		TYPE_DEMON_D:
+			return 0.75
 		_:
 			return 0.0
 
 static func enemy_available_on_floor(enemy_type: String, floor_index: int) -> bool:
 	var resolved_type: String = normalize_enemy_type(enemy_type)
-	if floor_index == 1 and resolved_type == TYPE_GOLEM:
-		return false
+	if resolved_type == TYPE_BAT:
+		return floor_index <= 1
+	if resolved_type == TYPE_GOLEM or resolved_type == TYPE_DEMON_D:
+		return floor_index >= 2
 	return true

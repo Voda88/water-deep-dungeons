@@ -100,9 +100,8 @@ static func target_room_for_enemy(game: Node, enemy: Variant) -> Vector2i:
 				return hero_room_for_enemy_targeting(game, orc_target)
 			return game.crystal_room
 		game.ENEMY_TYPE_GOLEM:
-			var major_module_room: Vector2i = preferred_golem_major_module_room(game, enemy)
-			if major_module_room != game.INVALID_ROOM:
-				return major_module_room
+			return golem_objective_room(game, enemy)
+		game.ENEMY_TYPE_DEMON_D:
 			return game.crystal_room
 		game.ENEMY_TYPE_BAT:
 			return game.crystal_room
@@ -147,9 +146,8 @@ static func enemy_target_position(game: Node, enemy: Variant) -> Vector2:
 				return orc_target.global_position
 			return game.crystal_world_position()
 		game.ENEMY_TYPE_GOLEM:
-			var major_module_room: Vector2i = preferred_golem_major_module_room(game, enemy)
-			if major_module_room != game.INVALID_ROOM and major_module_room == enemy.current_room:
-				return major_module_target_position(game, enemy.current_room)
+			return golem_objective_position(game, enemy)
+		game.ENEMY_TYPE_DEMON_D:
 			return game.crystal_world_position()
 		game.ENEMY_TYPE_BAT:
 			return game.crystal_world_position()
@@ -160,7 +158,7 @@ static func enemy_attack_start_distance(game: Node, enemy: Variant) -> float:
 	if enemy == null or not is_instance_valid(enemy):
 		return 18.0
 	match String(enemy.enemy_role):
-		game.ENEMY_TYPE_ORC_RIDER, game.ENEMY_TYPE_ORC, game.ENEMY_TYPE_GOLEM, game.ENEMY_TYPE_BAT:
+		game.ENEMY_TYPE_ORC_RIDER, game.ENEMY_TYPE_ORC, game.ENEMY_TYPE_GOLEM, game.ENEMY_TYPE_BAT, game.ENEMY_TYPE_DEMON_D:
 			return maxf(float(enemy.get("attack_range")), 18.0)
 		game.ENEMY_TYPE_ORC_SHAMAN:
 			return 212.0
@@ -377,7 +375,7 @@ static func local_enemy_override_target(game: Node, enemy: Variant) -> Variant:
 			return skeleton_archer_target_hero(game, enemy)
 		game.ENEMY_TYPE_ORC, game.ENEMY_TYPE_ORC_SHAMAN:
 			return locked_room_target_hero(game, enemy, false)
-		game.ENEMY_TYPE_BAT, game.ENEMY_TYPE_GOLEM:
+		game.ENEMY_TYPE_BAT, game.ENEMY_TYPE_GOLEM, game.ENEMY_TYPE_DEMON_D:
 			return null
 		_:
 			return default_room_hero_target(game, Vector2i(enemy.current_room), enemy.global_position)
@@ -575,6 +573,41 @@ static func major_module_target_position(game: Node, room_coord: Vector2i) -> Ve
 		return game.room_walkable_center(room_coord)
 	return game.major_slot_position(room_coord)
 
+static func active_research_room(game: Node) -> Vector2i:
+	if game.active_research.is_empty():
+		return game.INVALID_ROOM
+	var research_room: Vector2i = Vector2i(game.active_research.get("room", game.INVALID_ROOM))
+	if research_room == game.INVALID_ROOM or not game.rooms.has(research_room):
+		return game.INVALID_ROOM
+	if not game.room_has_active_research(research_room):
+		return game.INVALID_ROOM
+	return research_room
+
+static func golem_objective_room(game: Node, enemy: Variant) -> Vector2i:
+	if enemy == null or not is_instance_valid(enemy):
+		return game.crystal_room
+	var research_room: Vector2i = active_research_room(game)
+	if research_room == game.INVALID_ROOM:
+		return game.crystal_room
+	var crystal_distance: int = game.room_path_distance(enemy.current_room, game.crystal_room)
+	var research_distance: int = game.room_path_distance(enemy.current_room, research_room)
+	if research_distance < crystal_distance:
+		return research_room
+	if research_distance == crystal_distance:
+		var research_world_distance: float = enemy.global_position.distance_to(game.room_center(research_room))
+		var crystal_world_distance: float = enemy.global_position.distance_to(game.room_center(game.crystal_room))
+		if research_world_distance < crystal_world_distance:
+			return research_room
+	return game.crystal_room
+
+static func golem_objective_position(game: Node, enemy: Variant) -> Vector2:
+	var objective_room: Vector2i = golem_objective_room(game, enemy)
+	if objective_room == game.crystal_room:
+		return game.crystal_world_position()
+	if game.rooms.has(objective_room):
+		return game.major_slot_position(objective_room)
+	return game.crystal_world_position()
+
 static func preferred_golem_major_module_room(game: Node, enemy: Variant) -> Vector2i:
 	var module_room: Vector2i = find_nearest_major_module_room(game, enemy.current_room)
 	if module_room == game.INVALID_ROOM:
@@ -634,17 +667,23 @@ static func resolve_enemy_attack(game: Node, enemy: Variant) -> void:
 				game.queue_pending_melee_attack(enemy, local_target, enemy.attack_damage, enemy.melee_impact_delay(), "A golem")
 				game.status_message = "A golem hammers %s." % local_target.hero_name
 			else:
-				var target_major_room: Vector2i = preferred_golem_major_module_room(game, enemy)
-				if target_major_room != game.INVALID_ROOM and target_major_room == enemy.current_room:
-					enemy.trigger_attack(game.room_center(enemy.current_room))
-					if not damage_module(game, enemy.current_room, enemy.attack_damage, true, "A golem"):
-						return
+				var target_room: Vector2i = golem_objective_room(game, enemy)
+				if target_room == enemy.current_room and target_room != game.crystal_room:
+					enemy.trigger_attack(game.major_slot_position(enemy.current_room))
+					game.status_message = "A flame golem is assaulting a research crystal."
 				elif enemy.current_room == game.crystal_room:
 					enemy.trigger_attack(game.room_center(game.crystal_room))
 					game.crystal_health = maxf(game.crystal_health - enemy.attack_damage, 0.0)
 					game.status_message = "A golem is pounding the crystal."
 				else:
 					return
+		game.ENEMY_TYPE_DEMON_D:
+			if enemy.current_room == game.crystal_room:
+				enemy.trigger_attack(game.room_center(game.crystal_room))
+				game.crystal_health = maxf(game.crystal_health - enemy.attack_damage, 0.0)
+				game.status_message = "A raider demon is carving into the crystal."
+			else:
+				return
 		game.ENEMY_TYPE_ORC_SHAMAN:
 			var room_targets: Array = heroes_in_room(game, enemy.current_room)
 			if not room_targets.is_empty():

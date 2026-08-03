@@ -644,6 +644,17 @@ static func ensure_room_merchant_state(game: Node, room_coord: Vector2i) -> void
 	var room: Dictionary = game.rooms[room_coord]
 	if not room.has("merchant_stock"):
 		room["merchant_stock"] = []
+	else:
+		var sanitized_stock: Array = []
+		for offer_variant in Array(room.get("merchant_stock", [])):
+			var offer: Dictionary = Dictionary(offer_variant)
+			if merchant_offer_kind(offer) != "item":
+				continue
+			var item: Dictionary = Dictionary(offer.get("item", {}))
+			if String(item.get("item_id", "")) == "":
+				continue
+			sanitized_stock.append(offer)
+		room["merchant_stock"] = sanitized_stock
 	if not room.has("merchant_buyback"):
 		room["merchant_buyback"] = []
 	if not room.has("merchant_buyback_doors_opened"):
@@ -673,41 +684,17 @@ static func merchant_offer_kind(offer: Dictionary) -> String:
 static func merchant_offer_price(game: Node, offer: Dictionary) -> int:
 	if offer.has("price"):
 		return maxi(0, int(offer.get("price", 0)))
-	if merchant_offer_kind(offer) == "major_upgrade":
-		return game.major_module_upgrade_cost(int(offer.get("target_level", 2)))
 	return merchant_item_full_price(game, Dictionary(offer.get("item", {})))
 
 static func merchant_offer_display_name(game: Node, offer: Dictionary) -> String:
-	match merchant_offer_kind(offer):
-		"major_upgrade":
-			var module_type: String = String(offer.get("module_type", ""))
-			var target_level: int = clampi(int(offer.get("target_level", 2)), 1, 4)
-			if bool(offer.get("skip_upgrade", false)):
-				return "%s I->%s Upgrade" % [game.research_display_name(module_type), game.module_level_roman(target_level)]
-			return "%s %s Upgrade" % [game.research_display_name(module_type), game.module_level_roman(target_level)]
-		_:
-			var item_data: Dictionary = Dictionary(offer.get("item", {}))
-			var item_id: String = String(item_data.get("item_id", ""))
-			return String(game.item_defs.get(item_id, {}).get("name", item_id.capitalize()))
+	var item_data: Dictionary = Dictionary(offer.get("item", {}))
+	var item_id: String = String(item_data.get("item_id", ""))
+	return String(game.item_defs.get(item_id, {}).get("name", item_id.capitalize()))
 
 static func merchant_offer_short_label(game: Node, offer: Dictionary) -> String:
-	match merchant_offer_kind(offer):
-		"major_upgrade":
-			var module_type: String = String(offer.get("module_type", ""))
-			var target_level: int = clampi(int(offer.get("target_level", 2)), 1, 4)
-			var module_short: String = "MOD"
-			match module_type:
-				game.MAJOR_MODULE_FOOD:
-					module_short = "FOOD"
-				game.MAJOR_MODULE_SCIENCE:
-					module_short = "ARC"
-				game.MAJOR_MODULE_INDUSTRY:
-					module_short = "MAT"
-			return "%s%s" % [module_short, game.module_level_roman(target_level)]
-		_:
-			var item_data: Dictionary = Dictionary(offer.get("item", {}))
-			var item_id: String = String(item_data.get("item_id", ""))
-			return String(game.item_defs.get(item_id, {}).get("short", item_id.substr(0, mini(4, item_id.length())).to_upper()))
+	var item_data: Dictionary = Dictionary(offer.get("item", {}))
+	var item_id: String = String(item_data.get("item_id", ""))
+	return String(game.item_defs.get(item_id, {}).get("short", item_id.substr(0, mini(4, item_id.length())).to_upper()))
 
 static func merchant_offer_needs_inventory_space(offer: Dictionary) -> bool:
 	return merchant_offer_kind(offer) == "item"
@@ -790,56 +777,14 @@ static func make_merchant_offer_for_item_id(game: Node, item_id: String) -> Dict
 		"price": merchant_item_full_price(game, item),
 	}
 
-static func build_merchant_major_upgrade_offer(game: Node) -> Dictionary:
-	var major_candidates: Array[String] = []
-	for module_type_variant in [game.MAJOR_MODULE_FOOD, game.MAJOR_MODULE_SCIENCE, game.MAJOR_MODULE_INDUSTRY]:
-		var module_type: String = String(module_type_variant)
-		if game.major_module_level(module_type) < 4:
-			major_candidates.append(module_type)
-	if major_candidates.is_empty():
-		return {}
-	var module_pick: String = major_candidates[game.rng.randi_range(0, major_candidates.size() - 1)]
-	var current_level: int = game.major_module_level(module_pick)
-	var target_level: int = clampi(current_level + 1, 2, 4)
-	var skip_upgrade: bool = false
-	if current_level == 1 and game.rng.randf() < 0.32:
-		target_level = 3
-		skip_upgrade = true
-	var offer_uid: int = game.next_item_uid
-	game.next_item_uid += 1
-	return {
-		"offer_kind": "major_upgrade",
-		"offer_uid": offer_uid,
-		"module_type": module_pick,
-		"target_level": target_level,
-		"skip_upgrade": skip_upgrade,
-		"price": game.major_module_upgrade_cost(target_level),
-	}
-
-static func count_merchant_upgrade_offers(stock: Array) -> int:
-	var count: int = 0
-	for offer_variant in stock:
-		if merchant_offer_kind(Dictionary(offer_variant)) == "major_upgrade":
-			count += 1
-	return count
-
 static func generate_merchant_stock(game: Node, offer_count: int) -> Array:
 	var stock: Array = []
 	if offer_count <= 0:
 		return stock
-	if game.rng.randf() < 0.58:
-		var early_upgrade_offer: Dictionary = build_merchant_major_upgrade_offer(game)
-		if not early_upgrade_offer.is_empty():
-			stock.append(early_upgrade_offer)
 	var max_attempts: int = maxi(offer_count * 6, 12)
 	var attempts: int = 0
 	while stock.size() < offer_count and attempts < max_attempts:
 		attempts += 1
-		if count_merchant_upgrade_offers(stock) < 2 and game.rng.randf() < 0.14:
-			var upgrade_offer: Dictionary = build_merchant_major_upgrade_offer(game)
-			if not upgrade_offer.is_empty():
-				stock.append(upgrade_offer)
-				continue
 		var item_id: String = roll_ground_item_id(game)
 		if item_id == "":
 			continue

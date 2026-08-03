@@ -13,6 +13,7 @@ const MAJOR_MODULE_SCIENCE: String = "science"
 const MAJOR_MODULE_INDUSTRY: String = "industry"
 const BALLISTA_LEVEL_DAMAGE: Array[float] = [9.0, 10.0, 12.0, 14.0]
 const MINOR_MODULE_BOUNTY_THRESHOLDS: Array[int] = [6, 5, 4, 3]
+const MINOR_MODULE_KIP_MAX_DAMAGE_BY_LEVEL: Array[int] = [100, 130, 160, 190]
 
 static func canonical_minor_module_type(module_type: String) -> String:
 	return module_type
@@ -221,6 +222,10 @@ static func major_module_upgrade_cost(next_level: int) -> int:
 static func major_module_door_yield(level: int) -> int:
 	return clampi(level + 2, 3, 6)
 
+static func minor_module_kip_max_damage(level: int) -> int:
+	var index: int = clampi(level - 1, 0, MINOR_MODULE_KIP_MAX_DAMAGE_BY_LEVEL.size() - 1)
+	return int(MINOR_MODULE_KIP_MAX_DAMAGE_BY_LEVEL[index])
+
 static func minor_module_damage(module_type: String, minor_module_levels: Dictionary) -> float:
 	var level: int = clampi(minor_module_level(module_type, minor_module_levels), 1, 4)
 	match canonical_minor_module_type(module_type):
@@ -245,7 +250,7 @@ static func minor_module_cooldown(module_type: String, minor_module_levels: Dict
 		MINOR_MODULE_CANNON:
 			return 1.45 - float(level - 1) * 0.12
 		MINOR_MODULE_KIP:
-			return 1.15 - float(level - 1) * 0.1
+			return 1.5
 		MINOR_MODULE_CONVERSION:
 			return 3.4 - float(level - 1) * 0.35
 		MINOR_MODULE_BOUNTY_INDUSTRY, MINOR_MODULE_BOUNTY_FOOD, MINOR_MODULE_BOUNTY_SCIENCE:

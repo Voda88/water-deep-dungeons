@@ -50,13 +50,12 @@ static func try_handle_crystal_tap(game: Node, world_position: Vector2) -> bool:
 		return false
 	if game.crystal_world_position().distance_to(world_position) > 40.0:
 		return false
-	game.crystal_prompt_visible = true
 	game.selected_room = game.crystal_ground_room
 	var hero: Variant = game.selected_hero()
 	if hero != null and hero.current_room == game.crystal_ground_room and hero.pending_room == game.HERO_INVALID_ROOM and hero.is_idle():
-		game.status_message = "Crystal selected. Tap Carry to burden %s with it." % hero.hero_name
+		game.status_message = "Crystal selected. Use room actions to confirm Carry Crystal with %s." % hero.hero_name
 	else:
-		game.status_message = "Crystal selected. Move a hero into this room, then tap Carry."
+		game.status_message = "Crystal selected. Move a hero into this room, then use room actions > Carry Crystal."
 	return true
 
 static func can_selected_hero_pick_up_crystal(game: Node) -> bool:

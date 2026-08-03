@@ -53,18 +53,47 @@ static func any_room_can_build_or_repair_major(game: Node, module_type: String) 
 	return false
 
 static func major_button_text(game: Node, room_coord: Vector2i, module_type: String, label: String) -> String:
+	var action_cost: int = major_module_action_cost(game, room_coord, module_type)
 	if not game.rooms.has(room_coord):
-		return "Build %s" % label
+		return "Build %s (%dM)" % [label, action_cost]
 	var room: Dictionary = game.rooms[room_coord]
 	if int(room["major_slots"]) <= 0:
 		return "No %s Slot" % label
+	if bool(room.get("research_crystal", false)):
+		return "Research Slot"
 	if room["major_module_type"] == "":
-		return "Build %s" % label
+		return "Build %s (%dM)" % [label, action_cost]
 	if String(room["major_module_type"]) == module_type and float(room["major_health"]) < game.MAJOR_MODULE_MAX_HEALTH:
-		return "Repair %s" % label
+		return "Repair %s (%dM)" % [label, action_cost]
 	if String(room["major_module_type"]) == module_type:
 		return "%s Online" % label
 	return "%s Locked" % label
+
+static func major_module_build_cost_for_floor(game: Node) -> int:
+	var built_count: int = maxi(int(game.floor_major_modules_built_count), 0)
+	return game.MAJOR_MODULE_COST_BASE + built_count * game.MAJOR_MODULE_COST_STEP
+
+static func major_module_action_cost(game: Node, room_coord: Vector2i, module_type: String) -> int:
+	var build_cost: int = major_module_build_cost_for_floor(game)
+	if not game.rooms.has(room_coord):
+		return build_cost
+	var room: Dictionary = game.rooms[room_coord]
+	if String(room.get("major_module_type", "")) == "":
+		return build_cost
+	if String(room.get("major_module_type", "")) == module_type and float(room.get("major_health", 0.0)) < game.MAJOR_MODULE_MAX_HEALTH:
+		return game.MAJOR_MODULE_REPAIR_COST
+	return build_cost
+
+static func estimate_floor_major_modules_built_count(game: Node) -> int:
+	var count: int = 0
+	for room_coord_variant in game.rooms.keys():
+		var room_coord: Vector2i = room_coord_variant
+		if not game.rooms.has(room_coord):
+			continue
+		var room: Dictionary = game.rooms[room_coord]
+		if String(room.get("major_module_type", "")) != "":
+			count += 1
+	return count
 
 static func minor_slot_at_position(game: Node, room_coord: Vector2i, world_position: Vector2) -> int:
 	var slot_positions: Array = game.minor_slot_positions(room_coord)
@@ -181,6 +210,7 @@ static func queue_room_construction(game: Node, room_coord: Vector2i, module_typ
 	var industry_cost: int = 0
 	var repairing: bool = false
 	var slot_index: int = -1
+	var is_new_major_build: bool = false
 	if is_major:
 		if int(room["major_slots"]) <= 0:
 			game.status_message = "%s has no major module slot." % game.room_title(room_coord)
@@ -198,9 +228,10 @@ static func queue_room_construction(game: Node, room_coord: Vector2i, module_typ
 			game.queue_redraw()
 			return false
 		if room["major_module_type"] == "":
-			industry_cost = game.MAJOR_MODULE_COST
+			industry_cost = game.major_module_build_cost_for_floor()
+			is_new_major_build = true
 		elif String(room["major_module_type"]) == module_type and float(room["major_health"]) < game.MAJOR_MODULE_MAX_HEALTH:
-			industry_cost = 3
+			industry_cost = game.MAJOR_MODULE_REPAIR_COST
 			repairing = true
 		else:
 			game.status_message = "That major slot is already occupied."
@@ -256,6 +287,8 @@ static func queue_room_construction(game: Node, room_coord: Vector2i, module_typ
 		"duration": duration,
 		"timer_left": duration,
 	})
+	if is_major and is_new_major_build and not repairing:
+		game.floor_major_modules_built_count = maxi(int(game.floor_major_modules_built_count), 0) + 1
 	game.status_message = "%s started in %s." % [("Repair" if repairing else "Build"), game.room_title(room_coord)]
 	game.update_hud()
 	game.queue_redraw()

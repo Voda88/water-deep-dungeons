@@ -37,6 +37,7 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 	game.opened_rooms = 1
 	game.doors_opened = 0
 	game.wave_index = 0
+	game.floor_major_modules_built_count = 0
 	game.exit_room = game.INVALID_ROOM
 	game.crystal_holder = null
 	game.crystal_ground_room = game.crystal_room
@@ -54,9 +55,9 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 	if reset_resources:
 		game.floor_index = 1
 		game.dust = 20
-		game.food = 10
-		game.industry = 14
-		game.science = 0
+		game.food = 20
+		game.industry = 20
+		game.science = 20
 		game.research_reroll_count = 0
 		game.rejoin_claimable_hero_indices.clear()
 		game.crystal_health = 100.0
@@ -112,6 +113,7 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 			game.connect_rooms(origin, room_coord)
 		if game.rooms.size() >= minimum_room_count:
 			break
+	game.reconcile_room_connections()
 	game.finalize_room_slot_distribution()
 	game.assign_exit_room()
 	game.assign_research_crystals()
@@ -439,7 +441,7 @@ static func random_template_doors(game: Node, template_id: String, required_dir:
 	return chosen.duplicate()
 
 static func template_can_support_major_slots(game: Node, template_id: String) -> bool:
-	return template_id == game.ROOM_TEMPLATE_WORKSHOP or template_id == game.ROOM_TEMPLATE_FORGE
+	return template_id != ""
 
 static func room_blueprint_weight(game: Node, template_id: String, door_dirs: Array, prefer_major: bool = false, prefer_dead_end: bool = false) -> float:
 	var weight: float = 1.0
@@ -571,6 +573,85 @@ static func connect_rooms(game: Node, a: Vector2i, b: Vector2i) -> void:
 static func are_neighbors(game: Node, a: Vector2i, b: Vector2i) -> bool:
 	return game.rooms.has(a) and game.rooms[a]["neighbors"].has(b)
 
+static func reconcile_room_connections(game: Node) -> void:
+	var edge_keys: Dictionary = {}
+	var connected_edges: Array = []
+	for room_coord_variant in game.rooms.keys():
+		var room_coord: Vector2i = room_coord_variant
+		var listed_neighbors: Array = Array(game.rooms[room_coord].get("neighbors", []))
+		for neighbor_variant in listed_neighbors:
+			var neighbor_coord: Vector2i = neighbor_variant
+			if not game.rooms.has(neighbor_coord):
+				continue
+			var delta: Vector2i = neighbor_coord - room_coord
+			if abs(delta.x) + abs(delta.y) != 1:
+				continue
+			var first: Vector2i = room_coord
+			var second: Vector2i = neighbor_coord
+			if second.x < first.x or (second.x == first.x and second.y < first.y):
+				first = neighbor_coord
+				second = room_coord
+			var edge_key: String = "%d,%d|%d,%d" % [first.x, first.y, second.x, second.y]
+			if edge_keys.has(edge_key):
+				continue
+			edge_keys[edge_key] = true
+			connected_edges.append({"a": first, "b": second})
+
+	var neighbor_map: Dictionary = {}
+	for room_coord_variant in game.rooms.keys():
+		var room_coord: Vector2i = room_coord_variant
+		neighbor_map[room_coord] = []
+	for edge_variant in connected_edges:
+		var edge: Dictionary = edge_variant
+		var room_a: Vector2i = Vector2i(edge.get("a", game.INVALID_ROOM))
+		var room_b: Vector2i = Vector2i(edge.get("b", game.INVALID_ROOM))
+		if room_a == game.INVALID_ROOM or room_b == game.INVALID_ROOM:
+			continue
+		var a_neighbors: Array = Array(neighbor_map.get(room_a, []))
+		if not a_neighbors.has(room_b):
+			a_neighbors.append(room_b)
+		neighbor_map[room_a] = a_neighbors
+		var b_neighbors: Array = Array(neighbor_map.get(room_b, []))
+		if not b_neighbors.has(room_a):
+			b_neighbors.append(room_a)
+		neighbor_map[room_b] = b_neighbors
+
+	for room_coord_variant in game.rooms.keys():
+		var room_coord: Vector2i = room_coord_variant
+		var room: Dictionary = Dictionary(game.rooms[room_coord]).duplicate(true)
+		var normalized_neighbors: Array = Array(neighbor_map.get(room_coord, [])).duplicate(true)
+		room["neighbors"] = normalized_neighbors
+
+		var normalized_door_dirs: Array = []
+		for direction_variant in game.CARDINAL_DIRS:
+			var direction: Vector2i = direction_variant
+			var neighbor_coord: Vector2i = room_coord + direction
+			if normalized_neighbors.has(neighbor_coord):
+				normalized_door_dirs.append(direction)
+		room["door_dirs"] = normalized_door_dirs
+
+		var old_door_positions: Dictionary = Dictionary(room.get("door_positions_normalized", {})).duplicate(true)
+		var filtered_door_positions: Dictionary = {}
+		for direction_variant in normalized_door_dirs:
+			var direction: Vector2i = direction_variant
+			var direction_key: String = game.cardinal_dir_key(direction)
+			if direction_key != "" and old_door_positions.has(direction_key):
+				filtered_door_positions[direction_key] = old_door_positions[direction_key]
+		room["door_positions_normalized"] = filtered_door_positions
+
+		var profile_id: String = String(room.get("profile", game.ROOM_TEMPLATE_NOOK))
+		var crystal_chamber: bool = room_coord == game.crystal_room
+		var geometry_data: Dictionary = game.build_room_geometry(profile_id, normalized_door_dirs, crystal_chamber)
+		room["geometry_id"] = String(geometry_data.get("geometry_id", room.get("geometry_id", "flooded_cross")))
+		room["walkable_regions"] = Array(geometry_data.get("walkable_regions", room.get("walkable_regions", []))).duplicate(true)
+		room["slot_regions"] = Array(geometry_data.get("slot_regions", room.get("slot_regions", []))).duplicate(true)
+		room["liquid_regions"] = Array(geometry_data.get("liquid_regions", room.get("liquid_regions", []))).duplicate(true)
+		room["growth_regions"] = Array(geometry_data.get("growth_regions", room.get("growth_regions", []))).duplicate(true)
+		room["obstacle_regions"] = Array(geometry_data.get("obstacle_regions", room.get("obstacle_regions", []))).duplicate(true)
+		room["room_scene_path"] = String(game.room_template_scene_path(profile_id, normalized_door_dirs, crystal_chamber))
+
+		game.rooms[room_coord] = game.normalize_runtime_room_slot_capacity(room_coord, room)
+
 static func finalize_room_slot_distribution(game: Node) -> void:
 	var second_room: Vector2i = game.INVALID_ROOM
 	if game.rooms.has(game.crystal_room):
@@ -585,14 +666,20 @@ static func finalize_room_slot_distribution(game: Node) -> void:
 			room["major_slots"] = 0
 			continue
 		var degree: int = Array(room.get("neighbors", [])).size()
-		match String(room.get("profile", game.ROOM_TEMPLATE_NOOK)):
+		var profile_id: String = String(room.get("profile", game.ROOM_TEMPLATE_NOOK))
+		var major_slot_chance: float = 0.18
+		match profile_id:
 			game.ROOM_TEMPLATE_FORGE:
-				room["major_slots"] = 1
+				major_slot_chance = 1.0
 			game.ROOM_TEMPLATE_WORKSHOP:
-				var workshop_major_chance: float = 0.62 if degree <= 1 else 0.44
-				room["major_slots"] = 1 if game.rng.randf() < workshop_major_chance else 0
+				major_slot_chance = 0.62 if degree <= 1 else 0.44
+			game.ROOM_TEMPLATE_GALLERY:
+				major_slot_chance = 0.34 if degree <= 1 else 0.22
+			game.ROOM_TEMPLATE_NOOK:
+				major_slot_chance = 0.26 if degree <= 1 else 0.16
 			_:
-				room["major_slots"] = 0
+				major_slot_chance = 0.2
+		room["major_slots"] = 1 if game.rng.randf() < major_slot_chance else 0
 	if second_room != game.INVALID_ROOM and game.rooms.has(second_room):
 		game.rooms[second_room]["major_slots"] = max(1, int(game.rooms[second_room].get("major_slots", 0)))
 
@@ -656,14 +743,6 @@ static func assign_research_crystals(game: Node) -> void:
 static func assign_floor_merchant(game: Node) -> void:
 	var candidate_rooms: Array[Vector2i] = []
 	var any_non_crystal_rooms: Array[Vector2i] = []
-	var crystal_neighbor_rooms: Array[Vector2i] = []
-	if game.rooms.has(game.crystal_room):
-		for neighbor_variant in Array(game.rooms[game.crystal_room].get("neighbors", [])):
-			var neighbor_room: Vector2i = neighbor_variant
-			if neighbor_room == game.crystal_room or not game.rooms.has(neighbor_room):
-				continue
-			if not crystal_neighbor_rooms.has(neighbor_room):
-				crystal_neighbor_rooms.append(neighbor_room)
 	for room_coord_variant in game.rooms.keys():
 		var room_coord: Vector2i = room_coord_variant
 		var room: Dictionary = game.rooms[room_coord]
@@ -677,16 +756,7 @@ static func assign_floor_merchant(game: Node) -> void:
 		if not bool(room.get("opened", false)) and not bool(room.get("crystal", false)):
 			candidate_rooms.append(room_coord)
 	var merchant_room: Vector2i = game.INVALID_ROOM
-	var preferred_candidate_rooms: Array[Vector2i] = []
-	for crystal_neighbor in crystal_neighbor_rooms:
-		if candidate_rooms.has(crystal_neighbor):
-			preferred_candidate_rooms.append(crystal_neighbor)
-	if game.floor_index == 1 and not preferred_candidate_rooms.is_empty():
-		# Floor 1 has a single discovered branch first, so force a guaranteed early merchant encounter.
-		merchant_room = preferred_candidate_rooms[0]
-	elif not preferred_candidate_rooms.is_empty():
-		merchant_room = preferred_candidate_rooms[game.rng.randi_range(0, preferred_candidate_rooms.size() - 1)]
-	elif not candidate_rooms.is_empty():
+	if not candidate_rooms.is_empty():
 		merchant_room = candidate_rooms[game.rng.randi_range(0, candidate_rooms.size() - 1)]
 	elif not any_non_crystal_rooms.is_empty():
 		merchant_room = any_non_crystal_rooms[game.rng.randi_range(0, any_non_crystal_rooms.size() - 1)]
