@@ -89,8 +89,8 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 		game.major_module_levels = game.normalized_major_module_levels(game.initialized_major_module_levels())
 	game.minor_module_levels = game.normalized_minor_module_levels(game.minor_module_levels)
 	game.major_module_levels = game.normalized_major_module_levels(game.major_module_levels)
-	var minimum_room_count: int = 7
-	var target_room_count: int = 12
+	var minimum_room_count: int = 9 if game.floor_index == 1 else 10
+	var target_room_count: int = 13 if game.floor_index == 1 else 15
 	var layout_generation_attempts: int = 0
 	while layout_generation_attempts < 12:
 		layout_generation_attempts += 1
