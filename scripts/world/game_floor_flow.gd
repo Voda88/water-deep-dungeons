@@ -2,10 +2,6 @@ extends RefCounted
 
 const GAME_INVENTORY_ITEM_FLOW: GDScript = preload("res://scripts/world/inventory/game_inventory_item_flow.gd")
 const GAME_ENEMY_DEFS: GDScript = preload("res://scripts/content/game_enemy_defs.gd")
-const OPENED_DOOR_EVENT_NONE: String = "none"
-const OPENED_DOOR_EVENT_BONUS_FOOD: String = "bonus_food"
-const OPENED_DOOR_EVENT_BONUS_INDUSTRY: String = "bonus_industry"
-const OPENED_DOOR_EVENT_BONUS_SCIENCE: String = "bonus_science"
 const OPENED_DOOR_EVENT_BONUS_MIN: int = 7
 const OPENED_DOOR_EVENT_BONUS_MAX: int = 9
 
@@ -201,18 +197,19 @@ static func apply_crystal_dust_loss(game: Node, dust_points: int) -> Dictionary:
 	result["rooms_darkened"] = rooms_darkened
 	return result
 
+static func total_crystal_dust_support(game: Node) -> int:
+	var room_light_cost: int = maxi(int(game.ROOM_LIGHT_DUST_COST), 1)
+	var reserved_dust: int = paid_permanent_light_rooms(game).size() * room_light_cost
+	return maxi(int(game.dust), 0) + reserved_dust
+
 static func apply_crystal_damage_from_enemy(game: Node, enemy: Variant) -> Dictionary:
 	var result: Dictionary = {
-		"health_damage": 0.0,
 		"dust_damage": 0.0,
 		"dust_points_lost": 0,
 		"rooms_darkened": 0,
 	}
 	if enemy == null or not is_instance_valid(enemy):
 		return result
-	var health_damage: float = maxf(float(enemy.attack_damage), 0.0)
-	game.crystal_health = maxf(game.crystal_health - health_damage, 0.0)
-	result["health_damage"] = health_damage
 	var dust_damage: float = maxf(crystal_dust_damage_for_enemy(game, enemy), 0.0)
 	result["dust_damage"] = dust_damage
 	if dust_damage <= 0.0:
@@ -227,96 +224,39 @@ static func apply_crystal_damage_from_enemy(game: Node, enemy: Variant) -> Dicti
 	result["rooms_darkened"] = int(loss_result.get("rooms_darkened", 0))
 	return result
 
-static func opened_door_event_weight_entries_for_floor(game: Node) -> Array:
-	if game.floor_index <= 3:
-		return [
-			{"id": OPENED_DOOR_EVENT_NONE, "weight": 56.0, "max": -1},
-			{"id": OPENED_DOOR_EVENT_BONUS_FOOD, "weight": 22.0, "max": 3},
-			{"id": OPENED_DOOR_EVENT_BONUS_INDUSTRY, "weight": 14.0, "max": 2},
-			{"id": OPENED_DOOR_EVENT_BONUS_SCIENCE, "weight": 8.0, "max": 1},
-		]
-	if game.floor_index <= 6:
-		return [
-			{"id": OPENED_DOOR_EVENT_NONE, "weight": 48.0, "max": -1},
-			{"id": OPENED_DOOR_EVENT_BONUS_FOOD, "weight": 16.0, "max": 2},
-			{"id": OPENED_DOOR_EVENT_BONUS_INDUSTRY, "weight": 18.0, "max": 2},
-			{"id": OPENED_DOOR_EVENT_BONUS_SCIENCE, "weight": 18.0, "max": 2},
-		]
-	return [
-		{"id": OPENED_DOOR_EVENT_NONE, "weight": 42.0, "max": -1},
-		{"id": OPENED_DOOR_EVENT_BONUS_FOOD, "weight": 12.0, "max": 2},
-		{"id": OPENED_DOOR_EVENT_BONUS_INDUSTRY, "weight": 20.0, "max": 2},
-		{"id": OPENED_DOOR_EVENT_BONUS_SCIENCE, "weight": 26.0, "max": 3},
-	]
-
-static func opened_door_event_count(game: Node, event_id: String) -> int:
-	return int(Dictionary(game.floor_opened_door_event_counts).get(event_id, 0))
-
-static func opened_door_event_under_cap(game: Node, event_entry: Dictionary) -> bool:
-	var max_occurrences: int = int(event_entry.get("max", -1))
-	if max_occurrences < 0:
-		return true
-	var event_id: String = String(event_entry.get("id", ""))
-	if event_id == "":
-		return true
-	return opened_door_event_count(game, event_id) < max_occurrences
-
-static func roll_opened_door_event_id(game: Node) -> String:
-	var event_entries: Array = opened_door_event_weight_entries_for_floor(game)
-	var total_weight: float = 0.0
-	for event_entry_variant in event_entries:
-		var event_entry: Dictionary = Dictionary(event_entry_variant)
-		if not opened_door_event_under_cap(game, event_entry):
-			continue
-		total_weight += maxf(float(event_entry.get("weight", 0.0)), 0.0)
-	if total_weight <= 0.001:
-		return OPENED_DOOR_EVENT_NONE
-	var roll: float = game.rng.randf() * total_weight
-	for event_entry_variant in event_entries:
-		var event_entry: Dictionary = Dictionary(event_entry_variant)
-		if not opened_door_event_under_cap(game, event_entry):
-			continue
-		roll -= maxf(float(event_entry.get("weight", 0.0)), 0.0)
-		if roll <= 0.0:
-			return String(event_entry.get("id", OPENED_DOOR_EVENT_NONE))
-	return OPENED_DOOR_EVENT_NONE
-
-static func increment_opened_door_event_count(game: Node, event_id: String) -> void:
-	if event_id == "" or event_id == OPENED_DOOR_EVENT_NONE:
-		return
-	var next_counts: Dictionary = Dictionary(game.floor_opened_door_event_counts).duplicate(true)
-	next_counts[event_id] = int(next_counts.get(event_id, 0)) + 1
-	game.floor_opened_door_event_counts = next_counts
-
 static func apply_opened_door_event(game: Node, room_coord: Vector2i) -> Dictionary:
 	if room_coord == game.crystal_room:
 		return {}
-	var event_id: String = roll_opened_door_event_id(game)
-	if event_id == "" or event_id == OPENED_DOOR_EVENT_NONE:
+	if not game.rooms.has(room_coord):
 		return {}
+	var room_data: Dictionary = game.rooms[room_coord]
+	var event_id: String = String(room_data.get("feature_bonus_resource_event", ""))
+	if event_id == "" or event_id == game.BONUS_RESOURCE_EVENT_NONE:
+		return {}
+	room_data["feature_bonus_resource_event"] = game.BONUS_RESOURCE_EVENT_NONE
+	game.rooms[room_coord] = room_data
 	var bonus_amount: int = game.rng.randi_range(OPENED_DOOR_EVENT_BONUS_MIN, OPENED_DOOR_EVENT_BONUS_MAX)
 	var popup_text: String = ""
 	var status_text: String = ""
 	var popup_color: Color = Color.WHITE
 	match event_id:
-		OPENED_DOOR_EVENT_BONUS_FOOD:
+		game.BONUS_RESOURCE_EVENT_FOOD:
 			game.food += bonus_amount
 			popup_text = "+%d Bonus Food" % bonus_amount
 			status_text = "You found a food cache (+%d)." % bonus_amount
 			popup_color = Color("9ee28b")
-		OPENED_DOOR_EVENT_BONUS_INDUSTRY:
+		game.BONUS_RESOURCE_EVENT_INDUSTRY:
 			game.industry += bonus_amount
 			popup_text = "+%d Bonus Materials" % bonus_amount
 			status_text = "You found a materials cache (+%d)." % bonus_amount
 			popup_color = Color("f1c26b")
-		OPENED_DOOR_EVENT_BONUS_SCIENCE:
+		game.BONUS_RESOURCE_EVENT_SCIENCE:
 			game.science += bonus_amount
 			popup_text = "+%d Bonus Arcana" % bonus_amount
 			status_text = "You found an arcana cache (+%d)." % bonus_amount
 			popup_color = Color("8bc1ff")
 		_:
 			return {}
-	increment_opened_door_event_count(game, event_id)
 	return {
 		"id": event_id,
 		"amount": bonus_amount,

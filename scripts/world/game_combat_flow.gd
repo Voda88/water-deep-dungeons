@@ -14,6 +14,7 @@ const BASE_PREWARM_TOTAL: int = 100
 
 static func launch_wave(game: Node, entered_room: Vector2i) -> void:
 	var dark_rooms: Array[Vector2i] = []
+	var priority_dark_rooms: Array[Vector2i] = []
 	for room_coord_variant in game.rooms.keys():
 		var room_coord: Vector2i = room_coord_variant
 		var room: Dictionary = game.rooms[room_coord]
@@ -22,6 +23,8 @@ static func launch_wave(game: Node, entered_room: Vector2i) -> void:
 		if String(room.get("merchant_theme", "")) != "" or bool(room.get("research_crystal", false)) or Array(room.get("ground_items", [])).size() > 0:
 			continue
 		dark_rooms.append(room_coord)
+		if bool(room.get("feature_spawn_priority", false)):
+			priority_dark_rooms.append(room_coord)
 	if dark_rooms.is_empty():
 		game.door_wave_auto_heal_pending = false
 		game.door_wave_healing_active = true
@@ -39,9 +42,12 @@ static func launch_wave(game: Node, entered_room: Vector2i) -> void:
 		dark_rooms.erase(entered_room)
 		var bonus_spawn_room_count: int = mini(wave_strength_bonus, dark_rooms.size())
 		while chosen_rooms.size() < 1 + bonus_spawn_room_count and not dark_rooms.is_empty():
-			var room_index: int = game.rng.randi_range(0, dark_rooms.size() - 1)
-			chosen_rooms.append(dark_rooms[room_index])
-			dark_rooms.remove_at(room_index)
+			var picked_room: Vector2i = pick_spawn_room(game, dark_rooms, priority_dark_rooms)
+			if picked_room == game.INVALID_ROOM:
+				break
+			chosen_rooms.append(picked_room)
+			dark_rooms.erase(picked_room)
+			priority_dark_rooms.erase(picked_room)
 		queue_wave_spawn(game, entered_room, base_wave_points, true, delayed_room_order)
 		var bonus_room_count: int = chosen_rooms.size() - 1
 		if bonus_room_count > 0:
@@ -58,9 +64,12 @@ static func launch_wave(game: Node, entered_room: Vector2i) -> void:
 		var spawn_room_count: int = mini(1 + wave_strength_bonus, dark_room_count)
 		var total_wave_points: int = base_wave_points + wave_strength_bonus
 		while chosen_rooms.size() < spawn_room_count and not dark_rooms.is_empty():
-			var room_index: int = game.rng.randi_range(0, dark_rooms.size() - 1)
-			chosen_rooms.append(dark_rooms[room_index])
-			dark_rooms.remove_at(room_index)
+			var picked_room: Vector2i = pick_spawn_room(game, dark_rooms, priority_dark_rooms)
+			if picked_room == game.INVALID_ROOM:
+				break
+			chosen_rooms.append(picked_room)
+			dark_rooms.erase(picked_room)
+			priority_dark_rooms.erase(picked_room)
 		for spawn_index in range(chosen_rooms.size()):
 			var room_coord: Vector2i = chosen_rooms[spawn_index]
 			var wave_points: int = maxi(1, int(floor(float(total_wave_points) / float(chosen_rooms.size()))))
@@ -192,7 +201,13 @@ static func trigger_crystal_pressure(game: Node) -> void:
 	if remaining_capacity <= 0:
 		game.crystal_pressure_timer_left = crystal_pressure_interval_for_dark_room_count(game, dark_rooms.size())
 		return
-	var chosen_room: Vector2i = dark_rooms[game.rng.randi_range(0, dark_rooms.size() - 1)]
+	var priority_dark_rooms: Array[Vector2i] = []
+	for room_coord in dark_rooms:
+		if bool(game.rooms[room_coord].get("feature_spawn_priority", false)):
+			priority_dark_rooms.append(room_coord)
+	var chosen_room: Vector2i = pick_spawn_room(game, dark_rooms, priority_dark_rooms)
+	if chosen_room == game.INVALID_ROOM:
+		chosen_room = dark_rooms[game.rng.randi_range(0, dark_rooms.size() - 1)]
 	var pressure_spawn_points: int = game.CRYSTAL_PRESSURE_ENEMIES_PER_ROOM + int(floor(float(max(game.floor_index - 1, 0)) / 2.0))
 	var queued_count: int = queue_pressure_spawn(game, chosen_room, pressure_spawn_points, remaining_capacity)
 	game.crystal_pressure_timer_left = crystal_pressure_interval_for_dark_room_count(game, dark_rooms.size())
@@ -200,6 +215,13 @@ static func trigger_crystal_pressure(game: Node) -> void:
 		return
 	game.status_message = "The crystal agitates %s." % game.room_title(chosen_room)
 	game.update_hud()
+
+static func pick_spawn_room(game: Node, dark_rooms: Array[Vector2i], priority_dark_rooms: Array[Vector2i]) -> Vector2i:
+	if dark_rooms.is_empty():
+		return game.INVALID_ROOM
+	if not priority_dark_rooms.is_empty() and game.rng.randf() < 0.7:
+		return priority_dark_rooms[game.rng.randi_range(0, priority_dark_rooms.size() - 1)]
+	return dark_rooms[game.rng.randi_range(0, dark_rooms.size() - 1)]
 
 static func queue_pressure_spawn(game: Node, room_coord: Vector2i, count: int, max_spawn_entities: int = -1) -> int:
 	if not game.rooms.has(room_coord) or count <= 0:
@@ -701,10 +723,8 @@ static func process_modules(game: Node, delta: float) -> void:
 					if conversion_target != null:
 						module_data["cooldown"] = game.minor_module_cooldown(module_type)
 						var conversion_center: Vector2 = conversion_target.global_position
-						var conversion_direction: Vector2 = (conversion_target.global_position - slot_position).normalized()
-						if conversion_direction == Vector2.ZERO:
-							conversion_direction = Vector2.RIGHT
-						conversion_target.take_damage(maxf(float(conversion_target.current_health) + 4.0, 1.0), conversion_direction)
+						if conversion_target.has_method("apply_conversion"):
+							conversion_target.apply_conversion(game.minor_module_conversion_duration(module_type))
 						var betrayal_radius: float = 72.0 + float(clampi(game.minor_module_level(module_type), 1, 4)) * 8.0
 						game.add_resource_floating_text(conversion_center + Vector2(0.0, -22.0), "Converted", Color("8effc4"))
 						game.projectiles.append({
@@ -1271,6 +1291,8 @@ static func nearest_enemy_in_room(game: Node, room_coord: Vector2i, origin: Vect
 	for enemy in game.enemies:
 		if not game.enemy_is_active(enemy) or enemy.current_room != room_coord or enemy.moving_between_rooms:
 			continue
+		if enemy.has_method("is_converted") and enemy.is_converted():
+			continue
 		var distance: float = origin.distance_to(enemy.global_position)
 		if distance <= closest_distance:
 			closest_distance = distance
@@ -1284,6 +1306,8 @@ static func strongest_enemy_in_room(game: Node, room_coord: Vector2i, origin: Ve
 	for enemy in game.enemies:
 		if not game.enemy_is_active(enemy) or enemy.current_room != room_coord or enemy.moving_between_rooms:
 			continue
+		if enemy.has_method("is_converted") and enemy.is_converted():
+			continue
 		var distance_value: float = origin.distance_to(enemy.global_position)
 		if distance_value > max_range:
 			continue
@@ -1296,6 +1320,8 @@ static func strongest_enemy_in_room(game: Node, room_coord: Vector2i, origin: Ve
 
 static func enemy_is_targetable_by_module(game: Node, enemy: Variant, room_coord: Vector2i) -> bool:
 	if not game.enemy_is_active(enemy):
+		return false
+	if enemy.has_method("is_converted") and enemy.is_converted():
 		return false
 	return enemy.current_room == room_coord or enemy.pending_room == room_coord or enemy.next_room == room_coord
 

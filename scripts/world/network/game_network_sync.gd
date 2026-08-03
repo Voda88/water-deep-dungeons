@@ -130,6 +130,7 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 			"current_health": enemy.current_health,
 			"attack_cooldown_left": enemy.attack_cooldown_left,
 			"rooted_time_left": enemy.rooted_time_left,
+			"converted_time_left": enemy.converted_time_left,
 			"death_started": enemy.death_started,
 		})
 	return {
@@ -161,13 +162,11 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 		"minor_module_levels": game.minor_module_levels.duplicate(true),
 		"major_module_levels": game.major_module_levels.duplicate(true),
 		"active_research": game.active_research.duplicate(true),
-		"crystal_health": game.crystal_health,
 		"stamina_use_enabled": false,
 		"opened_rooms": game.opened_rooms,
 		"wave_index": game.wave_index,
 		"doors_opened": game.doors_opened,
 		"floor_major_modules_built_count": game.floor_major_modules_built_count,
-		"floor_opened_door_event_counts": game.floor_opened_door_event_counts.duplicate(true),
 		"game_over": game.game_over,
 		"status_message": game.status_message,
 		"crystal_ground_room": game.crystal_ground_room,
@@ -214,13 +213,11 @@ static func apply_network_snapshot(game: Node, snapshot: Dictionary) -> void:
 	game.minor_module_levels = game.normalized_minor_module_levels(Dictionary(snapshot.get("minor_module_levels", game.initialized_minor_module_levels())).duplicate(true))
 	game.major_module_levels = game.normalized_major_module_levels(Dictionary(snapshot.get("major_module_levels", game.initialized_major_module_levels())).duplicate(true))
 	game.active_research = Dictionary(snapshot.get("active_research", {})).duplicate(true)
-	game.crystal_health = float(snapshot.get("crystal_health", game.crystal_health))
 	game.stamina_use_enabled = false
 	game.opened_rooms = int(snapshot.get("opened_rooms", game.opened_rooms))
 	game.wave_index = int(snapshot.get("wave_index", game.wave_index))
 	game.doors_opened = int(snapshot.get("doors_opened", game.doors_opened))
 	game.floor_major_modules_built_count = maxi(int(snapshot.get("floor_major_modules_built_count", game.estimate_floor_major_modules_built_count())), 0)
-	game.floor_opened_door_event_counts = Dictionary(snapshot.get("floor_opened_door_event_counts", {})).duplicate(true)
 	game.game_over = bool(snapshot.get("game_over", game.game_over))
 	game.status_message = String(snapshot.get("status_message", game.status_message))
 	game.crystal_ground_room = snapshot.get("crystal_ground_room", game.INVALID_ROOM)
@@ -344,6 +341,7 @@ static func apply_enemy_snapshots(game: Node, enemy_states: Array) -> void:
 		enemy.current_health = float(enemy_state.get("current_health", enemy.current_health))
 		enemy.attack_cooldown_left = float(enemy_state.get("attack_cooldown_left", enemy.attack_cooldown_left))
 		enemy.rooted_time_left = float(enemy_state.get("rooted_time_left", enemy.rooted_time_left))
+		enemy.converted_time_left = float(enemy_state.get("converted_time_left", enemy.converted_time_left))
 		enemy.current_room = enemy_state.get("current_room", enemy.current_room)
 		enemy.pending_room = enemy_state.get("pending_room", enemy.pending_room)
 		enemy.previous_room = enemy_state.get("previous_room", enemy.previous_room)
@@ -496,6 +494,7 @@ static func server_request_pick_up_crystal(game: Node, hero_index: int) -> void:
 	game.crystal_ground_room = game.INVALID_ROOM
 	game.crystal_prompt_visible = false
 	game.crystal_pressure_timer_left = game.CRYSTAL_PRESSURE_PICKUP_DELAY
+	game.update_hero_combat_movement_mode()
 	game.status_message = "%s picked up the crystal. Dark rooms will agitate every 2 seconds." % hero.hero_name
 	game.update_hud()
 	broadcast_network_snapshot(game)

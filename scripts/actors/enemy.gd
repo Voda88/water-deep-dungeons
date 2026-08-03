@@ -61,6 +61,7 @@ var pool_managed: bool = false
 var default_collision_layer: int = 0
 var default_collision_mask: int = 0
 var rooted_time_left: float = 0.0
+var converted_time_left: float = 0.0
 var knockback_velocity: Vector2 = Vector2.ZERO
 var knockback_time_left: float = 0.0
 var knockback_duration: float = 0.0
@@ -242,6 +243,15 @@ func apply_root(duration: float) -> void:
 	velocity = Vector2.ZERO
 	queue_redraw()
 
+func apply_conversion(duration: float) -> void:
+	if duration <= 0.0 or death_started:
+		return
+	converted_time_left = maxf(converted_time_left, duration)
+	queue_redraw()
+
+func is_converted() -> bool:
+	return converted_time_left > 0.0 and not death_started
+
 func set_destination(world_position: Vector2) -> void:
 	if death_started:
 		return
@@ -332,6 +342,7 @@ func deactivate_for_pool() -> void:
 	attack_effect_left = 0.0
 	hurt_effect_left = 0.0
 	rooted_time_left = 0.0
+	converted_time_left = 0.0
 	recovering_slow_time_left = 0.0
 	recovering_slow_duration = 0.0
 	recovering_slow_move_multiplier = 1.0
@@ -456,6 +467,7 @@ func set_role(role_name: String) -> void:
 	recovering_slow_duration = 0.0
 	recovering_slow_move_multiplier = 1.0
 	recovering_slow_attack_speed_multiplier = 1.0
+	converted_time_left = 0.0
 	current_health = max_health
 	ensure_sprite_setup()
 	apply_role_visuals()
@@ -518,6 +530,7 @@ func _physics_process(delta: float) -> void:
 	attack_effect_left = maxf(attack_effect_left - delta, 0.0)
 	hurt_effect_left = maxf(hurt_effect_left - delta, 0.0)
 	rooted_time_left = maxf(rooted_time_left - delta, 0.0)
+	converted_time_left = maxf(converted_time_left - delta, 0.0)
 	recovering_slow_time_left = maxf(recovering_slow_time_left - delta, 0.0)
 	if recovering_slow_time_left <= 0.0 and recovering_slow_duration > 0.0:
 		recovering_slow_duration = 0.0
@@ -548,3 +561,7 @@ func _draw() -> void:
 		draw_line(Vector2(-13.0, 12.0), Vector2(13.0, -8.0), Color(0.95, 0.98, 1.0, 0.55), 1.5, true)
 	if recovering_slow_time_left > 0.0 and rooted_time_left <= 0.0:
 		draw_arc(Vector2.ZERO, 21.0, -PI * 0.5, -PI * 0.5 + TAU * recovering_slow_strength(), 18, Color(0.62, 0.8, 1.0, 0.9), 2.0, true)
+	if converted_time_left > 0.0:
+		var conversion_ratio: float = clampf(converted_time_left / 8.0, 0.15, 1.0)
+		draw_circle(Vector2.ZERO, 19.0, Color(0.56, 1.0, 0.78, 0.08 + 0.08 * conversion_ratio))
+		draw_arc(Vector2.ZERO, 23.0, 0.0, TAU, 24, Color(0.7, 1.0, 0.86, 0.78), 1.8, true)

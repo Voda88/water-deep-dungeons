@@ -14,6 +14,39 @@ static func adaptive_enemy_ai_think_interval(game: Node, active_enemy_count: int
 		return float(game.ENEMY_AI_THINK_INTERVAL_HEAVY_MOBILE) if heavy_load else float(game.ENEMY_AI_THINK_INTERVAL_MOBILE)
 	return float(game.ENEMY_AI_THINK_INTERVAL_HEAVY_DESKTOP) if heavy_load else float(game.ENEMY_AI_THINK_INTERVAL_DESKTOP)
 
+static func room_has_active_major_module(game: Node, room_coord: Vector2i) -> bool:
+	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
+		return false
+	var room: Dictionary = game.rooms[room_coord]
+	return String(room.get("major_module_type", "")) != "" and float(room.get("major_health", 0.0)) > 0.0
+
+static func enemy_is_converted(enemy: Variant) -> bool:
+	if enemy == null or not is_instance_valid(enemy) or not enemy.has_method("is_converted"):
+		return false
+	return bool(enemy.is_converted())
+
+static func nearest_hostile_enemy_for_converted(game: Node, converted_enemy: Variant) -> Variant:
+	if converted_enemy == null or not is_instance_valid(converted_enemy):
+		return null
+	var best_target: Variant = null
+	var best_distance: float = INF
+	for enemy in game.enemies:
+		if enemy == converted_enemy:
+			continue
+		if not game.enemy_is_active(enemy):
+			continue
+		if enemy_is_converted(enemy):
+			continue
+		if Vector2i(enemy.current_room) != Vector2i(converted_enemy.current_room):
+			continue
+		if bool(enemy.moving_between_rooms):
+			continue
+		var distance_value: float = converted_enemy.global_position.distance_to(enemy.global_position)
+		if best_target == null or distance_value < best_distance:
+			best_target = enemy
+			best_distance = distance_value
+	return best_target
+
 static func advance_enemy_routes(game: Node, delta: float) -> void:
 	var active_enemies: Array = []
 	for enemy_variant in game.enemies:
@@ -105,6 +138,8 @@ static func advance_enemy_routes(game: Node, delta: float) -> void:
 		enemy.set_destination(next_position)
 
 static func target_room_for_enemy(game: Node, enemy: Variant) -> Vector2i:
+	if enemy_is_converted(enemy):
+		return Vector2i(enemy.current_room) if nearest_hostile_enemy_for_converted(game, enemy) != null else game.INVALID_ROOM
 	var local_target: Variant = local_enemy_override_target(game, enemy)
 	if local_target != null:
 		return hero_room_for_enemy_targeting(game, local_target)
@@ -115,16 +150,25 @@ static func target_room_for_enemy(game: Node, enemy: Variant) -> Vector2i:
 				return game.crystal_room
 			return hero_room_for_enemy_targeting(game, orc_rider_target)
 		game.ENEMY_TYPE_SKELETON_ARCHER:
+			if enemy_targetable_heroes_in_room_strict(game, Vector2i(enemy.current_room)).is_empty() and room_has_active_major_module(game, Vector2i(enemy.current_room)):
+				return Vector2i(enemy.current_room)
 			var archer_target: Variant = skeleton_archer_target_hero(game, enemy)
 			if archer_target == null:
 				return game.crystal_room
 			return hero_room_for_enemy_targeting(game, archer_target)
-		game.ENEMY_TYPE_ORC, game.ENEMY_TYPE_ORC_SHAMAN:
+		game.ENEMY_TYPE_ORC:
 			if enemy.current_room == game.crystal_room and enemy_targetable_heroes_in_room_strict(game, Vector2i(enemy.current_room)).is_empty():
 				return game.crystal_room
 			var orc_target: Variant = orc_target_hero(game, enemy)
 			if orc_target != null:
 				return hero_room_for_enemy_targeting(game, orc_target)
+			return game.crystal_room
+		game.ENEMY_TYPE_ORC_SHAMAN:
+			if enemy.current_room == game.crystal_room and enemy_targetable_heroes_in_room_strict(game, Vector2i(enemy.current_room)).is_empty():
+				return game.crystal_room
+			var shaman_target: Variant = orc_shaman_target_hero(game, enemy)
+			if shaman_target != null:
+				return Vector2i(shaman_target.current_room)
 			return game.crystal_room
 		game.ENEMY_TYPE_GOLEM:
 			return golem_objective_room(game, enemy)
@@ -147,6 +191,11 @@ static func enemy_room_goal_position(game: Node, enemy: Variant, room_coord: Vec
 	return game.clamp_point_to_room(enemy.global_position, room_coord)
 
 static func enemy_target_position(game: Node, enemy: Variant) -> Vector2:
+	if enemy_is_converted(enemy):
+		var converted_target: Variant = nearest_hostile_enemy_for_converted(game, enemy)
+		if converted_target != null:
+			return converted_target.global_position
+		return game.clamp_point_to_room(enemy.global_position, enemy.current_room)
 	var local_target: Variant = local_enemy_override_target(game, enemy)
 	if local_target != null:
 		if String(enemy.enemy_role) == game.ENEMY_TYPE_SKELETON_ARCHER:
@@ -159,18 +208,27 @@ static func enemy_target_position(game: Node, enemy: Variant) -> Vector2:
 				return orc_rider_target.global_position
 			return game.clamp_point_to_room(enemy.global_position, enemy.current_room)
 		game.ENEMY_TYPE_SKELETON_ARCHER:
+			if enemy_targetable_heroes_in_room_strict(game, Vector2i(enemy.current_room)).is_empty() and room_has_active_major_module(game, Vector2i(enemy.current_room)):
+				return game.major_slot_position(enemy.current_room)
 			var archer_target: Variant = skeleton_archer_target_hero(game, enemy)
 			if archer_target != null:
 				if hero_is_in_room(game, archer_target, enemy.current_room):
 					return skeleton_archer_goal_position(game, enemy)
 				return archer_target.global_position
 			return game.crystal_world_position()
-		game.ENEMY_TYPE_ORC, game.ENEMY_TYPE_ORC_SHAMAN:
+		game.ENEMY_TYPE_ORC:
 			if enemy.current_room == game.crystal_room and enemy_targetable_heroes_in_room_strict(game, Vector2i(enemy.current_room)).is_empty():
 				return game.crystal_world_position()
 			var orc_target: Variant = orc_target_hero(game, enemy)
 			if orc_target != null:
 				return orc_target.global_position
+			return game.crystal_world_position()
+		game.ENEMY_TYPE_ORC_SHAMAN:
+			if enemy.current_room == game.crystal_room and enemy_targetable_heroes_in_room_strict(game, Vector2i(enemy.current_room)).is_empty():
+				return game.crystal_world_position()
+			var shaman_target: Variant = orc_shaman_target_hero(game, enemy)
+			if shaman_target != null:
+				return shaman_target.global_position
 			return game.crystal_world_position()
 		game.ENEMY_TYPE_GOLEM:
 			return golem_objective_position(game, enemy)
@@ -531,6 +589,37 @@ static func orc_target_hero(game: Node, enemy: Variant) -> Variant:
 			chosen_distance = distance_value
 	return chosen_hero
 
+static func orc_shaman_target_hero(game: Node, enemy: Variant) -> Variant:
+	var room_heroes: Array = enemy_targetable_heroes_in_room_strict(game, Vector2i(enemy.current_room))
+	if not room_heroes.is_empty():
+		return choose_orc_local_target(enemy, room_heroes)
+	var chosen_hero: Variant = null
+	var chosen_rank: int = 999
+	var chosen_path_length: int = 99999
+	var chosen_distance: float = INF
+	for hero in game.heroes:
+		if not game.hero_is_active(hero):
+			continue
+		if not hero_is_enemy_targetable(hero):
+			continue
+		var candidate_room: Vector2i = Vector2i(hero.current_room)
+		if candidate_room == game.INVALID_ROOM:
+			continue
+		var path_length: int = game.room_path_distance(enemy.current_room, candidate_room)
+		if path_length >= 99999:
+			continue
+		var priority_rank: int = 1 if bool(hero.carrying_crystal) else 0
+		var distance_value: float = enemy.global_position.distance_to(hero.global_position)
+		if chosen_hero == null \
+		or priority_rank < chosen_rank \
+		or (priority_rank == chosen_rank and path_length < chosen_path_length) \
+		or (priority_rank == chosen_rank and path_length == chosen_path_length and distance_value < chosen_distance):
+			chosen_hero = hero
+			chosen_rank = priority_rank
+			chosen_path_length = path_length
+			chosen_distance = distance_value
+	return chosen_hero
+
 static func bat_target_hero(_game: Node, _enemy: Variant) -> Variant:
 	return null
 
@@ -678,6 +767,15 @@ static func apply_enemy_crystal_strike(game: Node, enemy: Variant) -> void:
 static func resolve_enemy_attack(game: Node, enemy: Variant) -> void:
 	if enemy.attack_cooldown_left > 0.0:
 		return
+	if enemy_is_converted(enemy):
+		var converted_target: Variant = nearest_hostile_enemy_for_converted(game, enemy)
+		if converted_target == null:
+			return
+		enemy.trigger_attack(converted_target.global_position)
+		game.queue_pending_melee_attack(enemy, converted_target, enemy.attack_damage, enemy.melee_impact_delay(), "A converted enemy")
+		enemy.attack_cooldown_left = enemy.attack_cooldown
+		game.update_hud()
+		return
 	var local_target: Variant = local_enemy_override_target(game, enemy)
 	match String(enemy.enemy_role):
 		game.ENEMY_TYPE_ORC_RIDER:
@@ -693,6 +791,10 @@ static func resolve_enemy_attack(game: Node, enemy: Variant) -> void:
 				enemy.trigger_attack(archer_target.global_position)
 				game.spawn_laser_projectile(enemy.global_position, archer_target, enemy.attack_damage, Color("dbe5c8"), 3.2, 980.0)
 				game.status_message = "A skeleton archer looses an arrow at %s." % archer_target.hero_name
+			elif enemy_targetable_heroes_in_room_strict(game, Vector2i(enemy.current_room)).is_empty() and room_has_active_major_module(game, Vector2i(enemy.current_room)):
+				enemy.trigger_attack(game.major_slot_position(enemy.current_room))
+				if not game.damage_module(enemy.current_room, enemy.attack_damage, true, "Skeleton archers"):
+					return
 			elif enemy.current_room == game.crystal_room:
 				enemy.trigger_attack(game.room_center(game.crystal_room))
 				apply_enemy_crystal_strike(game, enemy)
@@ -742,10 +844,11 @@ static func resolve_enemy_attack(game: Node, enemy: Variant) -> void:
 			else:
 				return
 		game.ENEMY_TYPE_ORC_SHAMAN:
-			var room_targets: Array = enemy_targetable_heroes_in_room(game, enemy.current_room)
+			var room_targets: Array = enemy_targetable_heroes_in_room_strict(game, enemy.current_room)
 			if not room_targets.is_empty():
-				var blast_target: Variant = local_target if local_target != null else orc_target_hero(game, enemy)
+				var blast_target: Variant = choose_orc_local_target(enemy, room_targets)
 				var blast_position: Vector2 = blast_target.global_position if blast_target != null else game.room_walkable_center(enemy.current_room)
+				blast_position = game.clamp_point_to_room(blast_position, enemy.current_room)
 				enemy.trigger_attack(blast_position)
 				var defeated_heroes: Array[String] = game.explode_enemy_fireball(enemy.current_room, blast_position, enemy.attack_damage, 68.0, 360.0, "An orc shaman")
 				if defeated_heroes.is_empty():

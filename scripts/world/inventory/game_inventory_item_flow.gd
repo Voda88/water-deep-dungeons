@@ -111,9 +111,12 @@ static func spawn_ground_loot(game: Node, room_coord: Vector2i) -> void:
 			continue
 		if String(pending_spawn.get("spawn_source", "")) == "door_wave" and int(pending_spawn.get("remaining", 0)) > 0:
 			return
-	if game.rng.randf() > 0.72:
+	var force_loot: bool = bool(game.rooms[room_coord].get("feature_force_loot", false))
+	if not force_loot and game.rng.randf() > 0.72:
 		return
 	var loot_count: int = game.rng.randi_range(3, 6)
+	if force_loot:
+		loot_count = maxi(loot_count, 5)
 	var chest_anchor_position: Vector2 = game.clamp_point_to_room(game.room_center(room_coord) + GAME_DUNGEON_BUILDER.random_room_offset(game, 58.0), room_coord)
 	for loot_index in range(loot_count):
 		var item_id: String = roll_ground_item_id(game)

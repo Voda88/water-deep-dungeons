@@ -14,6 +14,7 @@ const MAJOR_MODULE_INDUSTRY: String = "industry"
 const BALLISTA_LEVEL_DAMAGE: Array[float] = [4.5, 5.0, 6.0, 7.0]
 const MINOR_MODULE_BOUNTY_THRESHOLDS: Array[int] = [6, 5, 4, 3]
 const MINOR_MODULE_KIP_MAX_DAMAGE_BY_LEVEL: Array[int] = [100, 130, 160, 190]
+const MINOR_MODULE_CONVERSION_DURATION_BY_LEVEL: Array[float] = [7.2, 9.6, 12.0, 14.4]
 
 static func canonical_minor_module_type(module_type: String) -> String:
 	return module_type
@@ -259,6 +260,16 @@ static func minor_module_cooldown(module_type: String, minor_module_levels: Dict
 			return 0.1
 		_:
 			return 0.5
+
+static func minor_module_conversion_duration_by_level(level: int) -> float:
+	var clamped_level: int = clampi(level, 1, MINOR_MODULE_CONVERSION_DURATION_BY_LEVEL.size())
+	return float(MINOR_MODULE_CONVERSION_DURATION_BY_LEVEL[clamped_level - 1])
+
+static func minor_module_conversion_duration(module_type: String, minor_module_levels: Dictionary) -> float:
+	if canonical_minor_module_type(module_type) != MINOR_MODULE_CONVERSION:
+		return 0.0
+	var level: int = clampi(minor_module_level(module_type, minor_module_levels), 1, 4)
+	return minor_module_conversion_duration_by_level(level)
 
 static func minor_module_color(module_type: String) -> Color:
 	match canonical_minor_module_type(module_type):

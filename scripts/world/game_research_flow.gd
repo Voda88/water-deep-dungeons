@@ -38,7 +38,7 @@ static func research_option_description(game: Node, module_type: String, next_le
 		game.MINOR_MODULE_KIP:
 			return "Arcana turret beam.\nDamage equals stored Arcana up to a level-based cap; level %d raises the cap." % next_level
 		game.MINOR_MODULE_CONVERSION:
-			return "Soulbind conversion spire.\nLevel %d converts one enemy; no direct damage." % next_level
+			return "Soulbind conversion spire.\nLevel %d converts one enemy to fight for you; upgrades increase conversion duration." % next_level
 		game.MINOR_MODULE_BOUNTY_INDUSTRY:
 			return "Salvage sigil.\nEarn materials every few enemy kills in the room; level %d lowers the kill requirement." % next_level
 		game.MINOR_MODULE_BOUNTY_FOOD:
@@ -136,10 +136,10 @@ static func module_cooldown_at_level(game: Node, module_type: String, level: int
 		_:
 			return 0.0
 
-static func module_conversion_radius_at_level(level: int) -> float:
+static func module_conversion_duration_at_level(game: Node, level: int) -> float:
 	if level <= 0:
 		return 0.0
-	return 72.0 + float(clampi(level, 1, 4)) * 8.0
+	return game.minor_module_conversion_duration_by_level(level)
 
 static func research_option_stats_text(game: Node, option: Dictionary) -> String:
 	var module_type: String = String(option.get("module_type", ""))
@@ -182,11 +182,11 @@ static func research_option_stats_text(game: Node, option: Dictionary) -> String
 			var next_kip_cooldown: float = module_cooldown_at_level(game, module_type, next_level)
 			return "Current level %d -> %d\nArcana beam turret\nMax damage cap %d -> %d\nDamage at current Arcana (%d): %d -> %d\nCooldown %.2fs -> %.2fs" % [current_level, next_level, current_arcana_cap, next_arcana_cap, stored_arcana_damage, effective_current_damage, effective_next_damage, current_kip_cooldown, next_kip_cooldown]
 		game.MINOR_MODULE_CONVERSION:
-			var current_conversion_radius: float = module_conversion_radius_at_level(current_level)
-			var next_conversion_radius: float = module_conversion_radius_at_level(next_level)
+			var current_conversion_duration: float = module_conversion_duration_at_level(game, current_level)
+			var next_conversion_duration: float = module_conversion_duration_at_level(game, next_level)
 			var current_conversion_cooldown: float = module_cooldown_at_level(game, module_type, current_level)
 			var next_conversion_cooldown: float = module_cooldown_at_level(game, module_type, next_level)
-			return "Current level %d -> %d\nConverts one enemy on proc\nConversion pulse radius %.0f -> %.0f\nCooldown %.2fs -> %.2fs" % [current_level, next_level, current_conversion_radius, next_conversion_radius, current_conversion_cooldown, next_conversion_cooldown]
+			return "Current level %d -> %d\nConverts one enemy on proc\nConversion duration %.1fs -> %.1fs\nCooldown %.2fs -> %.2fs" % [current_level, next_level, current_conversion_duration, next_conversion_duration, current_conversion_cooldown, next_conversion_cooldown]
 		game.MINOR_MODULE_BOUNTY_INDUSTRY, game.MINOR_MODULE_BOUNTY_FOOD, game.MINOR_MODULE_BOUNTY_SCIENCE:
 			var resource_label: String = research_resource_label(game.minor_module_bounty_resource_id(module_type))
 			var threshold_by_level: Array[int] = [6, 5, 4, 3]

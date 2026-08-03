@@ -126,6 +126,10 @@ const DOOR_REWARD_SCIENCE_BASE: int = 4
 const DOOR_REWARD_FOOD_MODULE: int = 3
 const DOOR_REWARD_INDUSTRY_MODULE: int = 3
 const DOOR_REWARD_SCIENCE_MODULE: int = 3
+const BONUS_RESOURCE_EVENT_NONE: String = "none"
+const BONUS_RESOURCE_EVENT_FOOD: String = "bonus_food"
+const BONUS_RESOURCE_EVENT_INDUSTRY: String = "bonus_industry"
+const BONUS_RESOURCE_EVENT_SCIENCE: String = "bonus_science"
 const ROOM_LIGHT_DUST_COST: int = 10
 const ROOM_OPEN_DUST_CHANCE: float = 0.5
 const ROOM_OPEN_DUST_MIN: int = 2
@@ -264,13 +268,11 @@ var dust: int = 24
 var food: int = 10
 var industry: int = 14
 var science: int = 0
-var crystal_health: float = 100.0
 var stamina_use_enabled: bool = false
 var opened_rooms: int = 0
 var wave_index: int = 0
 var doors_opened: int = 0
 var floor_major_modules_built_count: int = 0
-var floor_opened_door_event_counts: Dictionary = {}
 var game_over: bool = false
 var status_message: String = "Drag to pan, open rooms, then use Build to place modules on room slots."
 var build_menu_open: bool = false
@@ -431,10 +433,9 @@ func _physics_process(delta: float) -> void:
 	process_modules(delta)
 	cleanup_enemies()
 	advance_wave_recovery(delta)
-	if crystal_health <= 0.0:
-		crystal_health = 0.0
+	if total_crystal_dust_support() <= 0:
 		game_over = true
-		status_message = "Crystal destroyed. Restart to try again."
+		status_message = "Crystal destroyed as dust support was depleted. Restart to try again."
 		update_hud()
 	maybe_broadcast_network_snapshot(delta)
 
@@ -850,19 +851,6 @@ func reconcile_room_connections() -> void:
 func finalize_room_slot_distribution() -> void:
 	GAME_DUNGEON_BUILDER.finalize_room_slot_distribution(self)
 
-func assign_exit_room() -> void:
-	GAME_DUNGEON_BUILDER.assign_exit_room(self)
-
-func assign_research_crystals() -> void:
-	GAME_DUNGEON_BUILDER.assign_research_crystals(self)
-
-func spawn_starting_room_test_items() -> void:
-	GAME_DUNGEON_BUILDER.spawn_starting_room_test_items(self)
-
-func spawn_starting_room_test_spell_scrolls() -> void:
-	# Backward-compatible alias.
-	spawn_starting_room_test_items()
-
 func spawn_heroes() -> void:
 	GAME_ACTOR_ROSTER_FLOW.spawn_heroes(self)
 
@@ -1071,6 +1059,9 @@ func apply_portable_item_effects_on_door_open() -> void:
 func crystal_dust_damage_for_enemy(enemy: Variant) -> float:
 	return GAME_FLOOR_FLOW.crystal_dust_damage_for_enemy(self, enemy)
 
+func total_crystal_dust_support() -> int:
+	return GAME_FLOOR_FLOW.total_crystal_dust_support(self)
+
 func apply_crystal_damage_from_enemy(enemy: Variant) -> Dictionary:
 	return GAME_FLOOR_FLOW.apply_crystal_damage_from_enemy(self, enemy)
 
@@ -1253,6 +1244,8 @@ func hero_room_command_target_position(hero: Variant, room_coord: Vector2i) -> V
 	return hero_idle_position(room_coord, int(hero.hero_index), max(alive_hero_count(), 1))
 
 func hero_room_entry_target_position(path: Array[Vector2i], hero: Variant, room_coord: Vector2i) -> Vector2:
+	if hero != null and is_instance_valid(hero) and bool(hero.carrying_crystal) and room_coord == exit_room:
+		return room_walkable_center(room_coord)
 	if path.size() > 1:
 		return doorway_navigation_position(room_coord, path[path.size() - 2])
 	return hero_room_command_target_position(hero, room_coord)
@@ -2486,6 +2479,12 @@ func minor_module_damage(module_type: String) -> float:
 func minor_module_cooldown(module_type: String) -> float:
 	return GAME_MODULE_DEFS.minor_module_cooldown(module_type, minor_module_levels)
 
+func minor_module_conversion_duration(module_type: String) -> float:
+	return GAME_MODULE_DEFS.minor_module_conversion_duration(module_type, minor_module_levels)
+
+func minor_module_conversion_duration_by_level(level: int) -> float:
+	return GAME_MODULE_DEFS.minor_module_conversion_duration_by_level(level)
+
 func minor_module_color(module_type: String) -> Color:
 	return GAME_MODULE_DEFS.minor_module_color(module_type)
 
@@ -2499,7 +2498,7 @@ func wave_in_progress() -> bool:
 	return not pending_enemy_spawns.is_empty() or not enemies.is_empty()
 
 func update_hero_combat_movement_mode() -> void:
-	var in_combat: bool = wave_in_progress()
+	var in_combat: bool = wave_in_progress() or (crystal_holder != null and is_instance_valid(crystal_holder))
 	for hero in heroes:
 		if is_instance_valid(hero):
 			hero.set_combat_movement_mode(in_combat)
@@ -2715,6 +2714,7 @@ func request_selected_hero_pick_up_crystal() -> void:
 	crystal_ground_room = INVALID_ROOM
 	crystal_prompt_visible = false
 	crystal_pressure_timer_left = CRYSTAL_PRESSURE_PICKUP_DELAY
+	update_hero_combat_movement_mode()
 	status_message = "%s picked up the crystal. Dark rooms will agitate every 2 seconds." % hero.hero_name
 	update_hud()
 	queue_redraw()

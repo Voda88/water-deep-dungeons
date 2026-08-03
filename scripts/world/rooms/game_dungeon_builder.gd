@@ -2,6 +2,25 @@ extends RefCounted
 
 const GAME_INVENTORY_ITEM_FLOW: GDScript = preload("res://scripts/world/inventory/game_inventory_item_flow.gd")
 
+const SPECIAL_ROOM_WEIGHT_BASE: float = 1.0
+const RESEARCH_MAJOR_SLOT_WEIGHT_BONUS: float = 1.7
+const RESEARCH_DISTANCE_WEIGHT_STEP: float = 0.18
+const RESEARCH_EXIT_WEIGHT_MULTIPLIER: float = 0.72
+const MERCHANT_UNOPENED_WEIGHT_BONUS: float = 0.25
+const MERCHANT_DISTANCE_WEIGHT_STEP: float = 0.12
+const MERCHANT_EXIT_WEIGHT_MULTIPLIER: float = 0.82
+const LOOT_DISTANCE_WEIGHT_STEP: float = 0.1
+const LOOT_EXIT_WEIGHT_MULTIPLIER: float = 0.9
+const SPAWN_DISTANCE_WEIGHT_STEP: float = 0.22
+const SPAWN_EXIT_WEIGHT_MULTIPLIER: float = 1.15
+const BONUS_RESOURCE_DISTANCE_WEIGHT_STEP: float = 0.14
+const BONUS_RESOURCE_EXIT_WEIGHT_MULTIPLIER: float = 0.86
+const SPECIAL_FEATURE_RESEARCH: String = "research"
+const SPECIAL_FEATURE_MERCHANT: String = "merchant"
+const SPECIAL_FEATURE_LOOT: String = "loot"
+const SPECIAL_FEATURE_SPAWN: String = "spawn"
+const SPECIAL_FEATURE_BONUS_RESOURCE: String = "bonus_resource"
+
 static func is_in_bounds(game: Node, room_coord: Vector2i) -> bool:
 	return room_coord.x >= 0 and room_coord.y >= 0 and room_coord.x < game.GRID_SIZE.x and room_coord.y < game.GRID_SIZE.y
 static func random_room_offset(game: Node, radius: float) -> Vector2:
@@ -38,7 +57,6 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 	game.doors_opened = 0
 	game.wave_index = 0
 	game.floor_major_modules_built_count = 0
-	game.floor_opened_door_event_counts.clear()
 	game.exit_room = game.INVALID_ROOM
 	game.crystal_holder = null
 	game.crystal_ground_room = game.crystal_room
@@ -63,7 +81,6 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 		game.science = 10
 		game.research_reroll_count = 0
 		game.rejoin_claimable_hero_indices.clear()
-		game.crystal_health = 100.0
 		game.minor_module_levels = game.normalized_minor_module_levels(game.initialized_minor_module_levels())
 		game.major_module_levels = game.normalized_major_module_levels(game.initialized_major_module_levels())
 	elif game.minor_module_levels.is_empty():
@@ -118,12 +135,11 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 			break
 	game.reconcile_room_connections()
 	game.finalize_room_slot_distribution()
-	game.assign_exit_room()
-	game.assign_research_crystals()
-	assign_floor_merchant(game)
+	assign_exit_room(game)
+	assign_special_room_features(game)
 	game.prepare_floor_enemy_spawn_types()
 	game.prewarm_enemy_pool_for_floor()
-	game.spawn_starting_room_test_items()
+	spawn_starting_room_test_items(game)
 	game.normalize_runtime_rooms_slot_capacity()
 	game.refresh_room_lighting_states()
 	game.refresh_camera_bounds()
@@ -155,10 +171,6 @@ static func spawn_starting_room_test_items(game: Node) -> void:
 		var drop_position: Vector2 = game.clamp_point_to_room(center_position + Vector2(cos(angle), sin(angle)) * radius, room_coord)
 		room_data["ground_items"].append(game.make_ground_item(item_ids[item_index], drop_position))
 	game.rooms[room_coord] = room_data
-
-static func spawn_starting_room_test_spell_scrolls(game: Node) -> void:
-	# Backward-compatible alias for older call sites.
-	spawn_starting_room_test_items(game)
 
 static func roll_room_template(game: Node) -> String:
 	var roll: float = game.rng.randf()
@@ -386,6 +398,9 @@ static func create_room(game: Node, room_coord: Vector2i, template_id: String, d
 		"merchant_stock": [],
 		"merchant_buyback": [],
 		"merchant_buyback_doors_opened": 0,
+		"feature_force_loot": false,
+		"feature_spawn_priority": false,
+		"feature_bonus_resource_event": "",
 	}
 	if template_metadata.has("major_slot_normalized"):
 		room_data["major_slot_normalized"] = Vector2(template_metadata["major_slot_normalized"])
@@ -710,63 +725,199 @@ static func assign_exit_room(game: Node) -> void:
 	if game.exit_room != game.INVALID_ROOM:
 		game.rooms[game.exit_room]["exit"] = true
 
-static func assign_research_crystals(game: Node) -> void:
+static func assign_special_room_features(game: Node) -> void:
 	for room_coord_variant in game.rooms.keys():
 		var room_coord: Vector2i = room_coord_variant
 		game.rooms[room_coord]["research_crystal"] = false
 		game.rooms[room_coord]["research_crystal_spent"] = false
+		game.rooms[room_coord]["merchant_theme"] = ""
+		game.rooms[room_coord]["merchant_stock"] = []
+		game.rooms[room_coord]["merchant_buyback"] = []
+		game.rooms[room_coord]["merchant_buyback_doors_opened"] = game.doors_opened
+		game.rooms[room_coord]["feature_force_loot"] = false
+		game.rooms[room_coord]["feature_spawn_priority"] = false
+		game.rooms[room_coord]["feature_bonus_resource_event"] = ""
 	var first_discovered_room: Vector2i = game.INVALID_ROOM
 	if game.floor_index == 1 and game.rooms.has(game.crystal_room):
 		var crystal_neighbors: Array = Array(game.rooms[game.crystal_room].get("neighbors", []))
 		if not crystal_neighbors.is_empty():
 			first_discovered_room = Vector2i(crystal_neighbors[0])
 	var eligible_rooms: Array[Vector2i] = []
-	var candidates: Array[Vector2i] = []
+	var weighted_research_candidates: Array[Dictionary] = []
+	var weighted_merchant_candidates: Array[Dictionary] = []
+	var weighted_loot_candidates: Array[Dictionary] = []
+	var weighted_spawn_candidates: Array[Dictionary] = []
+	var weighted_bonus_resource_candidates: Array[Dictionary] = []
 	for room_coord_variant in game.rooms.keys():
 		var room_coord: Vector2i = room_coord_variant
 		if room_coord == game.crystal_room:
 			continue
-		if game.floor_index == 1 and room_coord == first_discovered_room:
-			continue
 		var room: Dictionary = game.rooms[room_coord]
-		if game.effective_minor_slot_count(room_coord) <= 0:
-			continue
 		eligible_rooms.append(room_coord)
-		if int(room.get("major_slots", 0)) > 0:
-			candidates.append(room_coord)
-	if candidates.is_empty() and not eligible_rooms.is_empty():
-		var promoted_room: Vector2i = eligible_rooms[game.rng.randi_range(0, eligible_rooms.size() - 1)]
-		game.rooms[promoted_room]["major_slots"] = max(1, int(game.rooms[promoted_room].get("major_slots", 0)))
-		candidates.append(promoted_room)
-	if candidates.is_empty():
-		return
-	var chosen_room: Vector2i = candidates[game.rng.randi_range(0, candidates.size() - 1)]
-	if chosen_room != game.INVALID_ROOM and game.rooms.has(chosen_room):
-		game.rooms[chosen_room]["research_crystal"] = true
+		if game.floor_index != 1 or room_coord != first_discovered_room:
+			if game.effective_minor_slot_count(room_coord) > 0 and int(room.get("major_slots", 0)) > 0:
+				weighted_research_candidates.append({
+					"room": room_coord,
+					"weight": research_room_feature_weight(game, room_coord),
+				})
+		weighted_merchant_candidates.append({
+			"room": room_coord,
+			"weight": merchant_room_feature_weight(game, room_coord),
+		})
+		weighted_loot_candidates.append({
+			"room": room_coord,
+			"weight": loot_room_feature_weight(game, room_coord),
+		})
+		weighted_spawn_candidates.append({
+			"room": room_coord,
+			"weight": spawn_room_feature_weight(game, room_coord),
+		})
+		weighted_bonus_resource_candidates.append({
+			"room": room_coord,
+			"weight": bonus_resource_room_feature_weight(game, room_coord),
+		})
+	if weighted_research_candidates.is_empty() and not eligible_rooms.is_empty():
+		var weighted_eligible_rooms: Array[Dictionary] = []
+		for eligible_room in eligible_rooms:
+			if game.floor_index == 1 and eligible_room == first_discovered_room:
+				continue
+			if game.effective_minor_slot_count(eligible_room) <= 0:
+				continue
+			weighted_eligible_rooms.append({
+				"room": eligible_room,
+				"weight": research_room_feature_weight(game, eligible_room),
+			})
+		if not weighted_eligible_rooms.is_empty():
+			var promoted_room: Vector2i = weighted_pick_room(game, weighted_eligible_rooms)
+			if promoted_room != game.INVALID_ROOM and game.rooms.has(promoted_room):
+				game.rooms[promoted_room]["major_slots"] = max(1, int(game.rooms[promoted_room].get("major_slots", 0)))
+				weighted_research_candidates.append({
+					"room": promoted_room,
+					"weight": research_room_feature_weight(game, promoted_room),
+				})
 
-static func assign_floor_merchant(game: Node) -> void:
-	var candidate_rooms: Array[Vector2i] = []
-	var any_non_crystal_rooms: Array[Vector2i] = []
-	for room_coord_variant in game.rooms.keys():
-		var room_coord: Vector2i = room_coord_variant
-		var room: Dictionary = game.rooms[room_coord]
-		room["merchant_theme"] = ""
-		room["merchant_stock"] = []
-		room["merchant_buyback"] = []
-		room["merchant_buyback_doors_opened"] = game.doors_opened
-		if room_coord == game.crystal_room:
+	var combined_entries: Array[Dictionary] = []
+	for entry_variant in weighted_research_candidates:
+		var entry: Dictionary = Dictionary(entry_variant).duplicate(true)
+		entry["feature"] = SPECIAL_FEATURE_RESEARCH
+		combined_entries.append(entry)
+	for entry_variant in weighted_merchant_candidates:
+		var entry: Dictionary = Dictionary(entry_variant).duplicate(true)
+		entry["feature"] = SPECIAL_FEATURE_MERCHANT
+		combined_entries.append(entry)
+	for entry_variant in weighted_loot_candidates:
+		var entry: Dictionary = Dictionary(entry_variant).duplicate(true)
+		entry["feature"] = SPECIAL_FEATURE_LOOT
+		combined_entries.append(entry)
+	for entry_variant in weighted_spawn_candidates:
+		var entry: Dictionary = Dictionary(entry_variant).duplicate(true)
+		entry["feature"] = SPECIAL_FEATURE_SPAWN
+		combined_entries.append(entry)
+	for entry_variant in weighted_bonus_resource_candidates:
+		var entry: Dictionary = Dictionary(entry_variant).duplicate(true)
+		entry["feature"] = SPECIAL_FEATURE_BONUS_RESOURCE
+		combined_entries.append(entry)
+
+	var assigned_rooms: Dictionary = {}
+	var required_features: Array[String] = [
+		SPECIAL_FEATURE_RESEARCH,
+		SPECIAL_FEATURE_MERCHANT,
+		SPECIAL_FEATURE_LOOT,
+		SPECIAL_FEATURE_SPAWN,
+		SPECIAL_FEATURE_BONUS_RESOURCE,
+	]
+	while not combined_entries.is_empty() and assigned_rooms.size() < required_features.size():
+		var picked_entry: Dictionary = weighted_pick_entry(game, combined_entries)
+		if picked_entry.is_empty():
+			break
+		var feature_id: String = String(picked_entry.get("feature", ""))
+		var picked_room: Vector2i = Vector2i(picked_entry.get("room", game.INVALID_ROOM))
+		if feature_id == "" or picked_room == game.INVALID_ROOM:
+			break
+		if assigned_rooms.has(feature_id):
 			continue
-		any_non_crystal_rooms.append(room_coord)
-		if not bool(room.get("opened", false)) and not bool(room.get("crystal", false)):
-			candidate_rooms.append(room_coord)
-	var merchant_room: Vector2i = game.INVALID_ROOM
-	if not candidate_rooms.is_empty():
-		merchant_room = candidate_rooms[game.rng.randi_range(0, candidate_rooms.size() - 1)]
-	elif not any_non_crystal_rooms.is_empty():
-		merchant_room = any_non_crystal_rooms[game.rng.randi_range(0, any_non_crystal_rooms.size() - 1)]
-	elif game.rooms.has(game.crystal_room):
-		# Last-resort fallback keeps the "at least one merchant per floor" invariant.
-		merchant_room = game.crystal_room
+		assigned_rooms[feature_id] = picked_room
+		var filtered_entries: Array[Dictionary] = []
+		for candidate_variant in combined_entries:
+			var candidate: Dictionary = candidate_variant
+			if String(candidate.get("feature", "")) == feature_id:
+				continue
+			if Vector2i(candidate.get("room", game.INVALID_ROOM)) == picked_room:
+				continue
+			filtered_entries.append(candidate)
+		combined_entries = filtered_entries
+
+	if not assigned_rooms.has(SPECIAL_FEATURE_RESEARCH):
+		var fallback_research: Vector2i = weighted_pick_room(game, weighted_research_candidates)
+		if fallback_research != game.INVALID_ROOM:
+			assigned_rooms[SPECIAL_FEATURE_RESEARCH] = fallback_research
+	if not assigned_rooms.has(SPECIAL_FEATURE_MERCHANT):
+		var weighted_merchant_fallback: Array[Dictionary] = []
+		for entry_variant in weighted_merchant_candidates:
+			var entry: Dictionary = entry_variant
+			var entry_room: Vector2i = Vector2i(entry.get("room", game.INVALID_ROOM))
+			if entry_room == Vector2i(assigned_rooms.get(SPECIAL_FEATURE_RESEARCH, game.INVALID_ROOM)):
+				continue
+			weighted_merchant_fallback.append(entry)
+		var fallback_merchant: Vector2i = weighted_pick_room(game, weighted_merchant_fallback)
+		if fallback_merchant != game.INVALID_ROOM:
+			assigned_rooms[SPECIAL_FEATURE_MERCHANT] = fallback_merchant
+	if not assigned_rooms.has(SPECIAL_FEATURE_LOOT):
+		var weighted_loot_fallback: Array[Dictionary] = []
+		for entry_variant in weighted_loot_candidates:
+			var entry: Dictionary = entry_variant
+			var entry_room: Vector2i = Vector2i(entry.get("room", game.INVALID_ROOM))
+			if assigned_rooms.values().has(entry_room):
+				continue
+			weighted_loot_fallback.append(entry)
+		var fallback_loot: Vector2i = weighted_pick_room(game, weighted_loot_fallback)
+		if fallback_loot != game.INVALID_ROOM:
+			assigned_rooms[SPECIAL_FEATURE_LOOT] = fallback_loot
+	if not assigned_rooms.has(SPECIAL_FEATURE_SPAWN):
+		var weighted_spawn_fallback: Array[Dictionary] = []
+		for entry_variant in weighted_spawn_candidates:
+			var entry: Dictionary = entry_variant
+			var entry_room: Vector2i = Vector2i(entry.get("room", game.INVALID_ROOM))
+			if assigned_rooms.values().has(entry_room):
+				continue
+			weighted_spawn_fallback.append(entry)
+		var fallback_spawn: Vector2i = weighted_pick_room(game, weighted_spawn_fallback)
+		if fallback_spawn != game.INVALID_ROOM:
+			assigned_rooms[SPECIAL_FEATURE_SPAWN] = fallback_spawn
+	if not assigned_rooms.has(SPECIAL_FEATURE_BONUS_RESOURCE):
+		var weighted_bonus_resource_fallback: Array[Dictionary] = []
+		for entry_variant in weighted_bonus_resource_candidates:
+			var entry: Dictionary = entry_variant
+			var entry_room: Vector2i = Vector2i(entry.get("room", game.INVALID_ROOM))
+			if assigned_rooms.values().has(entry_room):
+				continue
+			weighted_bonus_resource_fallback.append(entry)
+		var fallback_bonus_resource: Vector2i = weighted_pick_room(game, weighted_bonus_resource_fallback)
+		if fallback_bonus_resource != game.INVALID_ROOM:
+			assigned_rooms[SPECIAL_FEATURE_BONUS_RESOURCE] = fallback_bonus_resource
+
+	if assigned_rooms.has(SPECIAL_FEATURE_RESEARCH):
+		var research_room: Vector2i = Vector2i(assigned_rooms.get(SPECIAL_FEATURE_RESEARCH, game.INVALID_ROOM))
+		if research_room != game.INVALID_ROOM and game.rooms.has(research_room):
+			game.rooms[research_room]["research_crystal"] = true
+	if assigned_rooms.has(SPECIAL_FEATURE_MERCHANT):
+		var merchant_room: Vector2i = Vector2i(assigned_rooms.get(SPECIAL_FEATURE_MERCHANT, game.INVALID_ROOM))
+		if merchant_room != game.INVALID_ROOM and game.rooms.has(merchant_room):
+			apply_merchant_to_room(game, merchant_room)
+	if assigned_rooms.has(SPECIAL_FEATURE_LOOT):
+		var loot_room: Vector2i = Vector2i(assigned_rooms.get(SPECIAL_FEATURE_LOOT, game.INVALID_ROOM))
+		if loot_room != game.INVALID_ROOM and game.rooms.has(loot_room):
+			game.rooms[loot_room]["feature_force_loot"] = true
+	if assigned_rooms.has(SPECIAL_FEATURE_SPAWN):
+		var spawn_room: Vector2i = Vector2i(assigned_rooms.get(SPECIAL_FEATURE_SPAWN, game.INVALID_ROOM))
+		if spawn_room != game.INVALID_ROOM and game.rooms.has(spawn_room):
+			game.rooms[spawn_room]["feature_spawn_priority"] = true
+	if assigned_rooms.has(SPECIAL_FEATURE_BONUS_RESOURCE):
+		var bonus_resource_room: Vector2i = Vector2i(assigned_rooms.get(SPECIAL_FEATURE_BONUS_RESOURCE, game.INVALID_ROOM))
+		if bonus_resource_room != game.INVALID_ROOM and game.rooms.has(bonus_resource_room):
+			game.rooms[bonus_resource_room]["feature_bonus_resource_event"] = roll_bonus_resource_event_id(game)
+
+static func apply_merchant_to_room(game: Node, merchant_room: Vector2i) -> void:
 	if merchant_room == game.INVALID_ROOM or not game.rooms.has(merchant_room):
 		return
 	var merchant_themes: Array[String] = GAME_INVENTORY_ITEM_FLOW.merchant_theme_ids(game)
@@ -780,6 +931,138 @@ static func assign_floor_merchant(game: Node) -> void:
 	room_data["merchant_buyback_doors_opened"] = game.doors_opened
 	room_data["ground_items"] = []
 	game.rooms[merchant_room] = room_data
+
+static func weighted_pick_room(game: Node, weighted_rooms: Array[Dictionary]) -> Vector2i:
+	if weighted_rooms.is_empty():
+		return game.INVALID_ROOM
+	var total_weight: float = 0.0
+	for entry_variant in weighted_rooms:
+		var entry: Dictionary = entry_variant
+		total_weight += maxf(float(entry.get("weight", 0.0)), 0.0)
+	if total_weight <= 0.0:
+		return Vector2i(weighted_rooms[game.rng.randi_range(0, weighted_rooms.size() - 1)].get("room", game.INVALID_ROOM))
+	var roll: float = game.rng.randf() * total_weight
+	for entry_variant in weighted_rooms:
+		var entry: Dictionary = entry_variant
+		roll -= maxf(float(entry.get("weight", 0.0)), 0.0)
+		if roll <= 0.0:
+			return Vector2i(entry.get("room", game.INVALID_ROOM))
+	return Vector2i(weighted_rooms[weighted_rooms.size() - 1].get("room", game.INVALID_ROOM))
+
+static func weighted_pick_entry(game: Node, weighted_entries: Array[Dictionary]) -> Dictionary:
+	if weighted_entries.is_empty():
+		return {}
+	var total_weight: float = 0.0
+	for entry_variant in weighted_entries:
+		var entry: Dictionary = entry_variant
+		total_weight += maxf(float(entry.get("weight", 0.0)), 0.0)
+	if total_weight <= 0.0:
+		return Dictionary(weighted_entries[game.rng.randi_range(0, weighted_entries.size() - 1)]).duplicate(true)
+	var roll: float = game.rng.randf() * total_weight
+	for entry_variant in weighted_entries:
+		var entry: Dictionary = entry_variant
+		roll -= maxf(float(entry.get("weight", 0.0)), 0.0)
+		if roll <= 0.0:
+			return Dictionary(entry).duplicate(true)
+	return Dictionary(weighted_entries[weighted_entries.size() - 1]).duplicate(true)
+
+static func research_room_feature_weight(game: Node, room_coord: Vector2i) -> float:
+	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
+		return 0.0
+	var room: Dictionary = game.rooms[room_coord]
+	var weight: float = SPECIAL_ROOM_WEIGHT_BASE
+	if int(room.get("major_slots", 0)) > 0:
+		weight += RESEARCH_MAJOR_SLOT_WEIGHT_BONUS
+	var path_length: int = game.room_path_distance(game.crystal_room, room_coord)
+	if path_length < 99999:
+		weight += float(path_length) * RESEARCH_DISTANCE_WEIGHT_STEP
+	if room_coord == game.exit_room:
+		weight *= RESEARCH_EXIT_WEIGHT_MULTIPLIER
+	return maxf(weight, 0.01)
+
+static func merchant_room_feature_weight(game: Node, room_coord: Vector2i) -> float:
+	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
+		return 0.0
+	var room: Dictionary = game.rooms[room_coord]
+	var weight: float = SPECIAL_ROOM_WEIGHT_BASE
+	if not bool(room.get("opened", false)) and not bool(room.get("crystal", false)):
+		weight += MERCHANT_UNOPENED_WEIGHT_BONUS
+	var path_length: int = game.room_path_distance(game.crystal_room, room_coord)
+	if path_length < 99999:
+		weight += float(path_length) * MERCHANT_DISTANCE_WEIGHT_STEP
+	if room_coord == game.exit_room:
+		weight *= MERCHANT_EXIT_WEIGHT_MULTIPLIER
+	return maxf(weight, 0.01)
+
+static func loot_room_feature_weight(game: Node, room_coord: Vector2i) -> float:
+	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
+		return 0.0
+	var weight: float = SPECIAL_ROOM_WEIGHT_BASE
+	var path_length: int = game.room_path_distance(game.crystal_room, room_coord)
+	if path_length < 99999:
+		weight += float(path_length) * LOOT_DISTANCE_WEIGHT_STEP
+	if room_coord == game.exit_room:
+		weight *= LOOT_EXIT_WEIGHT_MULTIPLIER
+	return maxf(weight, 0.01)
+
+static func spawn_room_feature_weight(game: Node, room_coord: Vector2i) -> float:
+	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
+		return 0.0
+	var room: Dictionary = game.rooms[room_coord]
+	var weight: float = SPECIAL_ROOM_WEIGHT_BASE
+	if not bool(room.get("opened", false)) and not bool(room.get("crystal", false)):
+		weight += 0.2
+	var path_length: int = game.room_path_distance(game.crystal_room, room_coord)
+	if path_length < 99999:
+		weight += float(path_length) * SPAWN_DISTANCE_WEIGHT_STEP
+	if room_coord == game.exit_room:
+		weight *= SPAWN_EXIT_WEIGHT_MULTIPLIER
+	return maxf(weight, 0.01)
+
+static func bonus_resource_room_feature_weight(game: Node, room_coord: Vector2i) -> float:
+	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
+		return 0.0
+	var weight: float = SPECIAL_ROOM_WEIGHT_BASE
+	var path_length: int = game.room_path_distance(game.crystal_room, room_coord)
+	if path_length < 99999:
+		weight += float(path_length) * BONUS_RESOURCE_DISTANCE_WEIGHT_STEP
+	if room_coord == game.exit_room:
+		weight *= BONUS_RESOURCE_EXIT_WEIGHT_MULTIPLIER
+	return maxf(weight, 0.01)
+
+static func roll_bonus_resource_event_id(game: Node) -> String:
+	var weighted_events: Array[Dictionary] = []
+	if game.floor_index <= 3:
+		weighted_events = [
+			{"id": game.BONUS_RESOURCE_EVENT_FOOD, "weight": 22.0},
+			{"id": game.BONUS_RESOURCE_EVENT_INDUSTRY, "weight": 14.0},
+			{"id": game.BONUS_RESOURCE_EVENT_SCIENCE, "weight": 8.0},
+		]
+	elif game.floor_index <= 6:
+		weighted_events = [
+			{"id": game.BONUS_RESOURCE_EVENT_FOOD, "weight": 16.0},
+			{"id": game.BONUS_RESOURCE_EVENT_INDUSTRY, "weight": 18.0},
+			{"id": game.BONUS_RESOURCE_EVENT_SCIENCE, "weight": 18.0},
+		]
+	else:
+		weighted_events = [
+			{"id": game.BONUS_RESOURCE_EVENT_FOOD, "weight": 12.0},
+			{"id": game.BONUS_RESOURCE_EVENT_INDUSTRY, "weight": 20.0},
+			{"id": game.BONUS_RESOURCE_EVENT_SCIENCE, "weight": 26.0},
+		]
+	var total_weight: float = 0.0
+	for entry_variant in weighted_events:
+		var entry: Dictionary = entry_variant
+		total_weight += maxf(float(entry.get("weight", 0.0)), 0.0)
+	if total_weight <= 0.0:
+		return game.BONUS_RESOURCE_EVENT_INDUSTRY
+	var roll: float = game.rng.randf() * total_weight
+	for entry_variant in weighted_events:
+		var entry: Dictionary = entry_variant
+		roll -= maxf(float(entry.get("weight", 0.0)), 0.0)
+		if roll <= 0.0:
+			return String(entry.get("id", game.BONUS_RESOURCE_EVENT_INDUSTRY))
+	return String(weighted_events[weighted_events.size() - 1].get("id", game.BONUS_RESOURCE_EVENT_INDUSTRY))
 
 static func find_path(game: Node, from_room: Vector2i, to_room: Vector2i, only_open_rooms: bool) -> Array[Vector2i]:
 	if from_room == to_room:

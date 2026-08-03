@@ -116,16 +116,17 @@ static func update_hud(game: Node) -> void:
 	if research_open:
 		game.refresh_research_overlay()
 	var door_income: Dictionary = game.calculate_door_rewards()
-	var calm_phase: bool = not game.wave_in_progress()
+	var crystal_carried: bool = game.crystal_holder != null and is_instance_valid(game.crystal_holder)
+	var calm_phase: bool = not game.wave_in_progress() and not crystal_carried
 	var inventory_allowed: bool = game.inventory_actions_allowed_for_local_peer()
 	game.dust_label.text = "Dust %d" % game.dust
 	game.food_label.text = "Food %d +%d" % [game.food, int(door_income["food"])]
 	game.industry_label.text = "Mat %d +%d" % [game.industry, int(door_income["industry"])]
 	game.science_label.text = "Arc %d +%d" % [game.science, int(door_income["science"])]
 	if game.crystal_holder != null and is_instance_valid(game.crystal_holder):
-		game.crystal_label.text = "Crystal %d%%  %s Carrying" % [int(clampf(game.crystal_health, 0.0, 100.0)), game.crystal_holder.hero_name]
+		game.crystal_label.text = "Crystal  %s Carrying" % game.crystal_holder.hero_name
 	else:
-		game.crystal_label.text = "Crystal %d%%" % int(clampf(game.crystal_health, 0.0, 100.0))
+		game.crystal_label.text = "Crystal"
 	game.wave_label.text = "Floor %d  Doors %d  Waves %d  Dark %d" % [game.floor_index, game.doors_opened, game.wave_index, count_dark_open_rooms(game)]
 	game.room_label.text = game.room_summary(game.selected_room)
 	game.inventory_button.disabled = inventory_open or merchant_open or research_open or game.selected_hero() == null or not inventory_allowed
