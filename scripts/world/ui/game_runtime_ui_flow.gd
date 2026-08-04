@@ -257,147 +257,37 @@ static func ensure_hero_select_overlay(game: Node) -> void:
 	if game.hero_select_overlay != null:
 		return
 	var ui_root: Node = game.get_node(^"UI")
-	game.hero_select_overlay = ColorRect.new()
-	game.hero_select_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	game.hero_select_overlay.color = Color(0.03, 0.06, 0.08, 0.82)
-	game.hero_select_overlay.visible = false
-	game.hero_select_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	game.hero_select_overlay = game.LOBBY_SCREEN_SCENE.instantiate()
 	ui_root.add_child(game.hero_select_overlay)
 
-	game.hero_select_panel = PanelContainer.new()
-	game.hero_select_panel.anchor_left = 0.04
-	game.hero_select_panel.anchor_top = 0.05
-	game.hero_select_panel.anchor_right = 0.96
-	game.hero_select_panel.anchor_bottom = 0.95
-	game.hero_select_panel.offset_left = 0.0
-	game.hero_select_panel.offset_top = 0.0
-	game.hero_select_panel.offset_right = 0.0
-	game.hero_select_panel.offset_bottom = 0.0
-	game.hero_select_overlay.add_child(game.hero_select_panel)
+	game.hero_select_panel = game.hero_select_overlay.get_node(^"Panel")
+	game.hero_select_title_label = game.hero_select_overlay.get_node(^"Panel/RootVBox/TitleLabel")
+	game.network_panel = game.hero_select_overlay.get_node(^"Panel/RootVBox/NetworkPanel")
+	game.network_bar = game.hero_select_overlay.get_node(^"Panel/RootVBox/NetworkPanel/NetworkBar")
+	game.network_address_input = game.hero_select_overlay.get_node(^"Panel/RootVBox/NetworkPanel/NetworkBar/HostIPInput")
+	game.network_host_button = game.hero_select_overlay.get_node(^"Panel/RootVBox/NetworkPanel/NetworkBar/HostButton")
+	game.network_join_button = game.hero_select_overlay.get_node(^"Panel/RootVBox/NetworkPanel/NetworkBar/JoinButton")
+	game.network_disconnect_button = game.hero_select_overlay.get_node(^"Panel/RootVBox/NetworkPanel/NetworkBar/LeaveButton")
+	game.network_status_label = game.hero_select_overlay.get_node(^"Panel/RootVBox/NetworkPanel/NetworkBar/StatusLabel")
+	game.hero_select_detail_portrait = game.hero_select_overlay.get_node(^"Panel/RootVBox/ContentRow/DetailPanel/DetailVBox/Portrait")
+	game.hero_select_detail_title_label = game.hero_select_overlay.get_node(^"Panel/RootVBox/ContentRow/DetailPanel/DetailVBox/DetailTitleLabel")
+	game.hero_select_detail_summary_label = game.hero_select_overlay.get_node(^"Panel/RootVBox/ContentRow/DetailPanel/DetailVBox/DetailSummaryLabel")
+	game.hero_select_detail_hint_label = game.hero_select_overlay.get_node(^"Panel/RootVBox/ContentRow/DetailPanel/DetailVBox/DetailHintLabel")
+	game.hero_select_player_list = game.hero_select_overlay.get_node(^"Panel/RootVBox/ContentRow/PlayerPanel/PlayerVBox/PlayerList")
+	game.hero_select_new_game_button = game.hero_select_overlay.get_node(^"Panel/RootVBox/FooterBar/NewGameButton")
+	game.hero_select_load_game_button = game.hero_select_overlay.get_node(^"Panel/RootVBox/FooterBar/LoadGameButton")
+	game.hero_select_start_button = game.hero_select_overlay.get_node(^"Panel/RootVBox/FooterBar/StartButton")
 
-	var root_vbox: VBoxContainer = VBoxContainer.new()
-	root_vbox.add_theme_constant_override("separation", 10)
-	game.hero_select_panel.add_child(root_vbox)
-
-	game.hero_select_title_label = Label.new()
-	game.hero_select_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	game.hero_select_title_label.add_theme_font_size_override("font_size", 24)
-	game.hero_select_title_label.text = "Lobby"
-	root_vbox.add_child(game.hero_select_title_label)
-
-	var subtitle_label: Label = Label.new()
-	subtitle_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	subtitle_label.add_theme_font_size_override("font_size", 13)
-	subtitle_label.text = "Host or join a run, then choose the heroes your local player controls."
-	root_vbox.add_child(subtitle_label)
-
-	game.network_panel = PanelContainer.new()
-	root_vbox.add_child(game.network_panel)
-	game.network_bar = HBoxContainer.new()
-	game.network_bar.add_theme_constant_override("separation", 6)
-	game.network_panel.add_child(game.network_bar)
-
-	game.network_address_input = LineEdit.new()
-	game.network_address_input.custom_minimum_size = Vector2(140.0, 34.0)
-	game.network_address_input.placeholder_text = "Host IP"
 	game.network_address_input.text = game.NETWORK_DEFAULT_ADDRESS
-	game.network_address_input.add_theme_font_size_override("font_size", 14)
-	game.network_bar.add_child(game.network_address_input)
-
-	game.network_host_button = Button.new()
-	game.network_host_button.custom_minimum_size = Vector2(58.0, 34.0)
-	game.network_host_button.text = "Host"
-	game.network_host_button.add_theme_font_size_override("font_size", 14)
 	game.network_host_button.pressed.connect(game._on_network_host_button_pressed)
-	game.network_bar.add_child(game.network_host_button)
-
-	game.network_join_button = Button.new()
-	game.network_join_button.custom_minimum_size = Vector2(58.0, 34.0)
-	game.network_join_button.text = "Join"
-	game.network_join_button.add_theme_font_size_override("font_size", 14)
 	game.network_join_button.pressed.connect(game._on_network_join_button_pressed)
-	game.network_bar.add_child(game.network_join_button)
-
-	game.network_disconnect_button = Button.new()
-	game.network_disconnect_button.custom_minimum_size = Vector2(62.0, 34.0)
-	game.network_disconnect_button.text = "Leave"
-	game.network_disconnect_button.add_theme_font_size_override("font_size", 14)
 	game.network_disconnect_button.pressed.connect(game._on_network_disconnect_button_pressed)
-	game.network_bar.add_child(game.network_disconnect_button)
+	game.hero_select_new_game_button.pressed.connect(game._on_hero_select_new_game_button_pressed)
+	game.hero_select_load_game_button.pressed.connect(game._on_hero_select_load_game_button_pressed)
+	game.hero_select_start_button.pressed.connect(game._on_hero_select_start_button_pressed)
 
-	game.network_status_label = Label.new()
-	game.network_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	game.network_status_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	game.network_status_label.add_theme_font_size_override("font_size", 14)
-	game.network_status_label.add_theme_color_override("font_color", Color("d6e4ee"))
-	game.network_bar.add_child(game.network_status_label)
-
-	var content_row: HBoxContainer = HBoxContainer.new()
-	content_row.add_theme_constant_override("separation", 12)
-	content_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	root_vbox.add_child(content_row)
-
-	var hero_tile_panel: PanelContainer = PanelContainer.new()
-	hero_tile_panel.custom_minimum_size = Vector2(240.0, 0.0)
-	content_row.add_child(hero_tile_panel)
-	var card_grid: GridContainer = GridContainer.new()
-	card_grid.columns = 2
-	card_grid.add_theme_constant_override("h_separation", 8)
-	card_grid.add_theme_constant_override("v_separation", 8)
-	hero_tile_panel.add_child(card_grid)
-
-	var detail_panel: PanelContainer = PanelContainer.new()
-	detail_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	detail_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	content_row.add_child(detail_panel)
-	var detail_vbox: VBoxContainer = VBoxContainer.new()
-	detail_vbox.add_theme_constant_override("separation", 10)
-	detail_vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	detail_panel.add_child(detail_vbox)
-
-	game.hero_select_detail_portrait = TextureRect.new()
-	game.hero_select_detail_portrait.custom_minimum_size = Vector2(96.0, 96.0)
-	game.hero_select_detail_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	game.hero_select_detail_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	detail_vbox.add_child(game.hero_select_detail_portrait)
-
-	game.hero_select_detail_title_label = Label.new()
-	game.hero_select_detail_title_label.add_theme_font_size_override("font_size", 24)
-	detail_vbox.add_child(game.hero_select_detail_title_label)
-
-	game.hero_select_detail_summary_label = Label.new()
-	game.hero_select_detail_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	game.hero_select_detail_summary_label.add_theme_font_size_override("font_size", 15)
-	game.hero_select_detail_summary_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	detail_vbox.add_child(game.hero_select_detail_summary_label)
-
-	game.hero_select_detail_hint_label = Label.new()
-	game.hero_select_detail_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	game.hero_select_detail_hint_label.add_theme_font_size_override("font_size", 14)
-	game.hero_select_detail_hint_label.add_theme_color_override("font_color", Color("d6e4ee"))
-	detail_vbox.add_child(game.hero_select_detail_hint_label)
-
-	var class_grid: GridContainer = GridContainer.new()
-	class_grid.columns = 2
-	class_grid.add_theme_constant_override("h_separation", 8)
-	class_grid.add_theme_constant_override("v_separation", 8)
-	detail_vbox.add_child(class_grid)
-
-	var player_panel: PanelContainer = PanelContainer.new()
-	player_panel.custom_minimum_size = Vector2(214.0, 0.0)
-	content_row.add_child(player_panel)
-	var player_vbox: VBoxContainer = VBoxContainer.new()
-	player_vbox.add_theme_constant_override("separation", 8)
-	player_panel.add_child(player_vbox)
-	var player_title: Label = Label.new()
-	player_title.add_theme_font_size_override("font_size", 18)
-	player_title.text = "Players"
-	player_vbox.add_child(player_title)
-	game.hero_select_player_list = VBoxContainer.new()
-	game.hero_select_player_list.add_theme_constant_override("separation", 8)
-	game.hero_select_player_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	player_vbox.add_child(game.hero_select_player_list)
-
+	game.hero_select_cards.clear()
+	var card_grid: GridContainer = game.hero_select_overlay.get_node(^"Panel/RootVBox/ContentRow/HeroTilePanel/CardGrid")
 	for hero_index in range(game.HERO_COUNT):
 		var card_button: Button = Button.new()
 		card_button.toggle_mode = true
@@ -410,6 +300,8 @@ static func ensure_hero_select_overlay(game: Node) -> void:
 			"button": card_button,
 		}
 
+	game.hero_select_detail_class_buttons.clear()
+	var class_grid: GridContainer = game.hero_select_overlay.get_node(^"Panel/RootVBox/ContentRow/DetailPanel/DetailVBox/ClassGrid")
 	for class_id_variant in game.HERO_CLASS_ORDER:
 		var class_id: String = String(class_id_variant)
 		var class_def: Dictionary = game.hero_class_definition(class_id)
@@ -421,28 +313,3 @@ static func ensure_hero_select_overlay(game: Node) -> void:
 		class_button.pressed.connect(game._on_hero_select_detail_class_pressed.bind(class_id))
 		class_grid.add_child(class_button)
 		game.hero_select_detail_class_buttons[class_id] = class_button
-
-	var footer_bar: HBoxContainer = HBoxContainer.new()
-	footer_bar.alignment = BoxContainer.ALIGNMENT_END
-	footer_bar.add_theme_constant_override("separation", 10)
-	root_vbox.add_child(footer_bar)
-	game.hero_select_new_game_button = Button.new()
-	game.hero_select_new_game_button.custom_minimum_size = Vector2(148.0, 44.0)
-	game.hero_select_new_game_button.add_theme_font_size_override("font_size", 17)
-	game.hero_select_new_game_button.text = "New Game"
-	game.hero_select_new_game_button.pressed.connect(game._on_hero_select_new_game_button_pressed)
-	footer_bar.add_child(game.hero_select_new_game_button)
-
-	game.hero_select_load_game_button = Button.new()
-	game.hero_select_load_game_button.custom_minimum_size = Vector2(148.0, 44.0)
-	game.hero_select_load_game_button.add_theme_font_size_override("font_size", 17)
-	game.hero_select_load_game_button.text = "Load Game"
-	game.hero_select_load_game_button.pressed.connect(game._on_hero_select_load_game_button_pressed)
-	footer_bar.add_child(game.hero_select_load_game_button)
-
-	game.hero_select_start_button = Button.new()
-	game.hero_select_start_button.custom_minimum_size = Vector2(168.0, 44.0)
-	game.hero_select_start_button.add_theme_font_size_override("font_size", 18)
-	game.hero_select_start_button.text = "Close Lobby"
-	game.hero_select_start_button.pressed.connect(game._on_hero_select_start_button_pressed)
-	footer_bar.add_child(game.hero_select_start_button)

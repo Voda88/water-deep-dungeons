@@ -6,7 +6,7 @@
 
 [node name="Game" type="Node2D"]
 script = ExtResource("1")
-start_in_lobby = false
+start_in_lobby = true
 gameplay_scene_path = "res://scenes/main.tscn"
 lobby_scene_path = "res://scenes/lobby_root.tscn"
 

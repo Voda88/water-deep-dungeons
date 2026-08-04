@@ -298,6 +298,9 @@ static func update_hero_select_overlay(game: Node) -> void:
 	rebuild_hero_select_player_list(game)
 
 static func on_hero_select_toggle_button_pressed(game: Node) -> void:
+	if not bool(game.start_in_lobby) and bool(game.lobby_game_started):
+		game.return_to_lobby_scene()
+		return
 	set_hero_select_overlay_visible(game, game.hero_select_overlay == null or not game.hero_select_overlay.visible)
 
 static func on_hero_select_card_pressed(game: Node, hero_index: int) -> void:
@@ -344,11 +347,12 @@ static func on_hero_select_start_button_pressed(game: Node) -> void:
 			game.status_message = "Everyone must be ready before the run can start."
 			game.update_hud()
 			return
-		game.lobby_game_started = true
 		game.status_message = "The run begins."
-		set_hero_select_overlay_visible(game, false)
-		if multiplayer_session_active(game) and game.multiplayer.is_server():
-			game.broadcast_network_snapshot()
+		game.update_hud()
+		game.begin_run_from_lobby_transition()
+		return
+	if bool(game.start_in_lobby):
+		game.return_to_lobby_scene()
 		return
 	set_hero_select_overlay_visible(game, false)
 

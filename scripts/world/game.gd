@@ -4,6 +4,8 @@ const HERO_SCENE: PackedScene = preload("res://scenes/actors/hero.tscn")
 const ENEMY_SCENE: PackedScene = preload("res://scenes/actors/enemy.tscn")
 const INVENTORY_OVERLAY_SCENE: PackedScene = preload("res://scenes/ui/inventory_overlay.tscn")
 const MERCHANT_OVERLAY_SCENE: PackedScene = preload("res://scenes/ui/merchant_overlay.tscn")
+const LOBBY_SCREEN_SCENE: PackedScene = preload("res://scenes/ui/lobby_screen.tscn")
+const LOBBY_RUN_CONFIG: GDScript = preload("res://scripts/world/lobby_run_config.gd")
 const HERO_SCRIPT: GDScript = preload("res://scripts/actors/hero.gd")
 const ENEMY_SCRIPT: GDScript = preload("res://scripts/actors/enemy.gd")
 const GAME_CARD_DEFS: GDScript = preload("res://scripts/content/game_card_defs.gd")
@@ -16,7 +18,6 @@ const GAME_ROOM_ACTION_MENU: GDScript = preload("res://scripts/world/ui/game_roo
 const GAME_COMMAND_FLOW: GDScript = preload("res://scripts/world/game_command_flow.gd")
 const GAME_MULTIPLAYER_LOBBY: GDScript = preload("res://scripts/world/network/game_multiplayer_lobby.gd")
 const GAME_NETWORK_SYNC: GDScript = preload("res://scripts/world/network/game_network_sync.gd")
-const GAME_DUNGEON_BUILDER: GDScript = preload("res://scripts/world/rooms/game_dungeon_builder.gd")
 const GAME_COMBAT_FLOW: GDScript = preload("res://scripts/world/game_combat_flow.gd")
 const GAME_PATHING_FLOW: GDScript = preload("res://scripts/world/game_pathing_flow.gd")
 const GAME_ENEMY_AI_FLOW: GDScript = preload("res://scripts/world/game_enemy_ai_flow.gd")
@@ -35,6 +36,7 @@ const GAME_COMBAT_HAND_UI_FLOW: GDScript = preload("res://scripts/world/cards/ga
 const GAME_CONSTRUCTION_FLOW: GDScript = preload("res://scripts/world/game_construction_flow.gd")
 const GAME_WORLD_RENDER_FLOW: GDScript = preload("res://scripts/world/game_world_render_flow.gd")
 const GAME_WORLD_INPUT_FLOW: GDScript = preload("res://scripts/world/game_world_input_flow.gd")
+const GAME_DUNGEON_BUILDER: GDScript = preload("res://scripts/world/rooms/game_dungeon_builder.gd")
 const GAME_UI_BUTTON_HOLD_FLOW: GDScript = preload("res://scripts/world/ui/game_ui_button_hold_flow.gd")
 const GAME_CAMERA_FLOW: GDScript = preload("res://scripts/world/game_camera_flow.gd")
 const GAME_RUNTIME_UI_FLOW: GDScript = preload("res://scripts/world/ui/game_runtime_ui_flow.gd")
@@ -117,6 +119,10 @@ const NETWORK_PORT: int = 7777
 const NETWORK_MAX_CLIENTS: int = HERO_COUNT - 1
 const NETWORK_SNAPSHOT_INTERVAL: float = 0.12
 const NETWORK_DEFAULT_ADDRESS: String = "127.0.0.1"
+
+@export var start_in_lobby: bool = false
+@export_file("*.tscn") var gameplay_scene_path: String = "res://scenes/main.tscn"
+@export_file("*.tscn") var lobby_scene_path: String = "res://scenes/lobby_root.tscn"
 const INVENTORY_CANVAS_SIZE: Vector2i = Vector2i(9, 8)
 const INVENTORY_BASE_ORIGIN: Vector2i = Vector2i(3, 3)
 const INVENTORY_BASE_SIZE: Vector2i = Vector2i(2, 2)
@@ -374,6 +380,7 @@ var research_reroll_count: int = 0
 
 func _ready() -> void:
 	rng.randomize()
+	var pending_lobby_start_data: Dictionary = LOBBY_RUN_CONFIG.consume_pending_start_data() if not start_in_lobby else {}
 	item_defs = build_item_defs()
 	setup_multiplayer_callbacks()
 	center_button.pressed.connect(_on_center_button_pressed)
@@ -392,13 +399,21 @@ func _ready() -> void:
 	if world_fx_layer != null:
 		world_fx_layer.set("game", self)
 	build_dungeon(true)
+	if not pending_lobby_start_data.is_empty():
+		apply_pending_lobby_start_profiles(pending_lobby_start_data)
 	spawn_heroes()
 	reset_hero_owner_peer_ids()
-	sync_lobby_peer_ready_states(true)
+	if not pending_lobby_start_data.is_empty():
+		apply_pending_lobby_network_assignments(pending_lobby_start_data)
+	if start_in_lobby:
+		sync_lobby_peer_ready_states(true)
+		lobby_game_started = false
+	else:
+		lobby_game_started = true
 	selected_room = crystal_room
 	center_camera()
 	update_hud()
-	set_hero_select_overlay_visible(true)
+	set_hero_select_overlay_visible(start_in_lobby)
 	queue_redraw()
 
 func invalidate_static_dungeon_layer() -> void:
@@ -661,6 +676,84 @@ func _on_network_join_button_pressed() -> void:
 
 func _on_network_disconnect_button_pressed() -> void:
 	GAME_MULTIPLAYER_LOBBY.on_network_disconnect_button_pressed(self)
+
+func apply_pending_lobby_start_profiles(pending_data: Dictionary) -> void:
+	var pending_profiles: Array = Array(pending_data.get("hero_profiles", []))
+	if pending_profiles.size() == HERO_COUNT:
+		hero_profiles = pending_profiles.duplicate(true)
+
+func apply_pending_lobby_network_assignments(pending_data: Dictionary) -> void:
+	var pending_owner_ids: Array = Array(pending_data.get("hero_owner_peer_ids", []))
+	if pending_owner_ids.size() == HERO_COUNT:
+		hero_owner_peer_ids.clear()
+		for owner_id_variant in pending_owner_ids:
+			hero_owner_peer_ids.append(int(owner_id_variant))
+	var pending_claimables: Array = Array(pending_data.get("rejoin_claimable_hero_indices", []))
+	rejoin_claimable_hero_indices.clear()
+	for hero_index_variant in pending_claimables:
+		rejoin_claimable_hero_indices.append(int(hero_index_variant))
+	rejoin_claimable_hero_indices.sort()
+	if pending_data.has("selected_hero_index"):
+		selected_hero_index = int(pending_data.get("selected_hero_index", selected_hero_index))
+	ensure_valid_selected_hero()
+
+func lobby_start_transition_payload() -> Dictionary:
+	return {
+		"hero_profiles": hero_profiles.duplicate(true),
+		"hero_owner_peer_ids": hero_owner_peer_ids.duplicate(true),
+		"rejoin_claimable_hero_indices": rejoin_claimable_hero_indices.duplicate(true),
+		"selected_hero_index": selected_hero_index,
+	}
+
+func begin_run_from_lobby_transition() -> void:
+	if not start_in_lobby:
+		lobby_game_started = true
+		set_hero_select_overlay_visible(false)
+		if multiplayer_session_active() and multiplayer.is_server():
+			broadcast_network_snapshot()
+		return
+	if gameplay_scene_path.strip_edges() == "":
+		status_message = "Gameplay scene path is not configured."
+		update_hud()
+		return
+	if multiplayer_session_active() and not multiplayer.is_server():
+		status_message = "Only the host can start the run."
+		update_hud()
+		return
+	var payload: Dictionary = lobby_start_transition_payload()
+	LOBBY_RUN_CONFIG.set_pending_start_data(payload)
+	if multiplayer_session_active() and multiplayer.is_server():
+		rpc("rpc_begin_run_from_lobby", payload)
+	get_tree().change_scene_to_file(gameplay_scene_path)
+
+func return_to_lobby_scene() -> void:
+	if start_in_lobby:
+		set_hero_select_overlay_visible(true)
+		return
+	if lobby_scene_path.strip_edges() == "":
+		status_message = "Lobby scene path is not configured."
+		update_hud()
+		return
+	if multiplayer_session_active() and not multiplayer.is_server():
+		status_message = "Only the host can return everyone to lobby."
+		update_hud()
+		return
+	if multiplayer_session_active() and multiplayer.is_server():
+		rpc("rpc_return_to_lobby_scene")
+	get_tree().change_scene_to_file(lobby_scene_path)
+
+@rpc("authority", "call_remote", "reliable")
+func rpc_begin_run_from_lobby(payload: Dictionary) -> void:
+	LOBBY_RUN_CONFIG.set_pending_start_data(payload)
+	if gameplay_scene_path.strip_edges() == "":
+		return
+	get_tree().change_scene_to_file(gameplay_scene_path)
+
+@rpc("authority", "call_remote", "reliable")
+func rpc_return_to_lobby_scene() -> void:
+	if lobby_scene_path.strip_edges() == "":
+		return
+	get_tree().change_scene_to_file(lobby_scene_path)
 
 func ensure_runtime_ui() -> void:
 	GAME_RUNTIME_UI_FLOW.ensure_runtime_ui(self)
