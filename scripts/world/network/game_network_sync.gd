@@ -52,6 +52,7 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 			"combo_points": hero.combo_points,
 			"hand_cards": hero.hand_cards.duplicate(true),
 			"attack_damage": hero.attack_damage,
+			"defence": hero.defence,
 			"attack_range": hero.attack_range,
 			"attack_cooldown": hero.attack_cooldown,
 			"move_speed": hero.move_speed,
@@ -299,6 +300,7 @@ static func apply_hero_snapshots(game: Node, hero_states: Array) -> void:
 		hero.move_speed = float(hero_state.get("move_speed", hero.move_speed))
 		hero.max_health = float(hero_state.get("max_health", hero.max_health))
 		hero.attack_damage = float(hero_state.get("attack_damage", hero.attack_damage))
+		hero.defence = float(hero_state.get("defence", hero.defence))
 		hero.attack_range = float(hero_state.get("attack_range", hero.attack_range))
 		hero.attack_cooldown = float(hero_state.get("attack_cooldown", hero.attack_cooldown))
 		hero.current_health = float(hero_state.get("current_health", hero.current_health))

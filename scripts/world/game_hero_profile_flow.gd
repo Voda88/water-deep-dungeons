@@ -62,6 +62,7 @@ static func apply_hero_class_to_node(game: Node, hero: Variant, class_id: String
 		float(class_def.get("move_speed", 340.0)),
 		float(class_def.get("max_health", 100.0)),
 		float(class_def.get("attack_damage", 20.0)),
+		float(class_def.get("defence", 0.0)),
 		float(class_def.get("attack_range", 150.0)),
 		float(class_def.get("attack_cooldown", 0.55)),
 		String(class_def.get("attack_style", "laser")),
@@ -75,7 +76,7 @@ static func hero_class_summary_lines(game: Node, class_id: String) -> Array[Stri
 	var class_def: Dictionary = game.hero_class_definition(class_id)
 	return [
 		String(class_def.get("title", "Hero")),
-		"%s  %d atk  %d hp  %d spd" % ["Melee" if String(class_def.get("attack_style", "laser")) == "melee" else "Ranged", int(round(float(class_def.get("attack_damage", 0.0)))), int(round(float(class_def.get("max_health", 0.0)))), int(round(float(class_def.get("move_speed", 0.0))))],
+		"%s  %d atk  %d def  %d hp  %d spd" % ["Melee" if String(class_def.get("attack_style", "laser")) == "melee" else "Ranged", int(round(float(class_def.get("attack_damage", 0.0)))), int(round(float(class_def.get("defence", 0.0)))), int(round(float(class_def.get("max_health", 0.0)))), int(round(float(class_def.get("move_speed", 0.0))))],
 		"Range %d  Cooldown %.2fs  Weight %.1f" % [int(round(float(class_def.get("attack_range", 0.0)))), float(class_def.get("attack_cooldown", 0.0)), float(class_def.get("weight", 1.0))],
 	]
 

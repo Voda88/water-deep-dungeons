@@ -1031,8 +1031,8 @@ func find_default_pack_anchor(pack_modules: Array, pack_size: Vector2i) -> Vecto
 func next_level_pack_size(level_value: int) -> Vector2i:
 	return GAME_HERO_PROGRESSION_FLOW.next_level_pack_size(self, level_value)
 
-func hero_level_stat_bonuses(level_value: int) -> Dictionary:
-	return GAME_HERO_PROGRESSION_FLOW.hero_level_stat_bonuses(self, level_value)
+func hero_level_stat_bonuses(level_value: int, class_id: String = HERO_CLASS_FIGHTER) -> Dictionary:
+	return GAME_HERO_PROGRESSION_FLOW.hero_level_stat_bonuses(self, level_value, class_id)
 
 func hero_spell_slot_capacity(hero: Variant) -> int:
 	return GAME_HERO_PROGRESSION_FLOW.hero_spell_slot_capacity(self, hero)

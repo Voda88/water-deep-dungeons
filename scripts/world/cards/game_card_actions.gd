@@ -1518,7 +1518,7 @@ static func cast_temporary_summon_spell(game: Node, hero: Variant, target_room: 
 static func fighter_level_two_attack_damage(game: Node) -> float:
 	var fighter_def: Dictionary = game.hero_class_definition(game.HERO_CLASS_FIGHTER)
 	var base_attack_damage: float = float(fighter_def.get("attack_damage", 28.0))
-	var level_two_bonuses: Dictionary = game.hero_level_stat_bonuses(2)
+	var level_two_bonuses: Dictionary = game.hero_level_stat_bonuses(2, game.HERO_CLASS_FIGHTER)
 	var level_bonus_attack: float = float(level_two_bonuses.get("attack", 0.0))
 	return maxf(base_attack_damage + level_bonus_attack, 0.0)
 

@@ -1,16 +1,30 @@
 extends RefCounted
 
+const GAME_HERO_LEVEL_DEFS: GDScript = preload("res://scripts/content/game_hero_level_defs.gd")
+
 static func next_level_pack_size(game: Node, level_value: int) -> Vector2i:
 	var sequence_index: int = maxi(level_value - 2, 0) % game.LEVEL_UP_PACK_SEQUENCE.size()
 	return game.LEVEL_UP_PACK_SEQUENCE[sequence_index]
 
-static func hero_level_stat_bonuses(_game: Node, level_value: int) -> Dictionary:
-	var earned_levels: int = maxi(level_value - 1, 0)
-	return {
-		"health": float(earned_levels) * 8.0,
-		"attack": float(earned_levels) * 2.0,
-		"speed": float(earned_levels) * 10.0,
+static func hero_level_stat_bonuses(game: Node, level_value: int, class_id: String = "") -> Dictionary:
+	var resolved_class_id: String = class_id
+	if resolved_class_id == "":
+		resolved_class_id = String(game.HERO_CLASS_FIGHTER)
+	var totals: Dictionary = {
+		"health": 0.0,
+		"attack": 0.0,
+		"defence": 0.0,
+		"defense": 0.0,
+		"speed": 0.0,
 	}
+	for step_level in range(2, maxi(level_value, 1) + 1):
+		var gain: Dictionary = GAME_HERO_LEVEL_DEFS.level_up_stat_gain_for_class_level(resolved_class_id, step_level)
+		totals["health"] = float(totals.get("health", 0.0)) + float(gain.get("health", 0.0))
+		totals["attack"] = float(totals.get("attack", 0.0)) + float(gain.get("attack", 0.0))
+		totals["defence"] = float(totals.get("defence", 0.0)) + float(gain.get("defence", 0.0))
+		totals["speed"] = float(totals.get("speed", 0.0)) + float(gain.get("speed", 0.0))
+	totals["defense"] = float(totals.get("defence", 0.0))
+	return totals
 
 static func hero_spell_slot_capacity(game: Node, hero: Variant) -> int:
 	if hero == null or not is_instance_valid(hero) or not game.hero_supports_spell_repertoire(hero):
@@ -289,14 +303,15 @@ static func build_level_up_reward_lines(game: Node, hero: Variant) -> Array[Stri
 	var reward_lines: Array[String] = []
 	if hero == null or not is_instance_valid(hero):
 		return reward_lines
-	var current_bonus: Dictionary = hero_level_stat_bonuses(game, hero.level)
-	var next_bonus: Dictionary = hero_level_stat_bonuses(game, hero.level + 1)
+	var current_bonus: Dictionary = hero_level_stat_bonuses(game, hero.level, String(hero.hero_class_id))
+	var next_bonus: Dictionary = hero_level_stat_bonuses(game, hero.level + 1, String(hero.hero_class_id))
 	var health_gain: int = int(round(float(next_bonus.get("health", 0.0)) - float(current_bonus.get("health", 0.0))))
 	var attack_gain: int = int(round(float(next_bonus.get("attack", 0.0)) - float(current_bonus.get("attack", 0.0))))
+	var defence_gain: int = int(round(float(next_bonus.get("defence", 0.0)) - float(current_bonus.get("defence", 0.0))))
 	var speed_gain: int = int(round(float(next_bonus.get("speed", 0.0)) - float(current_bonus.get("speed", 0.0))))
 	var next_pack_size: Vector2i = hero_next_pack_size(game, hero)
 	var unlock_names: Array[String] = hero_next_level_unlock_names(game, hero)
-	reward_lines.append("Stats +%d hp  +%d dmg  +%d spd" % [health_gain, attack_gain, speed_gain])
+	reward_lines.append("Stats +%d hp  +%d dmg  +%d def  +%d spd" % [health_gain, attack_gain, defence_gain, speed_gain])
 	reward_lines.append("Pack %dx%d inventory module" % [next_pack_size.x, next_pack_size.y])
 	if unlock_names.is_empty():
 		reward_lines.append("Passive ability: none this level")
@@ -305,7 +320,7 @@ static func build_level_up_reward_lines(game: Node, hero: Variant) -> Array[Stri
 	return reward_lines
 
 static func level_up_food_cost(_game: Node, level_value: int) -> int:
-	return 4 + level_value * 2
+	return GAME_HERO_LEVEL_DEFS.level_up_food_cost(level_value)
 
 static func hero_next_pack_size(game: Node, hero: Variant) -> Vector2i:
 	return next_level_pack_size(game, hero.level + 1)
@@ -337,12 +352,13 @@ static func grant_level_up_pack_to_hero(game: Node, hero: Variant) -> bool:
 
 static func build_inventory_stat_lines(game: Node, hero: Variant, items: Array) -> Array[String]:
 	var bonuses: Dictionary = game.inventory_effect_summary(items)
-	var level_bonuses: Dictionary = hero_level_stat_bonuses(game, hero.level)
+	var level_bonuses: Dictionary = hero_level_stat_bonuses(game, hero.level, String(hero.hero_class_id))
 	var used_cells: int = 0
 	for item_variant in items:
 		used_cells += game.item_occupied_cells(item_variant).size()
 	var stat_lines: Array[String] = []
 	stat_lines.append("Damage %d" % int(round(hero.base_attack_damage + float(level_bonuses.get("attack", 0.0)) + float(bonuses["attack"]))))
+	stat_lines.append("Defence %d" % int(round(hero.base_defence + float(level_bonuses.get("defence", 0.0)) + float(bonuses.get("defence", bonuses.get("defense", 0.0))))))
 	stat_lines.append("Health %d" % int(round(hero.base_max_health + float(level_bonuses.get("health", 0.0)) + float(bonuses["health"]))))
 	stat_lines.append("Speed %d" % int(round(hero.base_move_speed + float(level_bonuses.get("speed", 0.0)) + float(bonuses["speed"]))))
 	stat_lines.append("Hand inf")
@@ -432,11 +448,12 @@ static func apply_inventory_stats_to_hero(game: Node, hero: Variant) -> void:
 	hero.inventory_items = normalized_items
 	game.sanitize_hero_spellbook(hero)
 	var bonuses: Dictionary = game.inventory_effect_summary(hero.inventory_items)
-	var level_bonuses: Dictionary = hero_level_stat_bonuses(game, hero.level)
+	var level_bonuses: Dictionary = hero_level_stat_bonuses(game, hero.level, String(hero.hero_class_id))
 	hero.apply_inventory_stats(
 		float(level_bonuses.get("speed", 0.0)) + float(bonuses["speed"]),
 		float(level_bonuses.get("health", 0.0)) + float(bonuses["health"]),
 		float(level_bonuses.get("attack", 0.0)) + float(bonuses["attack"]),
+		float(level_bonuses.get("defence", 0.0)) + float(bonuses.get("defence", bonuses.get("defense", 0.0))),
 		0.0,
 		int(bonuses.get("hand_size", 0)),
 		int(bonuses["synergies"])

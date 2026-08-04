@@ -55,6 +55,7 @@ static var hero_sprite_frames_cache: Dictionary = {}
 @export var max_health: float = 100.0
 @export var max_stamina: float = 5.0
 @export var attack_damage: float = 20.0
+@export var defence: float = 0.0
 @export var attack_range: float = 150.0
 @export var attack_cooldown: float = 0.55
 @export var weight: float = 1.6
@@ -73,6 +74,7 @@ var base_move_speed: float = 0.0
 var base_max_health: float = 0.0
 var base_max_stamina: float = 0.0
 var base_attack_damage: float = 0.0
+var base_defence: float = 0.0
 var base_attack_range: float = 0.0
 var base_attack_cooldown: float = 0.0
 var base_max_hand_size: int = 4
@@ -138,6 +140,7 @@ func _ready() -> void:
 	base_max_health = max_health
 	base_max_stamina = max_stamina
 	base_attack_damage = attack_damage
+	base_defence = defence
 	base_attack_range = attack_range
 	base_attack_cooldown = attack_cooldown
 	base_max_hand_size = max_hand_size
@@ -420,12 +423,20 @@ func clamp_to_knockback_bounds() -> void:
 		clampf(global_position.y, knockback_bounds.position.y, knockback_bounds.end.y)
 	)
 
+func mitigated_damage_by_defence(attack_power: float) -> float:
+	var safe_attack_power: float = maxf(attack_power, 0.0)
+	var safe_defence: float = maxf(defence, 0.0)
+	if safe_attack_power <= 0.0 or safe_defence <= 0.0:
+		return safe_attack_power
+	var mitigation_ratio: float = safe_defence / (safe_defence + 100.0)
+	return safe_attack_power * (1.0 - mitigation_ratio)
+
 func take_damage(amount: float, allow_lethal_death: bool = true) -> bool:
 	if dead_started:
 		return true
 	if invulnerability_time_left > 0.0:
 		return false
-	var remaining_damage: float = maxf(amount, 0.0)
+	var remaining_damage: float = mitigated_damage_by_defence(amount)
 	if barrier_amount > 0.0 and remaining_damage > 0.0:
 		var absorbed: float = minf(barrier_amount, remaining_damage)
 		barrier_amount = maxf(barrier_amount - absorbed, 0.0)
@@ -552,13 +563,14 @@ func heal(amount: float) -> bool:
 		queue_redraw()
 	return current_health >= max_health
 
-func apply_inventory_stats(move_bonus: float, health_bonus: float, attack_bonus: float, stamina_bonus: float, hand_bonus: int, next_synergy_count: int) -> void:
+func apply_inventory_stats(move_bonus: float, health_bonus: float, attack_bonus: float, defence_bonus: float, stamina_bonus: float, hand_bonus: int, next_synergy_count: int) -> void:
 	move_speed = base_move_speed + move_bonus
 	var previous_max_health: float = max_health
 	max_health = base_max_health + health_bonus
 	var previous_max_stamina: float = max_stamina
 	max_stamina = base_max_stamina + stamina_bonus
 	attack_damage = base_attack_damage + attack_bonus
+	defence = maxf(base_defence + defence_bonus, 0.0)
 	max_hand_size = UNLIMITED_HAND_SIZE
 	synergy_count = next_synergy_count
 	if previous_max_health <= 0.001:
@@ -594,12 +606,13 @@ func _on_animated_sprite_animation_finished() -> void:
 		"hurt":
 			hurt_effect_left = 0.0
 
-func configure_archetype(class_id: String, display_name: String, next_move_speed: float, next_max_health: float, next_attack_damage: float, next_attack_range: float, next_attack_cooldown: float, next_attack_style: String, next_weight: float, next_melee_windup_duration: float, next_body_color: Color, next_core_color: Color) -> void:
+func configure_archetype(class_id: String, display_name: String, next_move_speed: float, next_max_health: float, next_attack_damage: float, next_defence: float, next_attack_range: float, next_attack_cooldown: float, next_attack_style: String, next_weight: float, next_melee_windup_duration: float, next_body_color: Color, next_core_color: Color) -> void:
 	hero_class_id = class_id
 	hero_name = display_name
 	move_speed = next_move_speed
 	max_health = next_max_health
 	attack_damage = next_attack_damage
+	defence = maxf(next_defence, 0.0)
 	attack_range = next_attack_range
 	attack_cooldown = next_attack_cooldown
 	preferred_attack_style = next_attack_style
@@ -611,6 +624,7 @@ func configure_archetype(class_id: String, display_name: String, next_move_speed
 	base_max_health = next_max_health
 	base_max_stamina = max_stamina
 	base_attack_damage = next_attack_damage
+	base_defence = defence
 	base_attack_range = next_attack_range
 	base_attack_cooldown = next_attack_cooldown
 	base_max_hand_size = max_hand_size
