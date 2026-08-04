@@ -59,19 +59,19 @@ static func ensure_hero_bar_panel(game: Node) -> void:
 	var ui_root: Node = game.get_node(^"UI")
 	game.hero_bar_panel = PanelContainer.new()
 	game.hero_bar_panel.anchor_left = 1.0
-	game.hero_bar_panel.anchor_top = 1.0
+	game.hero_bar_panel.anchor_top = 0.0
 	game.hero_bar_panel.anchor_right = 1.0
 	game.hero_bar_panel.anchor_bottom = 1.0
-	game.hero_bar_panel.offset_left = -418.0
-	game.hero_bar_panel.offset_top = -148.0
+	game.hero_bar_panel.offset_left = -126.0
+	game.hero_bar_panel.offset_top = 72.0
 	game.hero_bar_panel.offset_right = -10.0
-	game.hero_bar_panel.offset_bottom = -10.0
+	game.hero_bar_panel.offset_bottom = -12.0
 	game.hero_bar_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	ui_root.add_child(game.hero_bar_panel)
-	game.hero_bar = HBoxContainer.new()
+	game.hero_bar = VBoxContainer.new()
 	game.hero_bar.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	game.hero_bar.add_theme_constant_override("separation", 6)
-	game.hero_bar.alignment = BoxContainer.ALIGNMENT_END
+	game.hero_bar.add_theme_constant_override("separation", 8)
+	game.hero_bar.alignment = BoxContainer.ALIGNMENT_BEGIN
 	game.hero_bar_panel.add_child(game.hero_bar)
 
 static func ensure_exit_button(game: Node) -> void:
