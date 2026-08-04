@@ -228,24 +228,14 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"door_interval": 2,
 				"color": Color("ceb7ff"),
 			}
-		"lantern_torch_card":
+		"lantern_beacon_card":
 			return {
-				"id": "lantern_torch_card",
-				"name": "Lamp Oil",
-				"target_scope": "hero",
-				"phase": "out_of_combat",
-				"description_lines": ["Create one torch in a hero backpack", "Consumes 1 lantern charge"],
-				"door_interval": 1,
-				"color": Color("ffe38a"),
-			}
-		"torch_card":
-			return {
-				"id": "torch_card",
-				"name": "Torch",
+				"id": "lantern_beacon_card",
+				"name": "Beacon Oil",
 				"target_scope": "opened_room",
 				"phase": "out_of_combat",
-				"description_lines": ["Light one opened room", "Lasts through the next combat wave"],
-				"door_interval": 2,
+				"description_lines": ["Light one opened room", "Lasts through the next combat wave", "Consumes 1 lantern charge"],
+				"door_interval": 1,
 				"color": Color("ffe38a"),
 			}
 		"cure_light_wounds_card":
@@ -412,19 +402,49 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"reaction_default_enabled": true,
 				"color": Color("ffd79c"),
 			}
-		"ration_meal_card":
+		"sunpepper_jerky_card":
 			return {
-				"id": "ration_meal_card",
-				"name": "Eat Ration",
+				"id": "sunpepper_jerky_card",
+				"name": "Eat Sunpepper Jerky",
 				"target_scope": "same_hero",
 				"phase": "combat",
-				"description_lines": ["Auto-triggers at 0 HP", "Restore 40% max HP", "Consumes the ration item"],
-				"heal_percent": 0.4,
+				"description_lines": ["Auto-triggers at 0 HP", "Restore 35% max HP", "Gain +2 combo", "Consumes the food item"],
+				"heal_percent": 0.35,
+				"combo_gain": 2,
 				"door_interval": 2,
 				"reaction_trigger": "fatal_damage",
 				"reaction_default_enabled": true,
-				"reaction_priority": 30,
-				"color": Color("d7f09f"),
+				"reaction_priority": 40,
+				"color": Color("ffbe95"),
+			}
+		"moon_truffle_card":
+			return {
+				"id": "moon_truffle_card",
+				"name": "Eat Moon Truffle",
+				"target_scope": "same_hero",
+				"phase": "combat",
+				"description_lines": ["Auto-triggers at 0 HP", "Restore 50% max HP", "Consumes the food item"],
+				"heal_percent": 0.5,
+				"door_interval": 2,
+				"reaction_trigger": "fatal_damage",
+				"reaction_default_enabled": true,
+				"reaction_priority": 55,
+				"color": Color("ddd1ff"),
+			}
+		"tidekelp_roll_card":
+			return {
+				"id": "tidekelp_roll_card",
+				"name": "Eat Tidekelp Roll",
+				"target_scope": "same_hero",
+				"phase": "combat",
+				"description_lines": ["Auto-triggers at 0 HP", "Restore 32% max HP", "Restore 60% stamina", "Consumes the food item"],
+				"heal_percent": 0.32,
+				"stamina_restore_percent": 0.6,
+				"door_interval": 2,
+				"reaction_trigger": "fatal_damage",
+				"reaction_default_enabled": true,
+				"reaction_priority": 48,
+				"color": Color("9dece4"),
 			}
 		"dagger_card":
 			return {

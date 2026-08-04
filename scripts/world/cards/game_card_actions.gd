@@ -2,7 +2,6 @@ extends RefCounted
 
 const GAME_ENEMY_DEFS: GDScript = preload("res://scripts/content/game_enemy_defs.gd")
 const GAME_DUNGEON_BUILDER: GDScript = preload("res://scripts/world/rooms/game_dungeon_builder.gd")
-const GAME_INVENTORY_ITEM_FLOW: GDScript = preload("res://scripts/world/inventory/game_inventory_item_flow.gd")
 const SCORCHING_RAY_EFFECT_DURATION: float = 0.5
 
 static func hero_hand_card_index(_game: Node, hero: Variant, card_uid: int) -> int:
@@ -32,7 +31,7 @@ static func reaction_consumes_source(hand_card: Dictionary) -> bool:
 
 static func reaction_priority_value(hand_card: Dictionary) -> int:
 	var card_id: String = String(hand_card.get("card_id", ""))
-	if card_id == "ration_meal_card":
+	if card_id == "sunpepper_jerky_card" or card_id == "moon_truffle_card" or card_id == "tidekelp_roll_card":
 		return maxi(int(hand_card.get("reaction_priority", 0)), 30)
 	if card_id == "emergency_snack_card":
 		return mini(int(hand_card.get("reaction_priority", 0)), 0)
@@ -434,8 +433,6 @@ static func room_target_hero_for_card(game: Node, source_hero: Variant, hand_car
 			var heal_target: Variant = most_damaged_hero_in_room(game, room_coord)
 			if heal_target != null and is_instance_valid(heal_target):
 				return heal_target
-		"lantern_torch_card":
-			return fallback_room_target_hero(game, source_hero, room_coord)
 	return fallback_room_target_hero(game, source_hero, room_coord)
 
 static func heal_amount_for_card_target(hand_card: Dictionary, target_hero: Variant, fallback_heal_amount: float, fallback_heal_percent: float = 0.0) -> float:
@@ -844,18 +841,7 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			cast_scorching_ray_spell(game, hero, target_world_position, ray_room, hand_card)
 			game.status_message = "%s cast Scorching Ray." % hero.hero_name
 			return true
-		"lantern_torch_card":
-			var target_hero: Variant = room_target_hero_for_card(game, hero, hand_card, target_data)
-			if target_hero == null or not is_instance_valid(target_hero):
-				return false
-			var created_torch: Dictionary = GAME_INVENTORY_ITEM_FLOW.make_inventory_item(game, "torch")
-			if not game.add_item_to_hero_inventory(target_hero, created_torch):
-				game.status_message = "%s has no room for a torch." % target_hero.hero_name
-				return false
-			hero.trigger_attack(target_hero.global_position, "laser")
-			game.status_message = "%s prepared a torch for %s." % [hero.hero_name, target_hero.hero_name]
-			return true
-		"torch_card":
+		"lantern_beacon_card":
 			var room_coord_torch: Vector2i = target_data.get("room", game.INVALID_ROOM)
 			if room_coord_torch == game.INVALID_ROOM or not game.rooms.has(room_coord_torch):
 				return false
@@ -915,7 +901,7 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			var healed_amount: int = int(round(maxf(snack_target.current_health - previous_snack_health, 0.0)))
 			game.status_message = "%s used an emergency snack (+%d HP)." % [snack_target.hero_name, healed_amount]
 			return true
-		"ration_meal_card":
+		"sunpepper_jerky_card", "moon_truffle_card", "tidekelp_roll_card":
 			var ration_target: Variant = target_data.get("hero", hero)
 			if ration_target == null or not is_instance_valid(ration_target):
 				return false
@@ -923,12 +909,28 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			var ration_heal_percent: float = clampf(float(hand_card.get("heal_percent", 0.4)), 0.0, 1.0)
 			var ration_heal_amount: float = maxf(ration_target.max_health * ration_heal_percent, 1.0)
 			ration_target.heal(ration_heal_amount)
+			var combo_gain: int = maxi(0, int(hand_card.get("combo_gain", 0)))
+			if combo_gain > 0:
+				ration_target.combo_points += combo_gain
+			var stamina_before: float = ration_target.stamina
+			var stamina_restore_percent: float = clampf(float(hand_card.get("stamina_restore_percent", 0.0)), 0.0, 1.0)
+			if stamina_restore_percent > 0.0:
+				ration_target.restore_stamina(maxf(ration_target.max_stamina * stamina_restore_percent, 0.0))
 			hero.trigger_attack(ration_target.global_position, "laser")
 			if ration_target.current_health <= previous_ration_health + 0.001:
-				game.status_message = "%s does not need a ration right now." % ration_target.hero_name
+				game.status_message = "%s does not need %s right now." % [ration_target.hero_name, String(hand_card.get("name", "that food")).to_lower()]
 				return false
 			var ration_healed: int = int(round(maxf(ration_target.current_health - previous_ration_health, 0.0)))
-			game.status_message = "%s ate a ration (+%d HP)." % [ration_target.hero_name, ration_healed]
+			var detail_tokens: Array[String] = []
+			if combo_gain > 0:
+				detail_tokens.append("+%d Combo" % combo_gain)
+			var stamina_restored: int = int(round(maxf(ration_target.stamina - stamina_before, 0.0)))
+			if stamina_restored > 0:
+				detail_tokens.append("+%d STA" % stamina_restored)
+			var detail_suffix: String = ""
+			if not detail_tokens.is_empty():
+				detail_suffix = ", %s" % ", ".join(detail_tokens)
+			game.status_message = "%s used %s (+%d HP%s)." % [ration_target.hero_name, String(hand_card.get("name", "an exotic food")).to_lower(), ration_healed, detail_suffix]
 			return true
 		"dagger_card":
 			spawn_dagger_card_projectiles(game, hero, target_world_position, hand_card)

@@ -77,13 +77,14 @@ static func default_inventory_items_for_class(game: Node, class_id: String) -> A
 
 static func roll_ground_item_id(game: Node) -> String:
 	var weighted_item_ids: Array[String] = [
-		"ration", "ration",
+		"sunpepper_jerky", "sunpepper_jerky",
+		"moon_truffle", "moon_truffle",
+		"tidekelp_roll", "tidekelp_roll",
 		"boots", "boots",
 		"whirling_blade",
 		"buckler",
 		"lantern",
 		"medkit",
-		"torch",
 		"axe",
 		"daggers",
 		"scroll_fireball",
@@ -726,7 +727,7 @@ static func merchant_item_is_consumable(item_def: Dictionary) -> bool:
 	if item_def.has("max_charges"):
 		return true
 	var item_tags: Array = Array(item_def.get("tags", []))
-	for consumable_tag_variant in ["scroll", "food", "medical", "torch"]:
+	for consumable_tag_variant in ["scroll", "food", "medical"]:
 		if item_tags.has(consumable_tag_variant):
 			return true
 	for generator_variant in item_generator_defs(item_def):
