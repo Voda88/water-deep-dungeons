@@ -554,6 +554,9 @@ func hero_has_skulker(hero: Variant) -> bool:
 		return true
 	return GAME_HERO_DEFS.hero_has_skulker(hero)
 
+func hero_has_cleric_mend(hero: Variant) -> bool:
+	return GAME_HERO_DEFS.hero_has_cleric_mend(hero)
+
 func sync_hero_skulking_visual_states() -> void:
 	for hero_variant in heroes:
 		var hero: Variant = hero_variant

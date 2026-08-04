@@ -82,6 +82,7 @@ var base_inventory_size: Vector2i = Vector2i(2, 2)
 var pack_modules: Array = []
 var inventory_items: Array = []
 var synergy_count: int = 0
+var basic_attack_knockback: float = 0.0
 var current_health: float = 0.0
 var cooldown_left: float = 0.0
 var current_room: Vector2i = Vector2i.ZERO
@@ -599,12 +600,13 @@ func heal(amount: float) -> bool:
 		queue_redraw()
 	return current_health >= max_health
 
-func apply_inventory_stats(move_bonus: float, health_bonus: float, attack_bonus: float, defence_bonus: float, _hand_bonus: int, next_synergy_count: int) -> void:
+func apply_inventory_stats(move_bonus: float, health_bonus: float, attack_bonus: float, defence_bonus: float, _hand_bonus: int, next_synergy_count: int, basic_attack_knockback_bonus: float = 0.0) -> void:
 	move_speed = base_move_speed + move_bonus
 	var previous_max_health: float = max_health
 	max_health = base_max_health + health_bonus
 	attack_damage = base_attack_damage + attack_bonus
 	defence = maxf(base_defence + defence_bonus, 0.0)
+	basic_attack_knockback = maxf(basic_attack_knockback_bonus, 0.0)
 	max_hand_size = UNLIMITED_HAND_SIZE
 	synergy_count = next_synergy_count
 	if previous_max_health <= 0.001:
@@ -666,6 +668,7 @@ func configure_archetype(class_id: String, display_name: String, next_move_speed
 	base_attack_range = next_attack_range
 	base_attack_cooldown = next_attack_cooldown
 	base_max_hand_size = max_hand_size
+	basic_attack_knockback = 0.0
 	current_health = clampf(current_health if current_health > 0.0 else max_health, 1.0, max_health)
 	ensure_sprite_setup()
 	apply_sprite_tint()

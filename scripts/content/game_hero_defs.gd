@@ -4,6 +4,7 @@ const HERO_CLASS_FIGHTER: String = "fighter"
 const HERO_CLASS_CLERIC: String = "cleric"
 const HERO_CLASS_ROGUE: String = "rogue"
 const HERO_CLASS_WIZARD: String = "wizard"
+const CLERIC_MEND_UNLOCK_LEVEL: int = 2
 
 static func hero_class_definition(class_id: String) -> Dictionary:
 	match class_id:
@@ -23,6 +24,18 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 				"melee_windup": 0.21,
 				"body_color": Color("9fe6b0"),
 				"core_color": Color("f5fff1"),
+				"level_passives": [
+					{
+						"level": 1,
+						"name": "Turn Undead",
+						"detail": "Granted by your starting Holy Symbol. A room-wide pulse applies Fear effects to undead.",
+					},
+					{
+						"level": CLERIC_MEND_UNLOCK_LEVEL,
+						"name": "Mend",
+						"detail": "Passively repairs damaged room modules while the cleric is present.",
+					},
+				],
 			}
 		HERO_CLASS_ROGUE:
 			return {
@@ -124,6 +137,11 @@ static func hero_has_skulker(hero: Variant) -> bool:
 	if hero == null or not is_instance_valid(hero):
 		return false
 	return String(hero.hero_class_id) == HERO_CLASS_ROGUE and int(hero.level) >= skulker_unlock_level_for_class(HERO_CLASS_ROGUE)
+
+static func hero_has_cleric_mend(hero: Variant) -> bool:
+	if hero == null or not is_instance_valid(hero):
+		return false
+	return String(hero.hero_class_id) == HERO_CLASS_CLERIC and int(hero.level) >= CLERIC_MEND_UNLOCK_LEVEL
 
 static func hero_can_operate_major_modules(hero: Variant) -> bool:
 	if hero == null or not is_instance_valid(hero):

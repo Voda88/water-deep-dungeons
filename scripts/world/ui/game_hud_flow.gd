@@ -175,10 +175,8 @@ static func update_hud(game: Node) -> void:
 	update_calm_speed_bar(game, calm_phase)
 	update_hero_button_text(game)
 	update_runtime_button_state(game)
-	if not status_message_is_combat_detail(game.status_message):
-		game.room_flow_status_message = game.status_message
 	if String(game.room_flow_status_message) == "":
-		game.room_flow_status_message = game.status_message
+		game.room_flow_status_message = "Open a door to discover new room events."
 	game.hint_label.text = game.room_flow_status_message
 	game.update_network_ui()
 	game.update_hero_select_overlay()

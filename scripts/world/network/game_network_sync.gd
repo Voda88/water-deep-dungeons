@@ -63,6 +63,7 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 			"hand_cards": hero.hand_cards.duplicate(true),
 			"attack_damage": hero.attack_damage,
 			"defence": hero.defence,
+			"basic_attack_knockback": hero.basic_attack_knockback,
 			"attack_range": hero.attack_range,
 			"attack_cooldown": hero.attack_cooldown,
 			"move_speed": hero.move_speed,
@@ -101,6 +102,8 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 			"width": float(projectile.get("width", 4.0)),
 			"radius": float(projectile.get("radius", 0.0)),
 			"impact_radius": float(projectile.get("impact_radius", 0.0)),
+			"knockback_force": float(projectile.get("knockback_force", 0.0)),
+			"knockback_duration": float(projectile.get("knockback_duration", 0.18)),
 			"room": projectile.get("room", game.INVALID_ROOM),
 			"points": Array(projectile.get("points", [])).duplicate(true),
 			"lifetime_left": float(projectile.get("lifetime_left", 0.0)),
@@ -332,6 +335,7 @@ static func apply_hero_snapshots(game: Node, hero_states: Array) -> void:
 		hero.max_health = float(hero_state.get("max_health", hero.max_health))
 		hero.attack_damage = float(hero_state.get("attack_damage", hero.attack_damage))
 		hero.defence = float(hero_state.get("defence", hero.defence))
+		hero.basic_attack_knockback = maxf(float(hero_state.get("basic_attack_knockback", hero.basic_attack_knockback)), 0.0)
 		hero.attack_range = float(hero_state.get("attack_range", hero.attack_range))
 		hero.attack_cooldown = float(hero_state.get("attack_cooldown", hero.attack_cooldown))
 		hero.current_health = float(hero_state.get("current_health", hero.current_health))

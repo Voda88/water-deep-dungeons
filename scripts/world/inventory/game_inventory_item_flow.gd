@@ -395,6 +395,7 @@ static func empty_inventory_effect_summary(_game: Node) -> Dictionary:
 		"speed": 0.0,
 		"health": 0.0,
 		"attack": 0.0,
+		"basic_attack_knockback": 0.0,
 		"hand_size": 0,
 		"card_damage": 0.0,
 		"projectile_count": 0,
@@ -799,10 +800,14 @@ static func merchant_item_full_price(game: Node, item_variant: Variant) -> int:
 	var tag_value: float = 0.0
 	for tag_variant in Array(item_def.get("tags", [])):
 		var tag_name: String = String(tag_variant)
-		if tag_name == "weapon" or tag_name == "armor" or tag_name == "arcane":
+		if tag_name == "weapon":
 			tag_value += 1.8
-		elif tag_name == "support" or tag_name == "light":
+		elif tag_name == "physical" or tag_name == "magical":
+			tag_value += 1.4
+		elif tag_name == "poison" or tag_name == "scroll":
 			tag_value += 1.0
+		elif tag_name == "food":
+			tag_value += 0.8
 	var charge_value: float = 0.0
 	if item_def.has("max_charges"):
 		charge_value = float(maxi(1, int(item_def.get("max_charges", 1)))) * 1.1

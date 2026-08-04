@@ -1371,6 +1371,8 @@ func synergy_bonus_text(bonus_stats: Dictionary) -> String:
 		match bonus_key:
 			"attack":
 				parts.append("+%d damage" % int(round(float(bonus_stats[bonus_key_variant]))))
+			"basic_attack_knockback":
+				parts.append("+%d basic knockback" % int(round(float(bonus_stats[bonus_key_variant]))))
 			"health":
 				parts.append("+%d health" % int(round(float(bonus_stats[bonus_key_variant]))))
 			"speed":

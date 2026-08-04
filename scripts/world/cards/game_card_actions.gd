@@ -767,6 +767,19 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 				return false
 			game.status_message = "%s cast Fear on %d enem%s." % [hero.hero_name, feared_count, "y" if feared_count == 1 else "ies"]
 			return true
+		"turn_undead_card":
+			if not game.wave_in_progress():
+				game.status_message = "Turn Undead can only be cast during combat."
+				return false
+			var turn_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
+			if turn_room == game.INVALID_ROOM or not game.rooms.has(turn_room):
+				return false
+			var turned_count: int = cast_turn_undead_spell(game, hero, turn_room, hand_card)
+			if turned_count <= 0:
+				game.status_message = "%s invoked Turn Undead, but no undead were affected." % hero.hero_name
+				return false
+			game.status_message = "%s invoked Turn Undead on %d undead." % [hero.hero_name, turned_count]
+			return true
 		"web_card":
 			var web_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
 			if web_room == game.INVALID_ROOM or not game.rooms.has(web_room):
@@ -1409,6 +1422,9 @@ static func cast_fear_spell(game: Node, hero: Variant, target_world_position: Ve
 		var fear_target: Variant = fear_target_variant
 		if fear_target == null or not is_instance_valid(fear_target):
 			continue
+		var fear_target_role: String = String(fear_target.get("enemy_role", ""))
+		if not GAME_ENEMY_DEFS.enemy_can_be_feared(fear_target_role):
+			continue
 		if fear_target.has_method("apply_fear_debuff"):
 			fear_target.apply_fear_debuff(fear_duration, cast_origin, fear_speed_multiplier)
 		if fear_damage_taken_multiplier > 1.0 and fear_target.has_method("apply_flatfooted_debuff"):
@@ -1421,6 +1437,39 @@ static func cast_fear_spell(game: Node, hero: Variant, target_world_position: Ve
 		var fear_label: String = "Fear" if feared_count == 1 else "Fear x%d" % feared_count
 		game.add_resource_floating_text(target_world_position, fear_label, Color(hand_card.get("color", Color("cda3ff"))))
 	return feared_count
+
+static func cast_turn_undead_spell(game: Node, hero: Variant, target_room: Vector2i, hand_card: Dictionary) -> int:
+	if target_room == game.INVALID_ROOM or not game.rooms.has(target_room):
+		return 0
+	if target_room != hero.current_room:
+		return 0
+	var fear_duration: float = maxf(float(hand_card.get("fear_duration", 6.0)), 0.0)
+	if fear_duration <= 0.0:
+		return 0
+	var fear_speed_multiplier: float = maxf(float(hand_card.get("fear_speed_multiplier", 1.2)), 1.0)
+	var fear_damage_taken_multiplier: float = maxf(float(hand_card.get("fear_damage_taken_multiplier", 2.0)), 1.0)
+	var cast_origin: Vector2 = hero.global_position
+	var turned_count: int = 0
+	for enemy in game.enemies:
+		if not game.enemy_is_active(enemy) or enemy.current_room != target_room:
+			continue
+		if enemy.has_method("is_converted") and bool(enemy.is_converted()):
+			continue
+		var enemy_role: String = String(enemy.get("enemy_role", ""))
+		if not GAME_ENEMY_DEFS.enemy_is_undead(enemy_role):
+			continue
+		if enemy.has_method("apply_fear_debuff"):
+			enemy.apply_fear_debuff(fear_duration, cast_origin, fear_speed_multiplier)
+		if fear_damage_taken_multiplier > 1.0 and enemy.has_method("apply_flatfooted_debuff"):
+			enemy.apply_flatfooted_debuff(fear_duration, 1.0, 1.0, fear_damage_taken_multiplier)
+		append_timed_effect_projectile(game, "priest_attack_effect", enemy.global_position, Color(hand_card.get("color", Color("f0efb5"))), 0.34, 0.34)
+		append_timed_effect_projectile(game, "shield_flash", enemy.global_position, Color(hand_card.get("color", Color("f0efb5"))), 0.24, 0.24)
+		turned_count += 1
+	if turned_count > 0:
+		hero.trigger_attack(game.room_center(target_room), "laser")
+		var turn_label: String = "Turned" if turned_count == 1 else "Turned x%d" % turned_count
+		game.add_resource_floating_text(game.room_center(target_room), turn_label, Color(hand_card.get("color", Color("f0efb5"))))
+	return turned_count
 
 static func cast_web_spell(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
 	var web_position: Vector2 = game.clamp_point_to_room(target_world_position, target_room)

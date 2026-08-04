@@ -281,7 +281,7 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"spell_level": 2,
 				"target_scope": "same_room",
 				"phase": "combat",
-				"description_lines": ["Target a direction in your room", "A long cone terrifies enemies for 6s", "Feared enemies run away 20% faster", "All damage against feared enemies is critical (2x damage)"],
+				"description_lines": ["Target a direction in your room", "A long cone terrifies enemies for 6s", "Mindless enemies are unaffected", "Feared enemies run away 20% faster", "All damage against feared enemies is critical (2x damage)"],
 				"fear_duration": 6.0,
 				"fear_speed_multiplier": 1.2,
 				"fear_damage_taken_multiplier": 2.0,
@@ -289,6 +289,19 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"arc_angle_deg": 62.0,
 				"door_interval": 2,
 				"color": Color("cda3ff"),
+			}
+		"turn_undead_card":
+			return {
+				"id": "turn_undead_card",
+				"name": "Turn Undead",
+				"target_scope": "same_room",
+				"phase": "combat",
+				"description_lines": ["A holy pulse fills your current room", "All undead there suffer Fear for 6s", "Turned undead run away faster and take critical damage"],
+				"fear_duration": 6.0,
+				"fear_speed_multiplier": 1.2,
+				"fear_damage_taken_multiplier": 2.0,
+				"door_interval": 1,
+				"color": Color("f0efb5"),
 			}
 		"spiritual_weapon_card":
 			return {
@@ -320,9 +333,9 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"target_scope": "opened_room",
 				"requires_line_of_effect": true,
 				"phase": "combat",
-				"description_lines": ["Target one opened room", "Summon three temporary armored skeletons", "Armored skeletons hold the frontline", "Summons fade when the room becomes calm"],
+				"description_lines": ["Target one opened room", "Summon three temporary skeletons", "Skeletons hold the frontline", "Summons fade when the room becomes calm"],
 				"cast_adjacent_hops": 1,
-				"summon_enemy_roles": [game.ENEMY_TYPE_SKELETON_ARMORED, game.ENEMY_TYPE_SKELETON_ARMORED, game.ENEMY_TYPE_SKELETON_ARMORED],
+				"summon_enemy_roles": [game.ENEMY_TYPE_SKELETON, game.ENEMY_TYPE_SKELETON, game.ENEMY_TYPE_SKELETON],
 				"summon_count": 3,
 				"summon_source_label": "Animated dead",
 				"summon_conversion_duration": 600.0,
@@ -584,6 +597,7 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"id": "axe_card",
 				"name": "Razor Boomerang",
 				"target_scope": "same_room",
+				"description_lines": ["Throw a heavy razor boomerang", "Pierces and bounces through enemies", "At Combo 3: enemies hit become Flatfooted"],
 				"base_damage": 40.0,
 				"speed": 760.0,
 				"bounces": 2,
@@ -595,6 +609,11 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"knockback_force": 220.0,
 				"knockback_duration": 0.18,
 				"final_hit_knockback_multiplier": 1.9,
+				"combo_flatfooted_level_3_threshold": 3,
+				"combo_flatfooted_duration_level_3": 4.0,
+				"combo_flatfooted_damage_taken_multiplier_level_3": 1.55,
+				"combo_flatfooted_move_multiplier": 0.82,
+				"combo_flatfooted_attack_speed_multiplier": 0.82,
 				"test_cooldown": 1.8,
 			}
 

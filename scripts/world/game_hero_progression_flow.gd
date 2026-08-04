@@ -392,7 +392,10 @@ static func build_inventory_ability_sections(game: Node, hero: Variant) -> Array
 		return sections
 	var class_def: Dictionary = game.hero_class_definition(hero.hero_class_id)
 	var attack_style: String = String(class_def.get("attack_style", hero.preferred_attack_style))
-	var basic_attack_detail: String = ability_detail_text(game, hero.attack_cooldown, format_ability_metric(game, hero.attack_damage), "%s %d rng" % ["Melee" if attack_style == "melee" else "Ranged", int(round(hero.attack_range))])
+	var basic_attack_extra: String = "%s %d rng" % ["Melee" if attack_style == "melee" else "Ranged", int(round(hero.attack_range))]
+	if float(hero.basic_attack_knockback) > 0.0:
+		basic_attack_extra += "  KB %s" % format_ability_metric(game, float(hero.basic_attack_knockback))
+	var basic_attack_detail: String = ability_detail_text(game, hero.attack_cooldown, format_ability_metric(game, hero.attack_damage), basic_attack_extra)
 	sections.append({
 		"title": "Current",
 		"entries": [{
@@ -483,7 +486,8 @@ static func apply_inventory_stats_to_hero(game: Node, hero: Variant) -> void:
 		float(level_bonuses.get("attack", 0.0)) + float(bonuses["attack"]),
 		float(level_bonuses.get("defence", 0.0)) + float(bonuses.get("defence", bonuses.get("defense", 0.0))),
 		int(bonuses.get("hand_size", 0)),
-		int(bonuses["synergies"])
+		int(bonuses["synergies"]),
+		float(bonuses.get("basic_attack_knockback", 0.0))
 	)
 	game.sync_hero_card_sources(hero, bonuses)
 	game.sync_hero_passive_combat_sources(hero, bonuses)

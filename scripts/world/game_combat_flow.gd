@@ -25,6 +25,7 @@ const ROGUE_COMBO_MAX_POINTS: int = 3
 const ROGUE_COMBO_DECAY_INTERVAL: float = 2.0
 const ROGUE_COMBO_POPUP_COLOR: Color = Color("ffd27a")
 const ROGUE_COMBO_POPUP_Y_OFFSET: float = 42.0
+const CLERIC_MEND_REPAIR_PER_SECOND: float = 5.0
 
 static func hero_is_combo_class(game: Node, hero: Variant) -> bool:
 	return hero != null and is_instance_valid(hero) and String(hero.hero_class_id) == game.HERO_CLASS_ROGUE
@@ -238,14 +239,20 @@ static func launch_wave(game: Node, entered_room: Vector2i) -> void:
 		game.door_wave_spawns_incoming = false
 		game.door_wave_auto_heal_pending = false
 		game.door_wave_healing_active = true
+		var no_wave_reason: String = ""
 		if is_floor_one_first_door_open:
+			no_wave_reason = "Floor 1 first door"
 			game.status_message = "Opened %s. Floor 1 first door has no wave." % game.room_title(entered_room)
 		elif is_merchant_room_open and is_research_room_open:
+			no_wave_reason = "merchant and research room"
 			game.status_message = "Opened %s. Research and merchant room opens do not trigger waves." % game.room_title(entered_room)
 		elif is_merchant_room_open:
+			no_wave_reason = "merchant room"
 			game.status_message = "Opened %s. Merchant room opens do not trigger waves." % game.room_title(entered_room)
 		else:
+			no_wave_reason = "research crystal room"
 			game.status_message = "Opened %s. Research crystal room opens do not trigger waves." % game.room_title(entered_room)
+		game.room_flow_status_message = "Discovered %s. No waves incoming (%s)." % [game.room_title(entered_room), no_wave_reason]
 		game.update_hud()
 		return
 	var pending_spawn_count_before: int = game.pending_enemy_spawns.size()
@@ -264,6 +271,7 @@ static func launch_wave(game: Node, entered_room: Vector2i) -> void:
 		game.door_wave_auto_heal_pending = false
 		game.door_wave_healing_active = true
 		game.status_message = "Opened a lit frontier. No dark room was available for a wave."
+		game.room_flow_status_message = "Discovered %s. 0 waves incoming." % game.room_title(entered_room)
 		game.update_hud()
 		return
 	game.wave_index += 1
@@ -317,6 +325,7 @@ static func launch_wave(game: Node, entered_room: Vector2i) -> void:
 				delayed_room_order += 1
 	game.door_wave_spawns_incoming = game.pending_enemy_spawns.size() > pending_spawn_count_before
 	game.status_message = "Wave %d emerged from %d dark room%s." % [game.wave_index, chosen_rooms.size(), "" if chosen_rooms.size() == 1 else "s"]
+	game.room_flow_status_message = "Discovered %s. %d wave%s incoming." % [game.room_title(entered_room), chosen_rooms.size(), "" if chosen_rooms.size() == 1 else "s"]
 	game.update_hud()
 
 static func queue_wave_spawn(game: Node, room_coord: Vector2i, wave_points: int, immediate: bool, spawn_order: int) -> void:
@@ -870,13 +879,13 @@ static func apply_card_projectile_hits(game: Node, projectile: Dictionary) -> vo
 		var owner_index: int = int(projectile.get("owner_hero_index", -1))
 		if owner_index >= 0 and owner_index < game.heroes.size():
 			owner_hero = game.heroes[owner_index]
+		var combo_level: int = 0
+		if owner_hero != null and is_instance_valid(owner_hero) and hero_is_combo_class(game, owner_hero):
+			combo_level = combo_level_for_hero(game, owner_hero)
 		var damage: float = float(projectile.get("damage", 0.0))
 		var trigger_bounce_explosion: bool = false
 		var bounce_explosion_payload: Dictionary = {}
 		if projectile_kind == "dagger":
-			var combo_level: int = 0
-			if owner_hero != null and is_instance_valid(owner_hero):
-				combo_level = combo_level_for_hero(game, owner_hero)
 			var is_shadow_dagger: bool = String(projectile.get("card_id", "")) == "rogue_combo_dagger_card"
 			if is_shadow_dagger and combo_level != 3:
 				continue
@@ -886,7 +895,7 @@ static func apply_card_projectile_hits(game: Node, projectile: Dictionary) -> vo
 			if owner_hero != null and is_instance_valid(owner_hero) and hero_is_combo_class(game, owner_hero):
 				if is_shadow_dagger and combo_level != 3:
 					continue
-				if combo_level >= 3 and enemy.has_method("apply_flatfooted_debuff"):
+				if combo_level >= maxi(1, int(projectile.get("combo_flatfooted_level_3_threshold", 3))) and enemy.has_method("apply_flatfooted_debuff"):
 					enemy.apply_flatfooted_debuff(
 						maxf(float(projectile.get("combo_flatfooted_duration_level_3", projectile.get("combo_flatfooted_duration_level_2", 3.8))), 0.0),
 						clampf(float(projectile.get("combo_flatfooted_move_multiplier", 1.0)), 0.0, 1.0),
@@ -917,6 +926,13 @@ static func apply_card_projectile_hits(game: Node, projectile: Dictionary) -> vo
 						bounce_explosion_payload["combo_flatfooted_move_multiplier"] = clampf(float(projectile.get("combo_flatfooted_move_multiplier", 1.0)), 0.0, 1.0)
 						bounce_explosion_payload["combo_flatfooted_attack_speed_multiplier"] = clampf(float(projectile.get("combo_flatfooted_attack_speed_multiplier", 1.0)), 0.0, 1.0)
 						bounce_explosion_payload["combo_flatfooted_damage_taken_multiplier"] = maxf(float(projectile.get("combo_flatfooted_damage_taken_multiplier_level_3", projectile.get("combo_flatfooted_damage_taken_multiplier_level_2", 1.5))), 1.0)
+		if projectile_kind == "axe" and combo_level >= maxi(1, int(projectile.get("combo_flatfooted_level_3_threshold", 3))) and enemy.has_method("apply_flatfooted_debuff"):
+			enemy.apply_flatfooted_debuff(
+				maxf(float(projectile.get("combo_flatfooted_duration_level_3", 3.8)), 0.0),
+				clampf(float(projectile.get("combo_flatfooted_move_multiplier", 0.82)), 0.0, 1.0),
+				clampf(float(projectile.get("combo_flatfooted_attack_speed_multiplier", 0.82)), 0.0, 1.0),
+				maxf(float(projectile.get("combo_flatfooted_damage_taken_multiplier_level_3", 1.5)), 1.0)
+			)
 		var impact_direction: Vector2 = projectile_direction
 		if impact_direction == Vector2.ZERO:
 			impact_direction = (enemy.global_position - previous).normalized()
@@ -1032,8 +1048,9 @@ static func process_combat(game: Node, delta: float) -> void:
 		if hero_target != null:
 			hero.trigger_attack(hero_target.global_position, hero.preferred_attack_style)
 			note_hero_combo_attack(game, hero)
+			var basic_attack_knockback: float = maxf(float(hero.basic_attack_knockback), 0.0)
 			if String(hero.preferred_attack_style) == "fire_bolt":
-				spawn_fire_bolt_projectile(game, hero.global_position, hero_target, hero.attack_damage, Color("ff8e47"), 4.4, 1120.0)
+				spawn_fire_bolt_projectile(game, hero.global_position, hero_target, hero.attack_damage, Color("ff8e47"), 4.4, 1120.0, 0, 0, basic_attack_knockback)
 			elif String(hero.preferred_attack_style) == "holy_bolt":
 				hero_target.take_damage(hero.attack_damage, (hero_target.global_position - hero.global_position).normalized())
 				game.projectiles.append({
@@ -1049,7 +1066,7 @@ static func process_combat(game: Node, delta: float) -> void:
 					"width": 3.0,
 				})
 			else:
-				spawn_laser_projectile(game, hero.global_position, hero_target, hero.attack_damage, Color("ffe48a"), 5.5, 1220.0)
+				spawn_laser_projectile(game, hero.global_position, hero_target, hero.attack_damage, Color("ffe48a"), 5.5, 1220.0, 0, 0, basic_attack_knockback)
 			hero.cooldown_left = hero.current_attack_cooldown()
 	for hero in game.heroes:
 		if not game.hero_is_active(hero):
@@ -1067,9 +1084,11 @@ static func process_combat(game: Node, delta: float) -> void:
 		game.issue_hero_steps(hero, game.build_steps_for_path(idle_room_path, hero.global_position, idle_position))
 
 static func process_modules(game: Node, delta: float) -> void:
+	var cleric_menders_by_room: Dictionary = collect_cleric_menders_by_room(game)
 	for room_coord_variant in game.rooms.keys():
 		var room_coord: Vector2i = room_coord_variant
 		var room: Dictionary = game.rooms[room_coord]
+		var cleric_mender_count: int = int(cleric_menders_by_room.get(room_coord, 0))
 		room["neurostun_time_left"] = maxf(float(room.get("neurostun_time_left", 0.0)) - delta, 0.0)
 		if float(room.get("neurostun_time_left", 0.0)) <= 0.0:
 			room["neurostun_damage_per_second"] = 0.0
@@ -1085,6 +1104,8 @@ static func process_modules(game: Node, delta: float) -> void:
 					enemy.take_damage(neurostun_dps * delta, dot_direction)
 					if enemy.has_method("apply_recovering_slow_debuff"):
 						enemy.apply_recovering_slow_debuff(0.16, 1.0, 0.58)
+		if cleric_mender_count > 0:
+			apply_cleric_mend_to_room(game, room, delta, cleric_mender_count)
 		if not room["opened"] or not room["lit"]:
 			game.rooms[room_coord] = room
 			continue
@@ -1205,6 +1226,34 @@ static func process_modules(game: Node, delta: float) -> void:
 			room["minor_modules"][module_index] = module_data
 		game.rooms[room_coord] = room
 
+static func collect_cleric_menders_by_room(game: Node) -> Dictionary:
+	var menders_by_room: Dictionary = {}
+	for hero in game.heroes:
+		if not game.hero_is_active(hero) or hero.current_health <= 0.0 or hero.carrying_crystal:
+			continue
+		if not game.hero_has_cleric_mend(hero):
+			continue
+		var room_coord: Vector2i = Vector2i(hero.current_room)
+		if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
+			continue
+		menders_by_room[room_coord] = int(menders_by_room.get(room_coord, 0)) + 1
+	return menders_by_room
+
+static func apply_cleric_mend_to_room(game: Node, room: Dictionary, delta: float, cleric_mender_count: int) -> void:
+	if delta <= 0.0 or cleric_mender_count <= 0:
+		return
+	var repair_amount: float = CLERIC_MEND_REPAIR_PER_SECOND * delta * float(cleric_mender_count)
+	if repair_amount <= 0.0:
+		return
+	if String(room.get("major_module_type", "")) != "" and float(room.get("major_health", 0.0)) > 0.0 and not bool(room.get("major_under_construction", false)):
+		room["major_health"] = minf(float(room.get("major_health", 0.0)) + repair_amount, game.MAJOR_MODULE_MAX_HEALTH)
+	for module_index in range(room["minor_modules"].size()):
+		var module_data: Dictionary = Dictionary(room["minor_modules"][module_index])
+		if float(module_data.get("health", 0.0)) <= 0.0 or bool(module_data.get("under_construction", false)):
+			continue
+		module_data["health"] = minf(float(module_data.get("health", 0.0)) + repair_amount, game.MINOR_MODULE_MAX_HEALTH)
+		room["minor_modules"][module_index] = module_data
+
 static func spawn_arrow_projectile(game: Node, origin: Vector2, target: Variant, damage: float, color: Color = Color("d8bf7a"), width: float = 2.4, speed: float = 950.0, bounces: int = 0, pierce: int = 0) -> void:
 	var target_position: Vector2 = target.global_position if is_instance_valid(target) else origin
 	var projectile: Dictionary = {
@@ -1236,7 +1285,7 @@ static func spawn_arrow_projectile(game: Node, origin: Vector2, target: Variant,
 		projectile["lifetime_left"] = maxf(origin.distance_to(target_position) / maxf(speed, 1.0) + 0.6, 0.35)
 	game.projectiles.append(projectile)
 
-static func spawn_laser_projectile(game: Node, origin: Vector2, target: Variant, damage: float, color: Color = Color("89f2ff"), width: float = 4.0, speed: float = 950.0, bounces: int = 0, pierce: int = 0) -> void:
+static func spawn_laser_projectile(game: Node, origin: Vector2, target: Variant, damage: float, color: Color = Color("89f2ff"), width: float = 4.0, speed: float = 950.0, bounces: int = 0, pierce: int = 0, knockback_force: float = 0.0) -> void:
 	var target_position: Vector2 = target.global_position if is_instance_valid(target) else origin
 	var projectile: Dictionary = {
 		"kind": "laser",
@@ -1248,6 +1297,8 @@ static func spawn_laser_projectile(game: Node, origin: Vector2, target: Variant,
 		"speed": speed,
 		"color": color,
 		"width": width,
+		"knockback_force": maxf(knockback_force, 0.0),
+		"knockback_duration": 0.16,
 	}
 	if bounces > 0 or pierce > 0:
 		var direction: Vector2 = (target_position - origin).normalized()
@@ -1295,7 +1346,7 @@ static func spawn_magic_missile_projectile(game: Node, origin: Vector2, target: 
 		"hit_radius": 12.0,
 	})
 
-static func spawn_fire_bolt_projectile(game: Node, origin: Vector2, target: Variant, damage: float, color: Color = Color("ff8e47"), width: float = 4.4, speed: float = 1120.0, bounces: int = 0, pierce: int = 0) -> void:
+static func spawn_fire_bolt_projectile(game: Node, origin: Vector2, target: Variant, damage: float, color: Color = Color("ff8e47"), width: float = 4.4, speed: float = 1120.0, bounces: int = 0, pierce: int = 0, knockback_force: float = 0.0) -> void:
 	var target_position: Vector2 = target.global_position if is_instance_valid(target) else origin
 	var projectile: Dictionary = {
 		"kind": "fire_bolt",
@@ -1307,6 +1358,8 @@ static func spawn_fire_bolt_projectile(game: Node, origin: Vector2, target: Vari
 		"speed": speed,
 		"color": color,
 		"width": width,
+		"knockback_force": maxf(knockback_force, 0.0),
+		"knockback_duration": 0.16,
 	}
 	if bounces > 0 or pierce > 0:
 		var direction: Vector2 = (target_position - origin).normalized()
@@ -1519,6 +1572,10 @@ static func advance_projectiles(game: Node, delta: float) -> void:
 				if impact_direction_simple == Vector2.ZERO:
 					impact_direction_simple = Vector2.RIGHT
 				target.take_damage(float(projectile["damage"]), impact_direction_simple)
+				var direct_hit_knockback_force: float = maxf(float(projectile.get("knockback_force", 0.0)), 0.0)
+				if direct_hit_knockback_force > 0.0:
+					var direct_hit_knockback_duration: float = clampf(float(projectile.get("knockback_duration", 0.16)), 0.08, 0.5)
+					game.knockback_actor(target, impact_direction_simple, direct_hit_knockback_force, direct_hit_knockback_duration, target.current_room)
 			elif game.hero_is_active(target):
 				apply_enemy_ranged_damage_to_hero(game, target, float(projectile.get("damage", 0.0)), String(projectile.get("source_label", "A ranged attack")))
 			continue

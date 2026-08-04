@@ -114,6 +114,23 @@ static func normalize_enemy_type(enemy_type: String) -> String:
 			return TYPE_DEMON_D
 	return enemy_type
 
+static func enemy_is_undead(enemy_type: String) -> bool:
+	match normalize_enemy_type(enemy_type):
+		TYPE_SKELETON, TYPE_SKELETON_ARMORED, TYPE_SKELETON_GREATSWORD, TYPE_SKELETON_ARCHER:
+			return true
+		_:
+			return false
+
+static func enemy_is_mindless(enemy_type: String) -> bool:
+	match normalize_enemy_type(enemy_type):
+		TYPE_GOLEM, TYPE_SPIRITUAL_WEAPON:
+			return true
+		_:
+			return enemy_is_undead(enemy_type)
+
+static func enemy_can_be_feared(enemy_type: String) -> bool:
+	return not enemy_is_mindless(enemy_type)
+
 static func enemy_sprite_profile(enemy_type: String) -> Dictionary:
 	var resolved_type: String = normalize_enemy_type(enemy_type)
 	return ENEMY_SPRITE_PROFILES.get(resolved_type, ENEMY_SPRITE_PROFILES[TYPE_ORC])

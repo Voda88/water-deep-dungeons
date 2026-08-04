@@ -190,6 +190,13 @@ static func advance_pending_melee_attacks(game: Node, delta: float) -> void:
 					var flatfooted_damage_taken_multiplier: float = maxf(float(attacker.get_meta("summon_flatfooted_damage_taken_multiplier", 1.5)), 1.0)
 					target.apply_flatfooted_debuff(flatfooted_duration, flatfooted_move_multiplier, flatfooted_attack_speed_multiplier, flatfooted_damage_taken_multiplier)
 		apply_weighted_melee_knockback(game, attacker, target, attack_room)
+		if game.is_hero_actor(attacker) and game.is_enemy_actor(target):
+			var bonus_knockback: float = maxf(float(attacker.get("basic_attack_knockback")), 0.0)
+			if bonus_knockback > 0.0:
+				var bonus_direction: Vector2 = (target.global_position - attacker.global_position).normalized()
+				if bonus_direction == Vector2.ZERO:
+					bonus_direction = Vector2.RIGHT
+				knockback_actor(game, target, bonus_direction, bonus_knockback, 0.2, attack_room)
 		if defeated and game.is_hero_actor(target):
 			finalize_hero_death(game, target, String(pending_attack.get("source_label", "An enemy")))
 	game.pending_melee_attacks = active_attacks
