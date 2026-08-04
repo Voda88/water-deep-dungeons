@@ -8,7 +8,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 0
-color = Color(0.03, 0.06, 0.08, 0.82)
+color = Color(0.03, 0.06, 0.08, 1)
 
 [node name="Panel" type="PanelContainer" parent="."]
 anchors_preset = 0

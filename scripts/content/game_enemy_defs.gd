@@ -145,11 +145,11 @@ static func enemy_role_definition(enemy_type: String) -> Dictionary:
 			return {
 				"id": TYPE_ORC_SHAMAN,
 				"move_speed": 31.0,
-				"max_health": 68.0,
-				"attack_damage": 9.0,
-				"attack_cooldown": 1.0,
+				"max_health": 136.0,
+				"attack_damage": 16.0,
+				"attack_cooldown": 1.3,
 				"attack_range": 78.0,
-				"weight": 1.08,
+				"weight": 1.32,
 				"body_color": Color("a16fd5"),
 			}
 		TYPE_SKELETON_ARCHER:

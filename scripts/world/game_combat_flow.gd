@@ -20,8 +20,6 @@ static func launch_wave(game: Node, entered_room: Vector2i) -> void:
 		var room: Dictionary = game.rooms[room_coord]
 		if room_coord == game.crystal_room or not room["opened"] or room["lit"]:
 			continue
-		if String(room.get("merchant_theme", "")) != "" or bool(room.get("research_crystal", false)) or Array(room.get("ground_items", [])).size() > 0:
-			continue
 		dark_rooms.append(room_coord)
 		if bool(room.get("feature_spawn_priority", false)):
 			priority_dark_rooms.append(room_coord)
@@ -162,8 +160,6 @@ static func dark_rooms_for_crystal_pressure(game: Node) -> Array[Vector2i]:
 		var room_coord: Vector2i = room_coord_variant
 		var room: Dictionary = game.rooms[room_coord]
 		if room_coord == game.crystal_room or not room["opened"] or room["lit"]:
-			continue
-		if String(room.get("merchant_theme", "")) != "" or bool(room.get("research_crystal", false)) or Array(room.get("ground_items", [])).size() > 0:
 			continue
 		dark_rooms.append(room_coord)
 	return dark_rooms

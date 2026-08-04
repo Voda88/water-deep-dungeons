@@ -5,18 +5,12 @@ const GAME_INVENTORY_ITEM_FLOW: GDScript = preload("res://scripts/world/inventor
 const SPECIAL_ROOM_WEIGHT_BASE: float = 1.0
 const RESEARCH_MAJOR_SLOT_WEIGHT_BONUS: float = 1.7
 const RESEARCH_DISTANCE_WEIGHT_STEP: float = 0.18
-const RESEARCH_EXIT_WEIGHT_MULTIPLIER: float = 0.72
 const MERCHANT_UNOPENED_WEIGHT_BONUS: float = 0.25
 const MERCHANT_DISTANCE_WEIGHT_STEP: float = 0.12
-const MERCHANT_EXIT_WEIGHT_MULTIPLIER: float = 0.82
 const LOOT_DISTANCE_WEIGHT_STEP: float = 0.1
-const LOOT_EXIT_WEIGHT_MULTIPLIER: float = 0.9
 const SPAWN_DISTANCE_WEIGHT_STEP: float = 0.22
-const SPAWN_EXIT_WEIGHT_MULTIPLIER: float = 1.15
 const BONUS_RESOURCE_DISTANCE_WEIGHT_STEP: float = 0.14
-const BONUS_RESOURCE_EXIT_WEIGHT_MULTIPLIER: float = 0.86
 const PERMANENT_LIGHT_DISTANCE_WEIGHT_STEP: float = 0.16
-const PERMANENT_LIGHT_EXIT_WEIGHT_MULTIPLIER: float = 0.84
 const SPECIAL_FEATURE_RESEARCH: String = "research"
 const SPECIAL_FEATURE_MERCHANT: String = "merchant"
 const SPECIAL_FEATURE_LOOT: String = "loot"
@@ -45,6 +39,7 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 	game.projectiles.clear()
 	game.floating_resource_texts.clear()
 	game.pending_enemy_spawns.clear()
+	game.pending_door_open_income.clear()
 	game.pending_room_constructions.clear()
 	game.next_enemy_uid = 1
 	game.next_card_uid = 1
@@ -759,7 +754,7 @@ static func assign_special_room_features(game: Node) -> void:
 	var weighted_permanent_light_candidates: Array[Dictionary] = []
 	for room_coord_variant in game.rooms.keys():
 		var room_coord: Vector2i = room_coord_variant
-		if room_coord == game.crystal_room:
+		if room_coord == game.crystal_room or room_coord == game.exit_room:
 			continue
 		var room: Dictionary = game.rooms[room_coord]
 		eligible_rooms.append(room_coord)
@@ -1011,8 +1006,6 @@ static func research_room_feature_weight(game: Node, room_coord: Vector2i) -> fl
 	var path_length: int = game.room_path_distance(game.crystal_room, room_coord)
 	if path_length < 99999:
 		weight += float(path_length) * RESEARCH_DISTANCE_WEIGHT_STEP
-	if room_coord == game.exit_room:
-		weight *= RESEARCH_EXIT_WEIGHT_MULTIPLIER
 	return maxf(weight, 0.01)
 
 static func merchant_room_feature_weight(game: Node, room_coord: Vector2i) -> float:
@@ -1025,8 +1018,6 @@ static func merchant_room_feature_weight(game: Node, room_coord: Vector2i) -> fl
 	var path_length: int = game.room_path_distance(game.crystal_room, room_coord)
 	if path_length < 99999:
 		weight += float(path_length) * MERCHANT_DISTANCE_WEIGHT_STEP
-	if room_coord == game.exit_room:
-		weight *= MERCHANT_EXIT_WEIGHT_MULTIPLIER
 	return maxf(weight, 0.01)
 
 static func loot_room_feature_weight(game: Node, room_coord: Vector2i) -> float:
@@ -1036,8 +1027,6 @@ static func loot_room_feature_weight(game: Node, room_coord: Vector2i) -> float:
 	var path_length: int = game.room_path_distance(game.crystal_room, room_coord)
 	if path_length < 99999:
 		weight += float(path_length) * LOOT_DISTANCE_WEIGHT_STEP
-	if room_coord == game.exit_room:
-		weight *= LOOT_EXIT_WEIGHT_MULTIPLIER
 	return maxf(weight, 0.01)
 
 static func spawn_room_feature_weight(game: Node, room_coord: Vector2i) -> float:
@@ -1050,8 +1039,6 @@ static func spawn_room_feature_weight(game: Node, room_coord: Vector2i) -> float
 	var path_length: int = game.room_path_distance(game.crystal_room, room_coord)
 	if path_length < 99999:
 		weight += float(path_length) * SPAWN_DISTANCE_WEIGHT_STEP
-	if room_coord == game.exit_room:
-		weight *= SPAWN_EXIT_WEIGHT_MULTIPLIER
 	return maxf(weight, 0.01)
 
 static func bonus_resource_room_feature_weight(game: Node, room_coord: Vector2i) -> float:
@@ -1061,8 +1048,6 @@ static func bonus_resource_room_feature_weight(game: Node, room_coord: Vector2i)
 	var path_length: int = game.room_path_distance(game.crystal_room, room_coord)
 	if path_length < 99999:
 		weight += float(path_length) * BONUS_RESOURCE_DISTANCE_WEIGHT_STEP
-	if room_coord == game.exit_room:
-		weight *= BONUS_RESOURCE_EXIT_WEIGHT_MULTIPLIER
 	return maxf(weight, 0.01)
 
 static func permanent_light_room_feature_weight(game: Node, room_coord: Vector2i) -> float:
@@ -1072,8 +1057,6 @@ static func permanent_light_room_feature_weight(game: Node, room_coord: Vector2i
 	var path_length: int = game.room_path_distance(game.crystal_room, room_coord)
 	if path_length < 99999:
 		weight += float(path_length) * PERMANENT_LIGHT_DISTANCE_WEIGHT_STEP
-	if room_coord == game.exit_room:
-		weight *= PERMANENT_LIGHT_EXIT_WEIGHT_MULTIPLIER
 	return maxf(weight, 0.01)
 
 static func roll_bonus_resource_event_id(game: Node) -> String:

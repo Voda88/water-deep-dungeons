@@ -241,17 +241,14 @@ static func apply_opened_door_event(game: Node, room_coord: Vector2i) -> Diction
 	var popup_color: Color = Color.WHITE
 	match event_id:
 		game.BONUS_RESOURCE_EVENT_FOOD:
-			game.food += bonus_amount
 			popup_text = "+%d Bonus Food" % bonus_amount
 			status_text = "You found a food cache (+%d)." % bonus_amount
 			popup_color = Color("9ee28b")
 		game.BONUS_RESOURCE_EVENT_INDUSTRY:
-			game.industry += bonus_amount
 			popup_text = "+%d Bonus Materials" % bonus_amount
 			status_text = "You found a materials cache (+%d)." % bonus_amount
 			popup_color = Color("f1c26b")
 		game.BONUS_RESOURCE_EVENT_SCIENCE:
-			game.science += bonus_amount
 			popup_text = "+%d Bonus Arcana" % bonus_amount
 			status_text = "You found an arcana cache (+%d)." % bonus_amount
 			popup_color = Color("8bc1ff")
@@ -263,6 +260,107 @@ static func apply_opened_door_event(game: Node, room_coord: Vector2i) -> Diction
 		"popup_text": popup_text,
 		"status_text": status_text,
 		"color": popup_color,
+	}
+
+static func build_room_open_reward_bundle(game: Node, room_coord: Vector2i) -> Dictionary:
+	var door_reward: Dictionary = calculate_door_rewards(game)
+	var dust_reward: int = 0
+	if game.rng.randf() < game.ROOM_OPEN_DUST_CHANCE:
+		dust_reward = game.rng.randi_range(game.ROOM_OPEN_DUST_MIN, game.ROOM_OPEN_DUST_MAX)
+	var opened_door_bonus: Dictionary = apply_opened_door_event(game, room_coord)
+	return {
+		"door_reward": door_reward,
+		"dust_reward": dust_reward,
+		"opened_door_bonus": opened_door_bonus,
+	}
+
+static func queue_room_open_rewards_for_wave_defeat(game: Node, room_coord: Vector2i, room_open_reward_bundle: Dictionary) -> void:
+	var door_reward: Dictionary = Dictionary(room_open_reward_bundle.get("door_reward", {}))
+	var dust_reward: int = int(room_open_reward_bundle.get("dust_reward", 0))
+	var opened_door_bonus: Dictionary = Dictionary(room_open_reward_bundle.get("opened_door_bonus", {}))
+	game.pending_door_open_income.append({
+		"room": room_coord,
+		"door_reward": {
+			"food": int(door_reward.get("food", 0)),
+			"industry": int(door_reward.get("industry", 0)),
+			"science": int(door_reward.get("science", 0)),
+		},
+		"dust_reward": maxi(int(dust_reward), 0),
+		"opened_door_bonus": opened_door_bonus.duplicate(true),
+	})
+
+static func spawn_dust_burst_effect(game: Node, room_coord: Vector2i) -> void:
+	var dust_fx_position: Vector2 = game.room_walkable_center(room_coord)
+	game.projectiles.append({
+		"kind": "dust_burst",
+		"position": dust_fx_position,
+		"previous": dust_fx_position,
+		"target_position": dust_fx_position,
+		"color": Color("f3d88f"),
+		"radius": 52.0,
+		"impact_radius": 52.0,
+		"lifetime_left": 0.44,
+		"blast_duration": 0.44,
+		"width": 2.4,
+	})
+
+static func preview_room_open_rewards(game: Node, room_coord: Vector2i, room_open_reward_bundle: Dictionary) -> void:
+	var dust_reward: int = maxi(int(room_open_reward_bundle.get("dust_reward", 0)), 0)
+	if dust_reward <= 0:
+		return
+	var anchor: Vector2 = game.room_walkable_center(room_coord)
+	add_resource_floating_text(game, anchor + Vector2(0.0, 12.0), "+%d Dust" % dust_reward, Color("f3d88f"))
+	spawn_dust_burst_effect(game, room_coord)
+
+static func apply_room_open_rewards_on_wave_defeat(game: Node) -> Dictionary:
+	if game.pending_door_open_income.is_empty():
+		return {}
+	var total_food: int = 0
+	var total_industry: int = 0
+	var total_science: int = 0
+	var total_dust: int = 0
+	var pending_entries: Array = Array(game.pending_door_open_income)
+	game.pending_door_open_income.clear()
+	for pending_entry_variant in pending_entries:
+		var pending_entry: Dictionary = Dictionary(pending_entry_variant)
+		var room_coord: Vector2i = Vector2i(pending_entry.get("room", game.INVALID_ROOM))
+		var door_reward: Dictionary = Dictionary(pending_entry.get("door_reward", {}))
+		var food_reward: int = int(door_reward.get("food", 0))
+		var industry_reward: int = int(door_reward.get("industry", 0))
+		var science_reward: int = int(door_reward.get("science", 0))
+		var dust_reward: int = maxi(int(pending_entry.get("dust_reward", 0)), 0)
+		total_food += food_reward
+		total_industry += industry_reward
+		total_science += science_reward
+		total_dust += dust_reward
+		game.food += food_reward
+		game.industry += industry_reward
+		game.science += science_reward
+		game.dust += dust_reward
+		var opened_door_bonus: Dictionary = Dictionary(pending_entry.get("opened_door_bonus", {}))
+		if not opened_door_bonus.is_empty():
+			var bonus_amount: int = int(opened_door_bonus.get("amount", 0))
+			match String(opened_door_bonus.get("id", "")):
+				game.BONUS_RESOURCE_EVENT_FOOD:
+					total_food += bonus_amount
+					game.food += bonus_amount
+				game.BONUS_RESOURCE_EVENT_INDUSTRY:
+					total_industry += bonus_amount
+					game.industry += bonus_amount
+				game.BONUS_RESOURCE_EVENT_SCIENCE:
+					total_science += bonus_amount
+					game.science += bonus_amount
+				_:
+					pass
+		if room_coord != game.INVALID_ROOM and game.rooms.has(room_coord):
+			spawn_door_reward_texts(game, room_coord, door_reward, dust_reward, opened_door_bonus)
+	if total_food <= 0 and total_industry <= 0 and total_science <= 0 and total_dust <= 0:
+		return {}
+	return {
+		"food": total_food,
+		"industry": total_industry,
+		"science": total_science,
+		"dust": total_dust,
 	}
 
 static func advance_temporary_room_lights(game: Node, turn_count: int = 1) -> void:
@@ -292,41 +390,17 @@ static func open_room(game: Node, room_coord: Vector2i) -> void:
 	game.advance_item_door_card_generators(1)
 	game.advance_hero_builtin_door_card_generators(1)
 	apply_portable_item_effects_on_door_open(game)
-	var door_reward: Dictionary = calculate_door_rewards(game)
-	game.food += int(door_reward["food"])
-	game.industry += int(door_reward["industry"])
-	game.science += int(door_reward["science"])
-	var dust_reward: int = 0
-	if game.rng.randf() < game.ROOM_OPEN_DUST_CHANCE:
-		dust_reward = game.rng.randi_range(game.ROOM_OPEN_DUST_MIN, game.ROOM_OPEN_DUST_MAX)
-		game.dust += dust_reward
-		var dust_fx_position: Vector2 = game.room_walkable_center(room_coord)
-		game.projectiles.append({
-			"kind": "dust_burst",
-			"position": dust_fx_position,
-			"previous": dust_fx_position,
-			"target_position": dust_fx_position,
-			"color": Color("f3d88f"),
-			"radius": 52.0,
-			"impact_radius": 52.0,
-			"lifetime_left": 0.44,
-			"blast_duration": 0.44,
-			"width": 2.4,
-		})
-	var opened_door_bonus: Dictionary = apply_opened_door_event(game, room_coord)
+	var room_open_reward_bundle: Dictionary = build_room_open_reward_bundle(game, room_coord)
+	queue_room_open_rewards_for_wave_defeat(game, room_coord, room_open_reward_bundle)
+	preview_room_open_rewards(game, room_coord, room_open_reward_bundle)
 	game.door_wave_major_payout_pending = true
 	game.door_wave_auto_heal_pending = true
 	game.launch_wave(room_coord)
 	if room_coord != game.crystal_room:
 		game.spawn_ground_loot(room_coord)
-	spawn_door_reward_texts(game, room_coord, door_reward, dust_reward, opened_door_bonus)
 	game.refresh_camera_bounds()
 	game.invalidate_static_dungeon_layer()
-	game.status_message = "Opened %s. +%d food, +%d materials, +%d arcana." % [game.room_title(room_coord), int(door_reward["food"]), int(door_reward["industry"]), int(door_reward["science"])]
-	if dust_reward > 0:
-		game.status_message += " +%d dust." % dust_reward
-	if not opened_door_bonus.is_empty():
-		game.status_message += " %s" % String(opened_door_bonus.get("status_text", ""))
+	game.status_message = "Opened %s. Door income will be granted after the wave." % game.room_title(room_coord)
 	if room_coord == game.exit_room:
 		game.status_message += " Exit discovered."
 	var merchant_theme: String = String(room.get("merchant_theme", ""))
@@ -402,19 +476,16 @@ static func apply_major_module_wave_rewards(game: Node) -> Dictionary:
 		"science": science_reward,
 	}
 
-static func spawn_door_reward_texts(game: Node, room_coord: Vector2i, door_reward: Dictionary, dust_reward: int, opened_door_bonus: Dictionary = {}) -> void:
-	var popup_entries: Array = [
-		{"text": "+%d Food" % int(door_reward.get("food", 0)), "color": Color("9ee28b"), "offset": Vector2(-84.0, -14.0)},
-		{"text": "+%d Mat" % int(door_reward.get("industry", 0)), "color": Color("f1c26b"), "offset": Vector2(0.0, -30.0)},
-		{"text": "+%d Arc" % int(door_reward.get("science", 0)), "color": Color("8bc1ff"), "offset": Vector2(84.0, -14.0)},
-	]
-	if dust_reward > 0:
-		popup_entries.append({"text": "+%d Dust" % dust_reward, "color": Color("f3d88f"), "offset": Vector2(0.0, 12.0)})
+static func spawn_door_reward_texts(game: Node, room_coord: Vector2i, door_reward: Dictionary, _dust_reward: int, opened_door_bonus: Dictionary = {}) -> void:
+	var popup_entries: Array = []
+	popup_entries.append({"text": "+%d Food" % int(door_reward.get("food", 0)), "color": Color("9ee28b"), "offset": Vector2(-84.0, -14.0)})
+	popup_entries.append({"text": "+%d Mat" % int(door_reward.get("industry", 0)), "color": Color("f1c26b"), "offset": Vector2(0.0, -30.0)})
+	popup_entries.append({"text": "+%d Arc" % int(door_reward.get("science", 0)), "color": Color("8bc1ff"), "offset": Vector2(84.0, -14.0)})
 	if not opened_door_bonus.is_empty():
 		popup_entries.append({
 			"text": String(opened_door_bonus.get("popup_text", "")),
 			"color": opened_door_bonus.get("color", Color.WHITE),
-			"offset": Vector2(0.0, 28.0 if dust_reward > 0 else 12.0),
+			"offset": Vector2(0.0, 12.0),
 		})
 	var anchor: Vector2 = game.room_walkable_center(room_coord)
 	for popup_entry_variant in popup_entries:
@@ -441,22 +512,39 @@ static func advance_floating_resource_texts(game: Node, delta: float) -> void:
 static func advance_wave_recovery(game: Node, delta: float) -> void:
 	if game.door_wave_major_payout_pending and game.door_wave_healing_active and not game.door_wave_auto_heal_pending:
 		var queued_major_reward: Dictionary = apply_major_module_wave_rewards(game)
+		var queued_door_reward: Dictionary = apply_room_open_rewards_on_wave_defeat(game)
+		if not queued_door_reward.is_empty():
+			game.status_message += " Door income +%d food, +%d materials, +%d arcana, +%d dust." % [
+				int(queued_door_reward.get("food", 0)),
+				int(queued_door_reward.get("industry", 0)),
+				int(queued_door_reward.get("science", 0)),
+				int(queued_door_reward.get("dust", 0)),
+			]
 		if not queued_major_reward.is_empty():
 			game.status_message += " Major output +%d food, +%d materials, +%d arcana." % [
 				int(queued_major_reward.get("food", 0)),
 				int(queued_major_reward.get("industry", 0)),
 				int(queued_major_reward.get("science", 0)),
 			]
+		if not queued_door_reward.is_empty() or not queued_major_reward.is_empty():
 			game.update_hud()
 	if game.door_wave_auto_heal_pending and game.pending_enemy_spawns.is_empty() and game.enemies.is_empty():
 		game.door_wave_auto_heal_pending = false
 		game.door_wave_healing_active = true
 		var major_reward: Dictionary = apply_major_module_wave_rewards(game)
+		var door_reward: Dictionary = apply_room_open_rewards_on_wave_defeat(game)
 		for hero in game.heroes:
 			if is_instance_valid(hero):
 				hero.combo_points = 0
 		game.save_checkpoint("room_combat_finished", false)
 		game.status_message = "The wave is over. Heroes are recovering."
+		if not door_reward.is_empty():
+			game.status_message += " Door income +%d food, +%d materials, +%d arcana, +%d dust." % [
+				int(door_reward.get("food", 0)),
+				int(door_reward.get("industry", 0)),
+				int(door_reward.get("science", 0)),
+				int(door_reward.get("dust", 0)),
+			]
 		if not major_reward.is_empty():
 			game.status_message += " Major output +%d food, +%d materials, +%d arcana." % [
 				int(major_reward.get("food", 0)),

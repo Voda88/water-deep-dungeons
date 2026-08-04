@@ -198,7 +198,7 @@ static func enemy_target_position(game: Node, enemy: Variant) -> Vector2:
 		return game.clamp_point_to_room(enemy.global_position, enemy.current_room)
 	var local_target: Variant = local_enemy_override_target(game, enemy)
 	if local_target != null:
-		if String(enemy.enemy_role) == game.ENEMY_TYPE_SKELETON_ARCHER:
+		if String(enemy.enemy_role) == game.ENEMY_TYPE_SKELETON_ARCHER or String(enemy.enemy_role) == game.ENEMY_TYPE_ORC_SHAMAN:
 			return skeleton_archer_goal_position(game, enemy)
 		return local_target.global_position
 	match String(enemy.enemy_role):
@@ -475,9 +475,9 @@ static func local_enemy_override_target(game: Node, enemy: Variant) -> Variant:
 	match String(enemy.enemy_role):
 		game.ENEMY_TYPE_ORC_RIDER:
 			return locked_room_target_hero(game, enemy, true)
-		game.ENEMY_TYPE_SKELETON_ARCHER:
+		game.ENEMY_TYPE_SKELETON_ARCHER, game.ENEMY_TYPE_ORC_SHAMAN:
 			return skeleton_archer_target_hero(game, enemy)
-		game.ENEMY_TYPE_ORC, game.ENEMY_TYPE_ORC_SHAMAN:
+		game.ENEMY_TYPE_ORC:
 			return locked_room_target_hero(game, enemy, false)
 		game.ENEMY_TYPE_BAT, game.ENEMY_TYPE_GOLEM, game.ENEMY_TYPE_DEMON_D:
 			return null
@@ -590,35 +590,7 @@ static func orc_target_hero(game: Node, enemy: Variant) -> Variant:
 	return chosen_hero
 
 static func orc_shaman_target_hero(game: Node, enemy: Variant) -> Variant:
-	var room_heroes: Array = enemy_targetable_heroes_in_room_strict(game, Vector2i(enemy.current_room))
-	if not room_heroes.is_empty():
-		return choose_orc_local_target(enemy, room_heroes)
-	var chosen_hero: Variant = null
-	var chosen_rank: int = 999
-	var chosen_path_length: int = 99999
-	var chosen_distance: float = INF
-	for hero in game.heroes:
-		if not game.hero_is_active(hero):
-			continue
-		if not hero_is_enemy_targetable(hero):
-			continue
-		var candidate_room: Vector2i = Vector2i(hero.current_room)
-		if candidate_room == game.INVALID_ROOM:
-			continue
-		var path_length: int = game.room_path_distance(enemy.current_room, candidate_room)
-		if path_length >= 99999:
-			continue
-		var priority_rank: int = 1 if bool(hero.carrying_crystal) else 0
-		var distance_value: float = enemy.global_position.distance_to(hero.global_position)
-		if chosen_hero == null \
-		or priority_rank < chosen_rank \
-		or (priority_rank == chosen_rank and path_length < chosen_path_length) \
-		or (priority_rank == chosen_rank and path_length == chosen_path_length and distance_value < chosen_distance):
-			chosen_hero = hero
-			chosen_rank = priority_rank
-			chosen_path_length = path_length
-			chosen_distance = distance_value
-	return chosen_hero
+	return skeleton_archer_target_hero(game, enemy)
 
 static func bat_target_hero(_game: Node, _enemy: Variant) -> Variant:
 	return null
@@ -844,7 +816,7 @@ static func resolve_enemy_attack(game: Node, enemy: Variant) -> void:
 			else:
 				return
 		game.ENEMY_TYPE_ORC_SHAMAN:
-			var room_targets: Array = enemy_targetable_heroes_in_room_strict(game, enemy.current_room)
+			var room_targets: Array = enemy_targetable_heroes_in_room(game, enemy.current_room)
 			if not room_targets.is_empty():
 				var blast_target: Variant = choose_orc_local_target(enemy, room_targets)
 				var blast_position: Vector2 = blast_target.global_position if blast_target != null else game.room_walkable_center(enemy.current_room)
