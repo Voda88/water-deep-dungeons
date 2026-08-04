@@ -2171,7 +2171,15 @@ func room_sanctuary_damage_multiplier(room_coord: Vector2i) -> float:
 func hero_incoming_damage_multiplier(hero: Variant) -> float:
 	if hero == null or not is_instance_valid(hero):
 		return 1.0
-	return room_sanctuary_damage_multiplier(Vector2i(hero.current_room))
+	var room_coord: Vector2i = Vector2i(hero.current_room)
+	if room_coord == INVALID_ROOM or not rooms.has(room_coord):
+		return 1.0
+	var room_data: Dictionary = rooms[room_coord]
+	if float(room_data.get("sanctuary_time_left", 0.0)) <= 0.0:
+		return 1.0
+	if int(room_data.get("sanctuary_target_hero_index", -1)) != int(hero.hero_index):
+		return 1.0
+	return clampf(float(room_data.get("sanctuary_damage_multiplier", 1.0)), 0.35, 1.0)
 
 func adjusted_incoming_damage_for_hero(hero: Variant, base_damage: float) -> float:
 	return maxf(base_damage, 0.0) * hero_incoming_damage_multiplier(hero)
@@ -2855,7 +2863,11 @@ func _on_inventory_button_pressed() -> void:
 	clear_room_action_hold()
 	close_room_action_menu()
 	close_merchant_overlay()
-	open_hero_inventory(hero)
+	var hero_room: Vector2i = Vector2i(hero.current_room)
+	if hero_room != INVALID_ROOM and rooms.has(hero_room) and bool(rooms[hero_room].get("opened", false)):
+		open_room_loot_inventory(hero, hero_room)
+	else:
+		open_hero_inventory(hero)
 	status_message = "Inventory open for %s." % hero.hero_name
 	update_hud()
 

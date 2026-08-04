@@ -412,7 +412,7 @@ static func build_item_defs() -> Dictionary:
 			"color": Color("e3ff9f"),
 			"description_lines": ["Single-use prayer scroll", "Cast once or study in calm as a cleric"],
 			"tags": ["divine", "scroll"],
-			"hand_card": {"card_id": "sanctuary_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Sanctuary Scroll", "description_lines_override": ["Bless one room once", "Cleric can study it in calm mode"]},
+			"hand_card": {"card_id": "sanctuary_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Sanctuary Scroll", "description_lines_override": ["Bless the most wounded ally in one room once", "Cleric can study it in calm mode"]},
 		},
 		"scroll_hold_person": {
 			"name": "Scroll of Hold Person",

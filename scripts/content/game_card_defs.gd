@@ -249,7 +249,7 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"spell_level": 1,
 				"target_scope": "opened_room",
 				"phase": "combat",
-				"description_lines": ["Target one opened room", "Blesses the room with Sanctuary", "Heroes inside take reduced damage and regenerate slowly", "Recharges after 2 opened rooms from a prepared prayer"],
+				"description_lines": ["Target one opened room", "Blesses the most wounded ally there", "Only that ally gains damage reduction and slow regeneration", "Recharges after 2 opened rooms from a prepared prayer"],
 				"cast_adjacent_hops": 1,
 				"sanctuary_duration": 10.0,
 				"sanctuary_damage_multiplier": 0.78,

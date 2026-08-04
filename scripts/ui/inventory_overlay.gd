@@ -473,6 +473,12 @@ func pointer_press(screen_position: Vector2) -> void:
 	if handle_spellbook_pointer_press(local_position):
 		return
 	if rotate_button_rect().has_point(local_position):
+		if not dragging_item.is_empty():
+			dragging_item["rotated"] = not bool(dragging_item.get("rotated", false))
+			rotate_hover_latched = true
+			queue_redraw()
+		else:
+			rotate_touched_inventory_item()
 		return
 	if not dragging_item.is_empty() or not dragging_pack.is_empty():
 		return
@@ -598,6 +604,8 @@ func pointer_release(screen_position: Vector2) -> void:
 	var released_outside_grid: bool = not grid_rect().has_point(drag_pointer_local)
 	var placement_anchor: Vector2i = preview_anchor_for_item(restored_item, drag_pointer_local)
 	if released_on_rotate:
+		if not rotate_hover_latched:
+			restored_item["rotated"] = not bool(restored_item.get("rotated", false))
 		restore_dragged_item(restored_item)
 	elif released_outside_grid:
 		if dragging_from_ground:
@@ -1109,7 +1117,23 @@ func draw_rotate_button() -> void:
 	draw_rect(rotate_rect, Color("98c2d0"), false, 2.0)
 	var font: Font = ThemeDB.fallback_font
 	draw_string(font, rotate_rect.position + Vector2(5.0, 18.0), "Rotate", HORIZONTAL_ALIGNMENT_LEFT, rotate_rect.size.x - 8.0, 11, Color("eef8ff"))
-	draw_string(font, rotate_rect.position + Vector2(5.0, 33.0), "Hover", HORIZONTAL_ALIGNMENT_LEFT, rotate_rect.size.x - 8.0, 10, Color("d0e6ef"))
+	draw_string(font, rotate_rect.position + Vector2(5.0, 33.0), "Tap/Drop", HORIZONTAL_ALIGNMENT_LEFT, rotate_rect.size.x - 8.0, 10, Color("d0e6ef"))
+
+func rotate_touched_inventory_item() -> void:
+	var touched_index: int = touched_inventory_item_index()
+	if touched_index < 0 or touched_index >= items.size():
+		return
+	var rotated_item: Dictionary = (items[touched_index] as Dictionary).duplicate(true)
+	var item_anchor: Vector2i = rotated_item.get("anchor", INVALID_CELL)
+	if item_anchor == INVALID_CELL:
+		return
+	rotated_item["rotated"] = not bool(rotated_item.get("rotated", false))
+	if not can_place_item_with_ignore(rotated_item, item_anchor, int(rotated_item.get("uid", -1))):
+		return
+	items[touched_index] = rotated_item
+	remember_touched_item(rotated_item, false)
+	_emit_inventory_changed()
+	queue_redraw()
 
 func draw_dragging_item() -> void:
 	if dragging_item.is_empty():
@@ -1602,6 +1626,9 @@ func preview_anchor_for_pack(pack_module: Dictionary, local_position: Vector2) -
 	return rounded_anchor
 
 func can_place_item(item: Dictionary, anchor: Vector2i) -> bool:
+	return can_place_item_with_ignore(item, anchor, -1)
+
+func can_place_item_with_ignore(item: Dictionary, anchor: Vector2i, ignore_uid: int) -> bool:
 	if anchor.x < 0 or anchor.y < 0:
 		return false
 	var size_cells: Vector2i = item_size_in_cells(item)
@@ -1611,6 +1638,8 @@ func can_place_item(item: Dictionary, anchor: Vector2i) -> bool:
 	var occupied_cells: Dictionary = {}
 	for existing_item_variant in items:
 		var existing_item: Dictionary = existing_item_variant
+		if int(existing_item.get("uid", -1)) == ignore_uid:
+			continue
 		for cell in occupied_cells_for_item(existing_item):
 			occupied_cells[cell] = true
 	var placed_item: Dictionary = item.duplicate(true)

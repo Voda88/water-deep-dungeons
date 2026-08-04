@@ -821,8 +821,11 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			var sanctuary_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
 			if sanctuary_room == game.INVALID_ROOM or not game.rooms.has(sanctuary_room):
 				return false
-			cast_sanctuary_spell(game, hero, sanctuary_room, hand_card)
-			game.status_message = "%s invoked Sanctuary in %s." % [hero.hero_name, game.room_title(sanctuary_room)]
+			var sanctuary_target: Variant = cast_sanctuary_spell(game, hero, sanctuary_room, hand_card)
+			if sanctuary_target == null or not is_instance_valid(sanctuary_target):
+				game.status_message = "%s invoked Sanctuary in %s, but no ally could receive it." % [hero.hero_name, game.room_title(sanctuary_room)]
+				return false
+			game.status_message = "%s invoked Sanctuary on %s in %s." % [hero.hero_name, sanctuary_target.hero_name, game.room_title(sanctuary_room)]
 			return true
 		"lightning_bolt_card":
 			var bolt_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
@@ -1582,9 +1585,14 @@ static func fighter_level_two_attack_damage(game: Node) -> float:
 	var level_bonus_attack: float = float(level_two_bonuses.get("attack", 0.0))
 	return maxf(base_attack_damage + level_bonus_attack, 0.0)
 
-static func cast_sanctuary_spell(game: Node, hero: Variant, target_room: Vector2i, hand_card: Dictionary) -> void:
+static func cast_sanctuary_spell(game: Node, hero: Variant, target_room: Vector2i, hand_card: Dictionary) -> Variant:
 	if target_room == game.INVALID_ROOM or not game.rooms.has(target_room):
-		return
+		return null
+	var sanctuary_target: Variant = most_damaged_hero_in_room(game, target_room)
+	if sanctuary_target == null or not is_instance_valid(sanctuary_target):
+		sanctuary_target = fallback_room_target_hero(game, hero, target_room)
+	if sanctuary_target == null or not is_instance_valid(sanctuary_target):
+		return null
 	var room_data: Dictionary = Dictionary(game.rooms[target_room])
 	var duration: float = maxf(float(hand_card.get("sanctuary_duration", 10.0)), 0.1)
 	var mitigation: float = clampf(float(hand_card.get("sanctuary_damage_multiplier", 0.78)), 0.35, 1.0)
@@ -1593,14 +1601,13 @@ static func cast_sanctuary_spell(game: Node, hero: Variant, target_room: Vector2
 	room_data["sanctuary_time_left"] = maxf(float(room_data.get("sanctuary_time_left", 0.0)), duration)
 	room_data["sanctuary_damage_multiplier"] = minf(float(room_data.get("sanctuary_damage_multiplier", 1.0)), mitigation)
 	room_data["sanctuary_regen_per_second"] = maxf(float(room_data.get("sanctuary_regen_per_second", 0.0)), regen_per_second)
+	room_data["sanctuary_target_hero_index"] = int(sanctuary_target.hero_index)
 	game.rooms[target_room] = room_data
 	var sanctuary_center: Vector2 = game.room_center(target_room)
 	hero.trigger_attack(sanctuary_center, "heal_cast")
 	append_timed_effect_projectile(game, "priest_heal_effect", sanctuary_center, Color(hand_card.get("color", Color("e3ff9f"))), 0.52, 0.52)
-	for room_hero in game.heroes_in_room(target_room):
-		if room_hero == null or not is_instance_valid(room_hero) or room_hero.current_health <= 0.0:
-			continue
-		append_timed_effect_projectile(game, "shield_flash", room_hero.global_position, Color(hand_card.get("color", Color("e3ff9f"))), 0.24, 0.24)
+	append_timed_effect_projectile(game, "shield_flash", sanctuary_target.global_position, Color(hand_card.get("color", Color("e3ff9f"))), 0.24, 0.24)
+	return sanctuary_target
 
 static func cast_shield_spell(game: Node, hero: Variant, hand_card: Dictionary) -> void:
 	var barrier_amount: float = float(hand_card.get("shield_amount", 34.0))

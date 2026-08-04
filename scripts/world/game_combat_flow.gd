@@ -971,6 +971,7 @@ static func advance_room_sanctuary_effects(game: Node, delta: float) -> void:
 				room_data["sanctuary_duration"] = 0.0
 				room_data["sanctuary_damage_multiplier"] = 1.0
 				room_data["sanctuary_regen_per_second"] = 0.0
+				room_data["sanctuary_target_hero_index"] = -1
 				game.rooms[room_coord] = room_data
 			continue
 		room_data["sanctuary_time_left"] = sanctuary_time_left
@@ -980,8 +981,13 @@ static func advance_room_sanctuary_effects(game: Node, delta: float) -> void:
 		var regen_rate: float = maxf(float(room_data.get("sanctuary_regen_per_second", 0.0)), 0.0)
 		if regen_rate <= 0.0:
 			continue
+		var sanctuary_target_index: int = int(room_data.get("sanctuary_target_hero_index", -1))
+		if sanctuary_target_index < 0:
+			continue
 		for hero in game.heroes:
 			if not game.hero_is_active(hero):
+				continue
+			if int(hero.hero_index) != sanctuary_target_index:
 				continue
 			if Vector2i(hero.current_room) != room_coord:
 				continue
