@@ -22,6 +22,26 @@ const SPAWN_CENTER_SAFE_MARGIN: float = 72.0
 const SPAWN_CENTER_ANCHOR_JITTER: float = 14.0
 
 static func launch_wave(game: Node, entered_room: Vector2i) -> void:
+	var entered_room_data: Dictionary = {}
+	if game.rooms.has(entered_room):
+		entered_room_data = Dictionary(game.rooms[entered_room])
+	var is_floor_one_first_door_open: bool = game.floor_index == 1 and int(game.doors_opened) <= 1
+	var is_merchant_room_open: bool = String(entered_room_data.get("merchant_theme", "")) != ""
+	var is_research_room_open: bool = bool(entered_room_data.get("research_crystal", false))
+	if is_floor_one_first_door_open or is_merchant_room_open or is_research_room_open:
+		game.door_wave_spawns_incoming = false
+		game.door_wave_auto_heal_pending = false
+		game.door_wave_healing_active = true
+		if is_floor_one_first_door_open:
+			game.status_message = "Opened %s. Floor 1 first door has no wave." % game.room_title(entered_room)
+		elif is_merchant_room_open and is_research_room_open:
+			game.status_message = "Opened %s. Research and merchant room opens do not trigger waves." % game.room_title(entered_room)
+		elif is_merchant_room_open:
+			game.status_message = "Opened %s. Merchant room opens do not trigger waves." % game.room_title(entered_room)
+		else:
+			game.status_message = "Opened %s. Research crystal room opens do not trigger waves." % game.room_title(entered_room)
+		game.update_hud()
+		return
 	var pending_spawn_count_before: int = game.pending_enemy_spawns.size()
 	var dark_rooms: Array[Vector2i] = []
 	var priority_dark_rooms: Array[Vector2i] = []

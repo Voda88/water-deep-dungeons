@@ -180,20 +180,14 @@ static func minor_module_base_cost(module_type: String) -> int:
 	match canonical_minor_module_type(module_type):
 		MINOR_MODULE_TURRET:
 			return 3
-		MINOR_MODULE_PULSE:
-			return 20
-		MINOR_MODULE_CANNON:
-			return 35
-		MINOR_MODULE_KIP:
-			return 30
-		MINOR_MODULE_CONVERSION:
-			return 25
-		MINOR_MODULE_BOUNTY_INDUSTRY:
-			return 22
-		MINOR_MODULE_BOUNTY_FOOD:
-			return 22
+		MINOR_MODULE_PULSE,
+		MINOR_MODULE_CANNON,
+		MINOR_MODULE_KIP,
+		MINOR_MODULE_CONVERSION,
+		MINOR_MODULE_BOUNTY_INDUSTRY,
+		MINOR_MODULE_BOUNTY_FOOD,
 		MINOR_MODULE_BOUNTY_SCIENCE:
-			return 22
+			return 12
 		_:
 			return 15
 
@@ -235,7 +229,7 @@ static func minor_module_damage(module_type: String, minor_module_levels: Dictio
 		MINOR_MODULE_PULSE:
 			return 1.0 + float(level) * 0.7
 		MINOR_MODULE_CANNON:
-			return 8.0 + float(level - 1) * 3.0
+			return 16.0 + float(level - 1) * 6.0
 		MINOR_MODULE_KIP:
 			return 16.0 + float(level - 1) * 5.0
 		MINOR_MODULE_CONVERSION:
