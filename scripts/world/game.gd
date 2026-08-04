@@ -155,9 +155,9 @@ const ENEMY_AI_THINK_INTERVAL_MOBILE: float = 0.075
 const ENEMY_AI_THINK_INTERVAL_HEAVY_MOBILE: float = 0.12
 const CRYSTAL_DUST_DAMAGE_BASE_HIT: float = 0.25
 const CRYSTAL_PRESSURE_PICKUP_DELAY: float = 2.0
-const CRYSTAL_PRESSURE_INTERVAL: float = 2.0
+const CRYSTAL_PRESSURE_INTERVAL: float = 4.0
 const CRYSTAL_PRESSURE_WARNING_DURATION: float = 0.0
-const CRYSTAL_PRESSURE_ENEMIES_PER_ROOM: int = 3
+const CRYSTAL_PRESSURE_ENEMIES_PER_ROOM: int = 2
 const CRYSTAL_PRESSURE_MAX_MONSTERS: int = 36
 const ROOM_ACTION_HOLD_START_DELAY: float = 0.2
 const ROOM_ACTION_HOLD_LOADER_DURATION: float = 0.1
@@ -2830,7 +2830,7 @@ func request_selected_hero_pick_up_crystal() -> void:
 	crystal_prompt_visible = false
 	crystal_pressure_timer_left = CRYSTAL_PRESSURE_PICKUP_DELAY
 	update_hero_combat_movement_mode()
-	status_message = "%s picked up the crystal. Dark rooms will agitate every 2 seconds." % hero.hero_name
+	status_message = "%s picked up the crystal. Dark rooms will agitate every %.0f seconds." % [hero.hero_name, CRYSTAL_PRESSURE_INTERVAL]
 	update_hud()
 	queue_redraw()
 

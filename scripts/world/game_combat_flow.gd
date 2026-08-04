@@ -241,7 +241,7 @@ static func trigger_crystal_pressure(game: Node) -> void:
 	var chosen_room: Vector2i = pick_spawn_room(game, dark_rooms, priority_dark_rooms)
 	if chosen_room == game.INVALID_ROOM:
 		chosen_room = dark_rooms[game.rng.randi_range(0, dark_rooms.size() - 1)]
-	var pressure_spawn_points: int = game.CRYSTAL_PRESSURE_ENEMIES_PER_ROOM + int(floor(float(max(game.floor_index - 1, 0)) / 2.0))
+	var pressure_spawn_points: int = game.CRYSTAL_PRESSURE_ENEMIES_PER_ROOM
 	var queued_count: int = queue_pressure_spawn(game, chosen_room, pressure_spawn_points, remaining_capacity)
 	game.crystal_pressure_timer_left = crystal_pressure_interval_for_dark_room_count(game, dark_rooms.size())
 	if queued_count <= 0:
@@ -352,7 +352,7 @@ static func prewarm_enemy_pool_for_floor(game: Node) -> void:
 	if spawn_types.is_empty():
 		return
 	var rooms_excluding_crystal: int = maxi(game.rooms.size() - 1, 1)
-	var pressure_per_room: int = game.CRYSTAL_PRESSURE_ENEMIES_PER_ROOM + int(floor(float(maxi(game.floor_index - 1, 0)) / 2.0))
+	var pressure_per_room: int = game.CRYSTAL_PRESSURE_ENEMIES_PER_ROOM
 	var desired_total: int = maxi(BASE_PREWARM_TOTAL, rooms_excluding_crystal * pressure_per_room + 8)
 	var per_type_target: int = maxi(MIN_PREWARM_ENEMIES_PER_TYPE, int(ceil(float(desired_total) / float(spawn_types.size()))))
 	var available_counts: Dictionary = {}

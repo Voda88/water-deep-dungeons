@@ -497,7 +497,7 @@ static func server_request_pick_up_crystal(game: Node, hero_index: int) -> void:
 	game.crystal_prompt_visible = false
 	game.crystal_pressure_timer_left = game.CRYSTAL_PRESSURE_PICKUP_DELAY
 	game.update_hero_combat_movement_mode()
-	game.status_message = "%s picked up the crystal. Dark rooms will agitate every 2 seconds." % hero.hero_name
+	game.status_message = "%s picked up the crystal. Dark rooms will agitate every %.0f seconds." % [hero.hero_name, game.CRYSTAL_PRESSURE_INTERVAL]
 	game.update_hud()
 	broadcast_network_snapshot(game)
 
