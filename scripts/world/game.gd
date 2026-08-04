@@ -1914,7 +1914,7 @@ func send_hero_back_to_crystal(hero: Variant) -> void:
 	if hero == selected_hero():
 		selected_room = crystal_room
 	hero.set_room(crystal_room, hero_idle_position(crystal_room, hero.hero_index, heroes.size()))
-	hero.combo_points = 0
+	reset_hero_combo(hero)
 
 func advance_passive_item_combat_procs(delta: float) -> void:
 	if not wave_in_progress():
@@ -1932,7 +1932,25 @@ func advance_passive_item_combat_procs(delta: float) -> void:
 			var card_def: Dictionary = card_definition(String(passive_ability.get("card_id", "")))
 			var base_cooldown: float = float(passive_ability.get("cooldown", card_def.get("test_cooldown", 1.5)))
 			var effective_cooldown: float = maxf(base_cooldown * float(item_bonus.get("card_charge_mult", 1.0)), 0.25)
+			var once_per_wave: bool = bool(passive_ability.get("once_per_wave", false))
 			var passive_state: Dictionary = Dictionary(global_item_passive_timers.get(key, {})).duplicate(true)
+			if once_per_wave and int(passive_state.get("last_wave_triggered", -1)) == wave_index:
+				continue
+			if once_per_wave:
+				if room_target == null:
+					continue
+				var once_payload: Dictionary = build_passive_combat_payload(passive_ability, effect_summary)
+				if not spend_hero_stamina_with_reactions(hero, float(once_payload.get("stamina_cost", 0.0))):
+					continue
+				match String(once_payload.get("card_id", "")):
+					"dagger_card", "rogue_combo_dagger_card":
+						spawn_dagger_card_projectiles(hero, room_target.global_position, once_payload)
+					_:
+						spawn_axe_card_projectile(hero, room_target.global_position, once_payload)
+				passive_state["timer_left"] = effective_cooldown
+				passive_state["last_wave_triggered"] = wave_index
+				global_item_passive_timers[key] = passive_state
+				continue
 			var timer_left: float = maxf(float(passive_state.get("timer_left", effective_cooldown)) - delta, 0.0)
 			passive_state["timer_left"] = timer_left
 			global_item_passive_timers[key] = passive_state
@@ -1942,7 +1960,7 @@ func advance_passive_item_combat_procs(delta: float) -> void:
 			if not spend_hero_stamina_with_reactions(hero, float(passive_payload.get("stamina_cost", 0.0))):
 				continue
 			match String(passive_payload.get("card_id", "")):
-				"dagger_card":
+				"dagger_card", "rogue_combo_dagger_card":
 					spawn_dagger_card_projectiles(hero, room_target.global_position, passive_payload)
 				_:
 					spawn_axe_card_projectile(hero, room_target.global_position, passive_payload)
@@ -2147,6 +2165,18 @@ func advance_pending_melee_attacks(delta: float) -> void:
 
 func apply_card_projectile_hits(projectile: Dictionary) -> void:
 	GAME_COMBAT_FLOW.apply_card_projectile_hits(self, projectile)
+
+func combo_level_for_hero(hero: Variant) -> int:
+	return GAME_COMBAT_FLOW.combo_level_for_hero(self, hero)
+
+func reset_hero_combo(hero: Variant) -> void:
+	GAME_COMBAT_FLOW.reset_hero_combo(self, hero)
+
+func apply_poison_coating_to_hero(hero: Variant, coating: Dictionary) -> Dictionary:
+	return GAME_COMBAT_FLOW.apply_poison_coating_to_hero(self, hero, coating)
+
+func register_hero_enemy_hit(hero: Variant, enemy: Variant, impact_direction: Vector2 = Vector2.RIGHT) -> void:
+	GAME_COMBAT_FLOW.register_hero_enemy_hit(self, hero, enemy, impact_direction)
 
 func process_combat(_delta: float) -> void:
 	GAME_COMBAT_FLOW.process_combat(self, _delta)

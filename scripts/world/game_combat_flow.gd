@@ -20,6 +20,163 @@ const SPAWN_CLUSTER_GOLDEN_ANGLE: float = 2.39996323
 const SPAWN_CLUSTER_MAX_CELL_RETRIES: int = 2
 const SPAWN_CENTER_SAFE_MARGIN: float = 72.0
 const SPAWN_CENTER_ANCHOR_JITTER: float = 14.0
+const ROGUE_COMBO_HITS_PER_LEVEL: int = 2
+const ROGUE_COMBO_POPUP_COLOR: Color = Color("ffd27a")
+const ROGUE_COMBO_POPUP_Y_OFFSET: float = 42.0
+
+static func hero_is_combo_class(game: Node, hero: Variant) -> bool:
+	return hero != null and is_instance_valid(hero) and String(hero.hero_class_id) == game.HERO_CLASS_ROGUE
+
+static func combo_level_for_hero(game: Node, hero: Variant) -> int:
+	if not hero_is_combo_class(game, hero):
+		return 0
+	return maxi(0, int(hero.combo_points))
+
+static func reset_hero_combo(_game: Node, hero: Variant) -> void:
+	if hero == null or not is_instance_valid(hero):
+		return
+	hero.combo_points = 0
+	hero.combo_attack_progress = 0
+
+static func apply_poison_coating_to_hero(_game: Node, hero: Variant, coating: Dictionary) -> Dictionary:
+	if hero == null or not is_instance_valid(hero):
+		return {}
+	var poison_id: String = String(coating.get("poison_id", ""))
+	if poison_id == "":
+		return {}
+	var applied: Array = Array(hero.applied_poisons).duplicate(true)
+	var existing_index: int = -1
+	for poison_index in range(applied.size()):
+		var poison_state: Dictionary = applied[poison_index]
+		if String(poison_state.get("poison_id", "")) == poison_id:
+			existing_index = poison_index
+			break
+	var stackable: bool = bool(coating.get("stackable", false))
+	var incoming_stacks: int = maxi(1, int(coating.get("stacks", 1)))
+	var max_stacks: int = maxi(1, int(coating.get("max_stacks", 1)))
+	var incoming_hits: int = int(coating.get("remaining_hits", 8))
+	var merged: Dictionary = coating.duplicate(true)
+	if existing_index >= 0:
+		var existing: Dictionary = Dictionary(applied[existing_index])
+		var existing_stacks: int = maxi(1, int(existing.get("stacks", 1)))
+		var next_stacks: int = min(existing_stacks + incoming_stacks, max_stacks) if stackable else max(existing_stacks, incoming_stacks)
+		merged["stacks"] = next_stacks
+		merged["remaining_hits"] = maxi(int(existing.get("remaining_hits", incoming_hits)), incoming_hits)
+		applied[existing_index] = merged
+	else:
+		merged["stacks"] = min(incoming_stacks, max_stacks)
+		merged["remaining_hits"] = incoming_hits
+		applied.append(merged)
+	hero.applied_poisons = applied
+	return {
+		"poison_id": poison_id,
+		"name": String(merged.get("name", poison_id.capitalize())),
+		"stacks": int(merged.get("stacks", 1)),
+		"remaining_hits": int(merged.get("remaining_hits", 0)),
+	}
+
+static func apply_enemy_poison_instance_from_hit(_game: Node, enemy: Variant, poison_state: Dictionary) -> void:
+	if enemy == null or not is_instance_valid(enemy):
+		return
+	var poison_id: String = String(poison_state.get("poison_id", ""))
+	if poison_id == "":
+		return
+	var dot_damage_per_second: float = maxf(float(poison_state.get("dot_damage_per_second", 0.0)), 0.0)
+	var dot_duration: float = maxf(float(poison_state.get("dot_duration", 0.0)), 0.0)
+	if dot_damage_per_second <= 0.0 or dot_duration <= 0.0:
+		return
+	var incoming_stacks: int = maxi(1, int(poison_state.get("stacks", 1)))
+	var stackable: bool = bool(poison_state.get("stackable", false))
+	var dot_max_stacks: int = maxi(1, int(poison_state.get("dot_max_stacks", poison_state.get("max_stacks", 1))))
+	var poison_instances: Dictionary = Dictionary(enemy.get_meta("poison_instances", {})).duplicate(true)
+	var existing_instance: Dictionary = Dictionary(poison_instances.get(poison_id, {}))
+	var existing_stacks: int = maxi(0, int(existing_instance.get("stacks", 0)))
+	var next_stacks: int = min(existing_stacks + incoming_stacks, dot_max_stacks) if stackable else max(existing_stacks, incoming_stacks)
+	poison_instances[poison_id] = {
+		"stacks": next_stacks,
+		"damage_per_second": dot_damage_per_second,
+		"time_left": maxf(float(existing_instance.get("time_left", 0.0)), dot_duration),
+	}
+	enemy.set_meta("poison_instances", poison_instances)
+
+static func register_hero_enemy_hit(game: Node, hero: Variant, enemy: Variant, impact_direction: Vector2 = Vector2.RIGHT) -> void:
+	if hero == null or not is_instance_valid(hero) or enemy == null or not is_instance_valid(enemy):
+		return
+	var resolved_impact_direction: Vector2 = impact_direction.normalized()
+	if resolved_impact_direction == Vector2.ZERO:
+		resolved_impact_direction = Vector2.RIGHT
+	var updated_poisons: Array = []
+	for poison_variant in Array(hero.applied_poisons):
+		var poison_state: Dictionary = Dictionary(poison_variant).duplicate(true)
+		var stacks: int = maxi(1, int(poison_state.get("stacks", 1)))
+		var hit_damage: float = maxf(float(poison_state.get("on_hit_damage_per_stack", 0.0)), 0.0) * float(stacks)
+		if game.enemy_is_active(enemy) and hit_damage > 0.0:
+			enemy.take_damage(hit_damage, resolved_impact_direction)
+		if game.enemy_is_active(enemy):
+			apply_enemy_poison_instance_from_hit(game, enemy, poison_state)
+			var slow_duration: float = maxf(float(poison_state.get("slow_duration", 0.0)), 0.0)
+			if slow_duration > 0.0 and enemy.has_method("apply_recovering_slow_debuff"):
+				enemy.apply_recovering_slow_debuff(
+					slow_duration,
+					clampf(float(poison_state.get("slow_move_multiplier", 0.82)), 0.0, 1.0),
+					clampf(float(poison_state.get("slow_attack_speed_multiplier", 0.86)), 0.0, 1.0)
+				)
+			var flatfooted_duration: float = maxf(float(poison_state.get("flatfooted_duration", 0.0)), 0.0)
+			if flatfooted_duration > 0.0 and enemy.has_method("apply_flatfooted_debuff"):
+				enemy.apply_flatfooted_debuff(
+					flatfooted_duration,
+					clampf(float(poison_state.get("flatfooted_move_multiplier", 1.0)), 0.0, 1.0),
+					clampf(float(poison_state.get("flatfooted_attack_speed_multiplier", 1.0)), 0.0, 1.0),
+					maxf(float(poison_state.get("flatfooted_damage_taken_multiplier", 1.3)), 1.0)
+				)
+		var remaining_hits: int = int(poison_state.get("remaining_hits", -1))
+		if remaining_hits > 0:
+			remaining_hits -= 1
+			poison_state["remaining_hits"] = remaining_hits
+			if remaining_hits <= 0:
+				continue
+		updated_poisons.append(poison_state)
+	hero.applied_poisons = updated_poisons
+	if not hero_is_combo_class(game, hero):
+		return
+	var combo_progress: int = maxi(0, int(hero.combo_attack_progress)) + 1
+	var gained_levels: int = combo_progress / ROGUE_COMBO_HITS_PER_LEVEL
+	hero.combo_attack_progress = combo_progress % ROGUE_COMBO_HITS_PER_LEVEL
+	if gained_levels <= 0:
+		return
+	hero.combo_points = maxi(0, int(hero.combo_points)) + gained_levels
+	game.add_resource_floating_text(
+		hero.global_position + Vector2(0.0, -ROGUE_COMBO_POPUP_Y_OFFSET),
+		"Combo %d" % int(hero.combo_points),
+		ROGUE_COMBO_POPUP_COLOR
+	)
+
+static func advance_enemy_poison_effects(game: Node, delta: float) -> void:
+	if delta <= 0.0:
+		return
+	for enemy in game.enemies:
+		if not game.enemy_is_active(enemy):
+			continue
+		var poison_instances: Dictionary = Dictionary(enemy.get_meta("poison_instances", {})).duplicate(true)
+		if poison_instances.is_empty():
+			continue
+		var updated_instances: Dictionary = {}
+		for poison_id_variant in poison_instances.keys():
+			var poison_id: String = String(poison_id_variant)
+			var state: Dictionary = Dictionary(poison_instances.get(poison_id, {})).duplicate(true)
+			var time_left: float = maxf(float(state.get("time_left", 0.0)) - delta, 0.0)
+			if time_left <= 0.0:
+				continue
+			var stacks: int = maxi(1, int(state.get("stacks", 1)))
+			var dps: float = maxf(float(state.get("damage_per_second", 0.0)), 0.0)
+			if dps > 0.0:
+				enemy.take_damage(dps * float(stacks) * delta, Vector2.RIGHT)
+			state["time_left"] = time_left
+			updated_instances[poison_id] = state
+		if updated_instances.is_empty():
+			enemy.remove_meta("poison_instances")
+		else:
+			enemy.set_meta("poison_instances", updated_instances)
 
 static func launch_wave(game: Node, entered_room: Vector2i) -> void:
 	var entered_room_data: Dictionary = {}
@@ -660,16 +817,29 @@ static func apply_card_projectile_hits(game: Node, projectile: Dictionary) -> vo
 			continue
 		if game.point_distance_to_segment(enemy.global_position, previous, current) > hit_radius:
 			continue
+		var owner_hero: Variant = null
+		var owner_index: int = int(projectile.get("owner_hero_index", -1))
+		if owner_index >= 0 and owner_index < game.heroes.size():
+			owner_hero = game.heroes[owner_index]
 		var damage: float = float(projectile.get("damage", 0.0))
 		if projectile_kind == "dagger":
+			if owner_hero != null and is_instance_valid(owner_hero):
+				damage += float(combo_level_for_hero(game, owner_hero)) * float(projectile.get("combo_damage_scale", 1.5))
 			var projectile_forward: Vector2 = Vector2(projectile.get("velocity", Vector2.RIGHT)).normalized()
 			if projectile_forward.dot(game.enemy_forward_direction(enemy)) > 0.45:
 				damage *= float(projectile.get("backstab_multiplier", 1.75))
-				var owner_index: int = int(projectile.get("owner_hero_index", -1))
-				if owner_index >= 0 and owner_index < game.heroes.size():
-					var owner_hero: Variant = game.heroes[owner_index]
-					if owner_hero != null and is_instance_valid(owner_hero):
-						owner_hero.combo_points += int(projectile.get("combo_gain", 1))
+			if owner_hero != null and is_instance_valid(owner_hero) and hero_is_combo_class(game, owner_hero):
+				var combo_level: int = combo_level_for_hero(game, owner_hero)
+				var level_two_threshold: int = maxi(1, int(projectile.get("combo_flatfooted_level_2_threshold", 2)))
+				if combo_level >= level_two_threshold and enemy.has_method("apply_flatfooted_debuff"):
+					var level_three_threshold: int = maxi(3, int(projectile.get("combo_flatfooted_level_3_threshold", 3)))
+					var use_level_three: bool = combo_level >= level_three_threshold
+					enemy.apply_flatfooted_debuff(
+						maxf(float(projectile.get("combo_flatfooted_duration_level_3", 3.8 if use_level_three else projectile.get("combo_flatfooted_duration_level_2", 2.2))), 0.0),
+						clampf(float(projectile.get("combo_flatfooted_move_multiplier", 1.0)), 0.0, 1.0),
+						clampf(float(projectile.get("combo_flatfooted_attack_speed_multiplier", 1.0)), 0.0, 1.0),
+						maxf(float(projectile.get("combo_flatfooted_damage_taken_multiplier_level_3", 1.5 if use_level_three else projectile.get("combo_flatfooted_damage_taken_multiplier_level_2", 1.28))), 1.0)
+					)
 		var impact_direction: Vector2 = projectile_direction
 		if impact_direction == Vector2.ZERO:
 			impact_direction = (enemy.global_position - previous).normalized()
@@ -678,6 +848,8 @@ static func apply_card_projectile_hits(game: Node, projectile: Dictionary) -> vo
 		if impact_direction == Vector2.ZERO:
 			impact_direction = Vector2.RIGHT
 		enemy.take_damage(damage, impact_direction)
+		if owner_hero != null and is_instance_valid(owner_hero):
+			register_hero_enemy_hit(game, owner_hero, enemy, impact_direction)
 		already_hit.append(int(enemy.enemy_uid))
 		pierced_count += 1
 		var base_knockback_force: float = maxf(float(projectile.get("knockback_force", 0.0)), 0.0)
@@ -734,6 +906,7 @@ static func advance_room_sanctuary_effects(game: Node, delta: float) -> void:
 
 static func process_combat(game: Node, delta: float) -> void:
 	advance_room_sanctuary_effects(game, delta)
+	advance_enemy_poison_effects(game, delta)
 	game.advance_pending_melee_attacks(delta)
 	for hero in game.heroes:
 		if not game.hero_is_active(hero):

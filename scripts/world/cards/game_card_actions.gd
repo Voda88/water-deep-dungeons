@@ -880,6 +880,36 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			var spent_arcana: int = int(reset_result.get("total_cost", 0))
 			game.status_message = "%s spent %d arcana to refresh %d cooldown%s." % [hero.hero_name, spent_arcana, refresh_count, "" if refresh_count == 1 else "s"]
 			return true
+		"serpent_venom_card", "wyvern_toxin_card", "blacklotus_oil_card":
+			var poison_target: Variant = target_data.get("hero", hero)
+			if poison_target == null or not is_instance_valid(poison_target):
+				return false
+			var poison_def: Dictionary = game.card_definition(String(hand_card.get("card_id", "")))
+			var poison_payload: Dictionary = {
+				"poison_id": String(poison_def.get("poison_id", hand_card.get("card_id", ""))),
+				"name": String(poison_def.get("poison_name", hand_card.get("name", "Poison"))),
+				"stackable": bool(poison_def.get("poison_stackable", false)),
+				"stacks": maxi(1, int(poison_def.get("poison_apply_stacks", 1))),
+				"max_stacks": maxi(1, int(poison_def.get("poison_max_stacks", 1))),
+				"remaining_hits": int(poison_def.get("poison_hit_charges", 8)),
+				"on_hit_damage_per_stack": maxf(float(poison_def.get("poison_on_hit_damage_per_stack", 0.0)), 0.0),
+				"dot_damage_per_second": maxf(float(poison_def.get("poison_dot_damage_per_second", 0.0)), 0.0),
+				"dot_duration": maxf(float(poison_def.get("poison_dot_duration", 0.0)), 0.0),
+				"dot_max_stacks": maxi(1, int(poison_def.get("poison_dot_max_stacks", poison_def.get("poison_max_stacks", 1)))),
+				"slow_duration": maxf(float(poison_def.get("poison_slow_duration", 0.0)), 0.0),
+				"slow_move_multiplier": clampf(float(poison_def.get("poison_slow_move_multiplier", 1.0)), 0.0, 1.0),
+				"slow_attack_speed_multiplier": clampf(float(poison_def.get("poison_slow_attack_speed_multiplier", 1.0)), 0.0, 1.0),
+				"flatfooted_duration": maxf(float(poison_def.get("poison_flatfooted_duration", 0.0)), 0.0),
+				"flatfooted_move_multiplier": clampf(float(poison_def.get("poison_flatfooted_move_multiplier", 1.0)), 0.0, 1.0),
+				"flatfooted_attack_speed_multiplier": clampf(float(poison_def.get("poison_flatfooted_attack_speed_multiplier", 1.0)), 0.0, 1.0),
+				"flatfooted_damage_taken_multiplier": maxf(float(poison_def.get("poison_flatfooted_damage_taken_multiplier", 1.0)), 1.0),
+			}
+			var applied_poison: Dictionary = game.apply_poison_coating_to_hero(poison_target, poison_payload)
+			if applied_poison.is_empty():
+				return false
+			hero.trigger_attack(poison_target.global_position, "laser")
+			game.status_message = "%s coated %s with %s (x%d, %d hits)." % [hero.hero_name, poison_target.hero_name, String(applied_poison.get("name", "poison")), int(applied_poison.get("stacks", 1)), int(applied_poison.get("remaining_hits", 0))]
+			return true
 		"emergency_snack_card":
 			var snack_target: Variant = target_data.get("hero", hero)
 			if snack_target == null or not is_instance_valid(snack_target):
@@ -896,7 +926,7 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 				game.status_message = "%s does not need an emergency snack right now." % snack_target.hero_name
 				return false
 			game.food -= food_cost
-			snack_target.combo_points = 0
+			game.reset_hero_combo(snack_target)
 			hero.trigger_attack(snack_target.global_position, "laser")
 			var healed_amount: int = int(round(maxf(snack_target.current_health - previous_snack_health, 0.0)))
 			game.status_message = "%s used an emergency snack (+%d HP)." % [snack_target.hero_name, healed_amount]
@@ -909,7 +939,7 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			var ration_heal_percent: float = clampf(float(hand_card.get("heal_percent", 0.4)), 0.0, 1.0)
 			var ration_heal_amount: float = maxf(ration_target.max_health * ration_heal_percent, 1.0)
 			ration_target.heal(ration_heal_amount)
-			var combo_gain: int = maxi(0, int(hand_card.get("combo_gain", 0)))
+			var combo_gain: int = maxi(0, int(hand_card.get("combo_gain", 0))) if String(ration_target.hero_class_id) == game.HERO_CLASS_ROGUE else 0
 			if combo_gain > 0:
 				ration_target.combo_points += combo_gain
 			var stamina_before: float = ration_target.stamina
@@ -2047,7 +2077,7 @@ static func spawn_dagger_card_projectiles(game: Node, hero: Variant, target_worl
 			"position": hero.global_position,
 			"previous": hero.global_position,
 			"velocity": direction * float(hand_card.get("speed", 1020.0)),
-			"damage": float(hand_card.get("damage", 40.0)) + float(hero.combo_points) * 1.5,
+			"damage": float(hand_card.get("damage", 40.0)),
 			"color": hand_card.get("color", Color("d7f0ff")),
 			"width": 4.0,
 			"radius": 9.0,
@@ -2063,5 +2093,14 @@ static func spawn_dagger_card_projectiles(game: Node, hero: Variant, target_worl
 			"hit_enemy_uids": [],
 			"owner_hero_index": hero.hero_index,
 			"backstab_multiplier": float(hand_card.get("backstab_multiplier", 1.75)),
+			"combo_damage_scale": float(hand_card.get("combo_damage_scale", 1.5)),
+			"combo_flatfooted_level_2_threshold": int(hand_card.get("combo_flatfooted_level_2_threshold", 2)),
+			"combo_flatfooted_level_3_threshold": int(hand_card.get("combo_flatfooted_level_3_threshold", 3)),
+			"combo_flatfooted_duration_level_2": float(hand_card.get("combo_flatfooted_duration_level_2", 2.2)),
+			"combo_flatfooted_duration_level_3": float(hand_card.get("combo_flatfooted_duration_level_3", 3.8)),
+			"combo_flatfooted_damage_taken_multiplier_level_2": float(hand_card.get("combo_flatfooted_damage_taken_multiplier_level_2", 1.28)),
+			"combo_flatfooted_damage_taken_multiplier_level_3": float(hand_card.get("combo_flatfooted_damage_taken_multiplier_level_3", 1.5)),
+			"combo_flatfooted_move_multiplier": float(hand_card.get("combo_flatfooted_move_multiplier", 1.0)),
+			"combo_flatfooted_attack_speed_multiplier": float(hand_card.get("combo_flatfooted_attack_speed_multiplier", 1.0)),
 			"combo_gain": int(hand_card.get("combo_gain", 1)),
 		})

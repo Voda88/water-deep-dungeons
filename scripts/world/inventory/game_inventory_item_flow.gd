@@ -73,6 +73,8 @@ static func default_inventory_items_for_class(game: Node, class_id: String) -> A
 			items.append(make_inventory_item(game, "spellbook", game.INVENTORY_BASE_ORIGIN))
 		game.HERO_CLASS_CLERIC:
 			items.append(make_inventory_item(game, "holy_symbol", game.INVENTORY_BASE_ORIGIN))
+		game.HERO_CLASS_ROGUE:
+			items.append(make_inventory_item(game, "rogue_bandolier", game.INVENTORY_BASE_ORIGIN))
 	return items
 
 static func roll_ground_item_id(game: Node) -> String:
@@ -84,7 +86,10 @@ static func roll_ground_item_id(game: Node) -> String:
 		"whirling_blade",
 		"buckler",
 		"lantern",
-		"medkit",
+		"serpent_venom",
+		"wyvern_toxin",
+		"blacklotus_oil",
+		"rogue_bandolier",
 		"axe",
 		"daggers",
 		"scroll_fireball",

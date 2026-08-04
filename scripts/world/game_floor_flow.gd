@@ -617,7 +617,7 @@ static func advance_wave_recovery(game: Node, delta: float) -> void:
 		started_recovery_now = true
 		for hero in game.heroes:
 			if is_instance_valid(hero):
-				hero.combo_points = 0
+				game.reset_hero_combo(hero)
 		game.save_checkpoint("room_combat_finished", false)
 		game.status_message = "The wave is over. Heroes are recovering."
 		refresh_room_lighting_states(game)

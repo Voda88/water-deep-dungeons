@@ -146,6 +146,15 @@ static func build_hand_card_from_generator(game: Node, hero: Variant, generator:
 		"cast_adjacent_hops": int(card_def.get("cast_adjacent_hops", 0)),
 		"color": card_def.get("color", Color("d7efff")),
 		"backstab_multiplier": float(card_def.get("backstab_multiplier", 1.0)) + float(item_bonus.get("dagger_backstab_bonus", 0.0)),
+		"combo_damage_scale": float(card_def.get("combo_damage_scale", 1.5)),
+		"combo_flatfooted_level_2_threshold": int(card_def.get("combo_flatfooted_level_2_threshold", 2)),
+		"combo_flatfooted_level_3_threshold": int(card_def.get("combo_flatfooted_level_3_threshold", 3)),
+		"combo_flatfooted_duration_level_2": float(card_def.get("combo_flatfooted_duration_level_2", 2.2)),
+		"combo_flatfooted_duration_level_3": float(card_def.get("combo_flatfooted_duration_level_3", 3.8)),
+		"combo_flatfooted_damage_taken_multiplier_level_2": float(card_def.get("combo_flatfooted_damage_taken_multiplier_level_2", 1.28)),
+		"combo_flatfooted_damage_taken_multiplier_level_3": float(card_def.get("combo_flatfooted_damage_taken_multiplier_level_3", 1.5)),
+		"combo_flatfooted_move_multiplier": float(card_def.get("combo_flatfooted_move_multiplier", 1.0)),
+		"combo_flatfooted_attack_speed_multiplier": float(card_def.get("combo_flatfooted_attack_speed_multiplier", 1.0)),
 		"combo_gain": int(card_def.get("combo_gain", 0)),
 		"heal_amount": float(card_def.get("heal_amount", 0.0)),
 		"heal_full": bool(card_def.get("heal_full", false)),
@@ -204,6 +213,15 @@ static func build_passive_combat_payload(game: Node, passive_ability: Dictionary
 		"final_hit_knockback_multiplier": float(card_def.get("final_hit_knockback_multiplier", 1.9)),
 		"color": card_def.get("color", Color("d7efff")),
 		"backstab_multiplier": float(card_def.get("backstab_multiplier", 1.0)) + float(item_bonus.get("dagger_backstab_bonus", 0.0)),
+		"combo_damage_scale": float(card_def.get("combo_damage_scale", 1.5)),
+		"combo_flatfooted_level_2_threshold": int(card_def.get("combo_flatfooted_level_2_threshold", 2)),
+		"combo_flatfooted_level_3_threshold": int(card_def.get("combo_flatfooted_level_3_threshold", 3)),
+		"combo_flatfooted_duration_level_2": float(card_def.get("combo_flatfooted_duration_level_2", 2.2)),
+		"combo_flatfooted_duration_level_3": float(card_def.get("combo_flatfooted_duration_level_3", 3.8)),
+		"combo_flatfooted_damage_taken_multiplier_level_2": float(card_def.get("combo_flatfooted_damage_taken_multiplier_level_2", 1.28)),
+		"combo_flatfooted_damage_taken_multiplier_level_3": float(card_def.get("combo_flatfooted_damage_taken_multiplier_level_3", 1.5)),
+		"combo_flatfooted_move_multiplier": float(card_def.get("combo_flatfooted_move_multiplier", 1.0)),
+		"combo_flatfooted_attack_speed_multiplier": float(card_def.get("combo_flatfooted_attack_speed_multiplier", 1.0)),
 		"combo_gain": int(card_def.get("combo_gain", 0)),
 	}
 
@@ -411,10 +429,13 @@ static func sync_hero_passive_combat_sources(game: Node, hero: Variant, effect_s
 			game.global_item_passive_timers[key] = {
 				"item_uid": int(passive_ability.get("item_uid", -1)),
 				"timer_left": effective_cooldown,
+				"last_wave_triggered": -1,
 			}
 		else:
 			var passive_state: Dictionary = Dictionary(game.global_item_passive_timers.get(key, {})).duplicate(true)
 			passive_state["timer_left"] = minf(float(passive_state.get("timer_left", effective_cooldown)), effective_cooldown)
+			if not passive_state.has("last_wave_triggered"):
+				passive_state["last_wave_triggered"] = -1
 			game.global_item_passive_timers[key] = passive_state
 	var known_item_uids: Dictionary = game.collect_world_item_uids()
 	var stale_keys: Array = []

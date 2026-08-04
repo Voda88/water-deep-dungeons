@@ -402,6 +402,66 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"reaction_default_enabled": true,
 				"color": Color("ffd79c"),
 			}
+		"serpent_venom_card":
+			return {
+				"id": "serpent_venom_card",
+				"name": "Apply Serpent Venom",
+				"target_scope": "same_hero",
+				"phase": "any",
+				"description_lines": ["Coat your weapon", "On hit: applies stacking venom DoT", "Stacks with repeated coatings"],
+				"door_interval": 1,
+				"poison_id": "serpent_venom",
+				"poison_name": "Serpent Venom",
+				"poison_stackable": true,
+				"poison_apply_stacks": 1,
+				"poison_max_stacks": 3,
+				"poison_hit_charges": 9,
+				"poison_dot_damage_per_second": 7.0,
+				"poison_dot_duration": 5.0,
+				"poison_dot_max_stacks": 6,
+				"color": Color("8fe78f"),
+			}
+		"wyvern_toxin_card":
+			return {
+				"id": "wyvern_toxin_card",
+				"name": "Apply Wyvern Toxin",
+				"target_scope": "same_hero",
+				"phase": "any",
+				"description_lines": ["Coat your weapon", "On hit: bonus damage and slowing toxin", "Stacks up to 2 applications"],
+				"door_interval": 1,
+				"poison_id": "wyvern_toxin",
+				"poison_name": "Wyvern Toxin",
+				"poison_stackable": true,
+				"poison_apply_stacks": 1,
+				"poison_max_stacks": 2,
+				"poison_hit_charges": 8,
+				"poison_on_hit_damage_per_stack": 6.0,
+				"poison_slow_duration": 1.8,
+				"poison_slow_move_multiplier": 0.74,
+				"poison_slow_attack_speed_multiplier": 0.8,
+				"color": Color("7ad8ff"),
+			}
+		"blacklotus_oil_card":
+			return {
+				"id": "blacklotus_oil_card",
+				"name": "Apply Black Lotus Oil",
+				"target_scope": "same_hero",
+				"phase": "any",
+				"description_lines": ["Coat your weapon", "On hit: burst flatfooted", "Non-stacking, refreshes duration"],
+				"door_interval": 1,
+				"poison_id": "blacklotus_oil",
+				"poison_name": "Black Lotus Oil",
+				"poison_stackable": false,
+				"poison_apply_stacks": 1,
+				"poison_max_stacks": 1,
+				"poison_hit_charges": 7,
+				"poison_on_hit_damage_per_stack": 4.0,
+				"poison_flatfooted_duration": 3.2,
+				"poison_flatfooted_damage_taken_multiplier": 1.38,
+				"poison_flatfooted_move_multiplier": 0.9,
+				"poison_flatfooted_attack_speed_multiplier": 0.88,
+				"color": Color("cfb7ff"),
+			}
 		"sunpepper_jerky_card":
 			return {
 				"id": "sunpepper_jerky_card",
@@ -460,8 +520,34 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"lifetime": 1.45,
 				"color": Color("d7f0ff"),
 				"backstab_multiplier": 1.75,
+				"combo_damage_scale": 1.5,
 				"combo_gain": 1,
 				"test_cooldown": 1.35,
+			}
+		"rogue_combo_dagger_card":
+			return {
+				"id": "rogue_combo_dagger_card",
+				"name": "Shadow Throw",
+				"target_scope": "same_room",
+				"stamina_cost": 0.0,
+				"base_damage": 16.0,
+				"projectile_count": 1,
+				"spread": 0.0,
+				"speed": 1120.0,
+				"bounces": 1,
+				"lifetime": 1.35,
+				"color": Color("b8dcff"),
+				"backstab_multiplier": 1.9,
+				"combo_damage_scale": 10.0,
+				"combo_flatfooted_level_2_threshold": 2,
+				"combo_flatfooted_level_3_threshold": 3,
+				"combo_flatfooted_duration_level_2": 2.4,
+				"combo_flatfooted_duration_level_3": 4.0,
+				"combo_flatfooted_damage_taken_multiplier_level_2": 1.3,
+				"combo_flatfooted_damage_taken_multiplier_level_3": 1.55,
+				"combo_flatfooted_move_multiplier": 0.85,
+				"combo_flatfooted_attack_speed_multiplier": 0.82,
+				"test_cooldown": 1.1,
 			}
 		_:
 			return {

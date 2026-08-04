@@ -50,6 +50,8 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 			"invulnerability_time_left": hero.invulnerability_time_left,
 			"max_hand_size": hero.max_hand_size,
 			"combo_points": hero.combo_points,
+			"combo_attack_progress": hero.combo_attack_progress,
+			"applied_poisons": hero.applied_poisons.duplicate(true),
 			"hand_cards": hero.hand_cards.duplicate(true),
 			"attack_damage": hero.attack_damage,
 			"defence": hero.defence,
@@ -113,6 +115,15 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 			"hit_enemy_uids": Array(projectile.get("hit_enemy_uids", [])).duplicate(true),
 			"owner_hero_index": int(projectile.get("owner_hero_index", -1)),
 			"backstab_multiplier": float(projectile.get("backstab_multiplier", 1.0)),
+			"combo_damage_scale": float(projectile.get("combo_damage_scale", 1.5)),
+			"combo_flatfooted_level_2_threshold": int(projectile.get("combo_flatfooted_level_2_threshold", 2)),
+			"combo_flatfooted_level_3_threshold": int(projectile.get("combo_flatfooted_level_3_threshold", 3)),
+			"combo_flatfooted_duration_level_2": float(projectile.get("combo_flatfooted_duration_level_2", 2.2)),
+			"combo_flatfooted_duration_level_3": float(projectile.get("combo_flatfooted_duration_level_3", 3.8)),
+			"combo_flatfooted_damage_taken_multiplier_level_2": float(projectile.get("combo_flatfooted_damage_taken_multiplier_level_2", 1.28)),
+			"combo_flatfooted_damage_taken_multiplier_level_3": float(projectile.get("combo_flatfooted_damage_taken_multiplier_level_3", 1.5)),
+			"combo_flatfooted_move_multiplier": float(projectile.get("combo_flatfooted_move_multiplier", 1.0)),
+			"combo_flatfooted_attack_speed_multiplier": float(projectile.get("combo_flatfooted_attack_speed_multiplier", 1.0)),
 			"combo_gain": int(projectile.get("combo_gain", 0)),
 		})
 	var enemy_states: Array = []
@@ -296,6 +307,8 @@ static func apply_hero_snapshots(game: Node, hero_states: Array) -> void:
 		hero.invulnerability_time_left = float(hero_state.get("invulnerability_time_left", hero.invulnerability_time_left))
 		hero.max_hand_size = int(hero_state.get("max_hand_size", hero.max_hand_size))
 		hero.combo_points = int(hero_state.get("combo_points", hero.combo_points))
+		hero.combo_attack_progress = int(hero_state.get("combo_attack_progress", hero.combo_attack_progress))
+		hero.applied_poisons = Array(hero_state.get("applied_poisons", hero.applied_poisons)).duplicate(true)
 		hero.hand_cards = Array(hero_state.get("hand_cards", hero.hand_cards)).duplicate(true)
 		hero.move_speed = float(hero_state.get("move_speed", hero.move_speed))
 		hero.max_health = float(hero_state.get("max_health", hero.max_health))

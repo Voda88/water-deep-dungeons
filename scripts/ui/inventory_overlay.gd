@@ -56,6 +56,10 @@ const ITEM_LEVEL_COLORS: Array[Color] = [
 const ITEM_SYMBOLS: Dictionary = {
 	"axe": "A",
 	"daggers": "D",
+	"rogue_bandolier": "R",
+	"serpent_venom": "V",
+	"wyvern_toxin": "X",
+	"blacklotus_oil": "O",
 	"boots": "B",
 	"whirling_blade": "W",
 	"sunpepper_jerky": "J",
@@ -63,7 +67,6 @@ const ITEM_SYMBOLS: Dictionary = {
 	"tidekelp_roll": "T",
 	"buckler": "K",
 	"lantern": "L",
-	"medkit": "M",
 	"spellbook": "P",
 	"holy_symbol": "H",
 	"scroll_fireball": "1",

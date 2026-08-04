@@ -123,7 +123,7 @@ static func finalize_hero_death(game: Node, hero: Variant, source_label: String)
 		game.opening_origin_room = game.INVALID_ROOM
 		game.opening_hero = null
 		game.opening_timer_left = 0.0
-	hero.combo_points = 0
+	game.reset_hero_combo(hero)
 	hero.clear_orders()
 	hero.begin_death()
 	if hero.hero_index >= 0 and hero.hero_index < game.hero_profiles.size():
@@ -180,6 +180,8 @@ static func advance_pending_melee_attacks(game: Node, delta: float) -> void:
 			if melee_auto_crit:
 				incoming_damage *= 2.0
 			defeated = target.take_damage(incoming_damage, (target.global_position - attacker.global_position).normalized())
+			if game.is_hero_actor(attacker):
+				game.register_hero_enemy_hit(attacker, target, (target.global_position - attacker.global_position).normalized())
 			if game.is_enemy_actor(attacker) and bool(attacker.get_meta("summon_applies_flatfooted", false)) and target.has_method("apply_flatfooted_debuff"):
 				var flatfooted_duration: float = maxf(float(attacker.get_meta("summon_flatfooted_duration", 6.0)), 0.0)
 				if flatfooted_duration > 0.0:
