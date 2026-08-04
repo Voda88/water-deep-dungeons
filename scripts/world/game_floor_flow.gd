@@ -564,8 +564,23 @@ static func advance_wave_recovery(game: Node, delta: float) -> void:
 		if hero.current_health < hero.max_health - 0.05:
 			everyone_full = false
 	if everyone_full:
+		var calm_major_reward: Dictionary = apply_major_module_wave_rewards(game)
+		var calm_door_reward: Dictionary = apply_room_open_rewards_on_wave_defeat(game)
 		game.door_wave_healing_active = false
 		game.status_message = "The wave is over. The heroes recovered."
+		if not calm_door_reward.is_empty():
+			game.status_message += " Door income +%d food, +%d materials, +%d arcana, +%d dust." % [
+				int(calm_door_reward.get("food", 0)),
+				int(calm_door_reward.get("industry", 0)),
+				int(calm_door_reward.get("science", 0)),
+				int(calm_door_reward.get("dust", 0)),
+			]
+		if not calm_major_reward.is_empty():
+			game.status_message += " Major output +%d food, +%d materials, +%d arcana." % [
+				int(calm_major_reward.get("food", 0)),
+				int(calm_major_reward.get("industry", 0)),
+				int(calm_major_reward.get("science", 0)),
+			]
 	game.update_hud()
 
 static func all_floor_doors_opened(game: Node) -> bool:

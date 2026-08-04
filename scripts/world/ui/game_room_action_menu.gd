@@ -258,6 +258,8 @@ static func room_action_button_layout(game: Node) -> Array:
 					"id": action_id,
 					"label": "%s\n%dM" % [game.build_type_label(module_type), cost],
 					"fill": Color(action_spec.get("fill", Color("89f2ff"))),
+					"fill_alpha": 0.42,
+					"highlight_fill_alpha": 0.5,
 				})
 			minor_buttons.append({"id": "submenu_back_build", "label": "Back", "fill": Color("d7dfeb")})
 			return with_spread_angles(minor_buttons, -3.10, -1.52)
@@ -708,12 +710,14 @@ static func draw_room_action_menu(game: Node) -> void:
 			outline_color = Color("8ea9b6") if highlighted else Color("5e6d75")
 		var start_angle: float = float(sector_data.get("start_angle", 0.0))
 		var end_angle: float = float(sector_data.get("end_angle", 0.0))
+		var fill_alpha: float = clampf(float(sector_data.get("fill_alpha", 0.24)), 0.0, 1.0)
+		var highlight_fill_alpha: float = clampf(float(sector_data.get("highlight_fill_alpha", fill_alpha + 0.04)), 0.0, 1.0)
 		var sector_points: PackedVector2Array = room_action_sector_points(game, menu_center_world, sector_inner_radius_world, sector_outer_radius_world, start_angle, end_angle)
-		game.draw_colored_polygon(sector_points, Color(fill, 0.24 if enabled else 0.12))
+		game.draw_colored_polygon(sector_points, Color(fill, fill_alpha if enabled else 0.12))
 		if highlighted:
 			var highlighted_points: PackedVector2Array = room_action_sector_points(game, menu_center_world, sector_inner_radius_world + 10.0 * overlay_scale * game.camera.zoom.x, sector_outer_radius_world - 10.0 * overlay_scale * game.camera.zoom.x, start_angle, end_angle)
 			var highlight_tint: Color = (base_fill if enabled else Color("8ea9b6")).lightened(0.14)
-			game.draw_colored_polygon(highlighted_points, Color(highlight_tint, 0.28 if enabled else 0.18))
+			game.draw_colored_polygon(highlighted_points, Color(highlight_tint, highlight_fill_alpha if enabled else 0.18))
 		game.draw_arc(menu_center_world, sector_outer_radius_world, start_angle, end_angle, 18, outline_color, outline_width, true)
 		game.draw_arc(menu_center_world, sector_inner_radius_world, start_angle, end_angle, 18, outline_color, outline_width * 0.85, true)
 		game.draw_line(menu_center_world + Vector2(cos(start_angle), sin(start_angle)) * sector_inner_radius_world, menu_center_world + Vector2(cos(start_angle), sin(start_angle)) * sector_outer_radius_world, outline_color, outline_width * 0.8, true)
