@@ -264,14 +264,13 @@ static func build_item_defs() -> Dictionary:
 			"short": "LNT",
 			"size": Vector2i(1, 2),
 			"color": Color("ffe38a"),
-			"description_lines": ["Three-use utility light", "Readies beacon oil per door, up to one held", "Beacon oil lights one opened room for the next wave"],
+			"description_lines": ["Reusable utility light", "Readies beacon oil per door, up to one held", "Beacon oil lights one opened room for the next wave"],
 			"tags": ["support", "light"],
-			"max_charges": 3,
 			"synergy_sockets": [
 				{"offset": Vector2i(1, 0), "tag": "support", "bonuses": {"card_charge_mult": 0.85}},
 				{"offset": Vector2i(0, -1), "tag": "food", "bonuses": {"hand_size": 1}},
 			],
-			"hand_card": {"card_id": "lantern_beacon_card", "door_interval": 1, "generation_mode": "door_interval", "max_stored_cards": 1, "consume_item_charges_on_play": 1},
+			"hand_card": {"card_id": "lantern_beacon_card", "door_interval": 1, "generation_mode": "door_interval", "max_stored_cards": 1},
 		},
 		"spellbook": {
 			"name": "Spellbook",

@@ -221,7 +221,7 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"name": "Beacon Oil",
 				"target_scope": "opened_room",
 				"phase": "out_of_combat",
-				"description_lines": ["Light one opened room", "Lasts through the next combat wave", "Consumes 1 lantern charge"],
+				"description_lines": ["Light one opened room", "Lasts through the next combat wave", "Reusable"],
 				"door_interval": 1,
 				"color": Color("ffe38a"),
 			}
