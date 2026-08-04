@@ -175,6 +175,11 @@ static func target_room_for_enemy(game: Node, enemy: Variant) -> Vector2i:
 		game.ENEMY_TYPE_DEMON_D:
 			return game.crystal_room
 		game.ENEMY_TYPE_BAT:
+			var crystal_carrier: Variant = game.crystal_holder
+			if game.hero_is_active(crystal_carrier):
+				return hero_room_for_enemy_targeting(game, crystal_carrier)
+			if game.crystal_ground_room != game.INVALID_ROOM and game.rooms.has(game.crystal_ground_room):
+				return game.crystal_ground_room
 			return game.crystal_room
 		_:
 			return game.crystal_room
@@ -237,6 +242,9 @@ static func enemy_target_position(game: Node, enemy: Variant) -> Vector2:
 		game.ENEMY_TYPE_DEMON_D:
 			return game.crystal_world_position()
 		game.ENEMY_TYPE_BAT:
+			var crystal_carrier: Variant = game.crystal_holder
+			if game.hero_is_active(crystal_carrier):
+				return crystal_carrier.global_position
 			return game.crystal_world_position()
 		_:
 			return game.crystal_world_position()
@@ -786,12 +794,18 @@ static func resolve_enemy_attack(game: Node, enemy: Variant) -> void:
 			else:
 				return
 		game.ENEMY_TYPE_BAT:
-			if enemy.current_room == game.crystal_room:
-				enemy.trigger_attack(game.room_center(game.crystal_room))
+			var crystal_carrier: Variant = game.crystal_holder
+			if game.hero_is_active(crystal_carrier) and hero_is_in_room(game, crystal_carrier, enemy.current_room):
+				enemy.trigger_attack(crystal_carrier.global_position)
+				game.queue_pending_melee_attack(enemy, crystal_carrier, enemy.attack_damage, enemy.melee_impact_delay(), "Bats")
+				game.status_message = "Bats dive at %s." % crystal_carrier.hero_name
+			else:
+				var crystal_target_room: Vector2i = game.crystal_ground_room if game.crystal_ground_room != game.INVALID_ROOM else game.crystal_room
+				if enemy.current_room != crystal_target_room:
+					return
+				enemy.trigger_attack(game.crystal_world_position())
 				apply_enemy_crystal_strike(game, enemy)
 				game.status_message = "Bats dive at the crystal."
-			else:
-				return
 		game.ENEMY_TYPE_GOLEM:
 			if local_target != null and hero_is_in_room(game, local_target, enemy.current_room):
 				enemy.trigger_attack(local_target.global_position)
