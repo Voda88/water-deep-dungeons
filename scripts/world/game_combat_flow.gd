@@ -697,7 +697,43 @@ static func apply_card_projectile_hits(game: Node, projectile: Dictionary) -> vo
 	projectile["pierce"] = max_hits - 1
 	projectile["hit_enemy_uids"] = already_hit
 
+static func room_has_active_sanctuary(game: Node, room_coord: Vector2i) -> bool:
+	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
+		return false
+	return float(game.rooms[room_coord].get("sanctuary_time_left", 0.0)) > 0.0
+
+static func advance_room_sanctuary_effects(game: Node, delta: float) -> void:
+	if delta <= 0.0:
+		return
+	var wave_active: bool = game.wave_in_progress()
+	for room_coord_variant in game.rooms.keys():
+		var room_coord: Vector2i = room_coord_variant
+		var room_data: Dictionary = Dictionary(game.rooms[room_coord])
+		var sanctuary_time_left: float = maxf(float(room_data.get("sanctuary_time_left", 0.0)) - delta, 0.0)
+		if sanctuary_time_left <= 0.0:
+			if float(room_data.get("sanctuary_time_left", 0.0)) > 0.0:
+				room_data["sanctuary_time_left"] = 0.0
+				room_data["sanctuary_duration"] = 0.0
+				room_data["sanctuary_damage_multiplier"] = 1.0
+				room_data["sanctuary_regen_per_second"] = 0.0
+				game.rooms[room_coord] = room_data
+			continue
+		room_data["sanctuary_time_left"] = sanctuary_time_left
+		game.rooms[room_coord] = room_data
+		if not wave_active:
+			continue
+		var regen_rate: float = maxf(float(room_data.get("sanctuary_regen_per_second", 0.0)), 0.0)
+		if regen_rate <= 0.0:
+			continue
+		for hero in game.heroes:
+			if not game.hero_is_active(hero):
+				continue
+			if Vector2i(hero.current_room) != room_coord:
+				continue
+			hero.heal(regen_rate * delta)
+
 static func process_combat(game: Node, delta: float) -> void:
+	advance_room_sanctuary_effects(game, delta)
 	game.advance_pending_melee_attacks(delta)
 	for hero in game.heroes:
 		if not game.hero_is_active(hero):
@@ -1028,8 +1064,9 @@ static func spawn_fire_bolt_projectile(game: Node, origin: Vector2, target: Vari
 static func apply_enemy_ranged_damage_to_hero(game: Node, hero: Variant, damage: float, source_label: String) -> void:
 	if hero == null or not is_instance_valid(hero) or not game.hero_is_active(hero):
 		return
-	var defeated: bool = hero.take_damage(damage, false)
-	if defeated and game.try_auto_cast_fatal_shield(hero, damage):
+	var adjusted_damage: float = game.adjusted_incoming_damage_for_hero(hero, damage)
+	var defeated: bool = hero.take_damage(adjusted_damage, false)
+	if defeated and game.try_auto_cast_fatal_shield(hero, adjusted_damage):
 		return
 	if defeated:
 		game.finalize_hero_death(hero, source_label)

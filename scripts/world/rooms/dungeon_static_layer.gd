@@ -55,7 +55,9 @@ func _sync_room_instances() -> void:
 	for room_coord_variant in game.rooms.keys():
 		var room_coord: Vector2i = room_coord_variant
 		var room: Dictionary = game.rooms[room_coord]
-		if not bool(room.get("opened", false)):
+		var opened: bool = bool(room.get("opened", false))
+		var scry_revealed: bool = bool(room.get("scry_revealed", false))
+		if not opened and not scry_revealed:
 			continue
 		active_rooms[room_coord] = true
 		var scene_path: String = String(room.get("room_scene_path", ""))
@@ -76,6 +78,8 @@ func _sync_room_instances() -> void:
 		instance.position = game.room_center(room_coord)
 		if instance.has_method("apply_room_state"):
 			instance.call("apply_room_state", game, room_coord, room)
+		if instance.has_method("set_scry_revealed"):
+			instance.call("set_scry_revealed", scry_revealed and not opened)
 	for room_coord_variant in room_instances.keys():
 		var room_coord: Vector2i = room_coord_variant
 		if active_rooms.has(room_coord):

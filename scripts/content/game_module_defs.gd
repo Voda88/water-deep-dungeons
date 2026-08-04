@@ -56,7 +56,9 @@ static func normalized_minor_module_levels(source: Dictionary) -> Dictionary:
 		var canonical_key: String = canonical_minor_module_type(String(key_variant))
 		if not normalized.has(canonical_key):
 			continue
-		normalized[canonical_key] = maxi(int(source.get(key_variant, normalized[canonical_key])), int(normalized[canonical_key]))
+		var current_value: int = int(normalized[canonical_key])
+		var source_value: int = int(source[key_variant]) if source.has(key_variant) else current_value
+		normalized[canonical_key] = maxi(source_value, current_value)
 	return normalized
 
 static func normalized_major_module_levels(source: Dictionary) -> Dictionary:
@@ -65,24 +67,28 @@ static func normalized_major_module_levels(source: Dictionary) -> Dictionary:
 		var key: String = String(key_variant)
 		if not normalized.has(key):
 			continue
-		normalized[key] = maxi(int(source.get(key_variant, normalized[key])), int(normalized[key]))
+		var current_value: int = int(normalized[key])
+		var source_value: int = int(source[key_variant]) if source.has(key_variant) else current_value
+		normalized[key] = maxi(source_value, current_value)
 	return normalized
 
 static func minor_module_level(module_type: String, minor_module_levels: Dictionary) -> int:
 	var canonical_type: String = canonical_minor_module_type(module_type)
 	var default_levels: Dictionary = initialized_minor_module_levels()
-	var default_level: int = int(default_levels.get(canonical_type, 0))
+	var default_level: int = int(default_levels[canonical_type]) if default_levels.has(canonical_type) else 0
 	if minor_module_levels.has(canonical_type):
-		return maxi(int(minor_module_levels.get(canonical_type, default_level)), default_level)
+		return maxi(int(minor_module_levels[canonical_type]), default_level)
 	for key_variant in minor_module_levels.keys():
 		var source_key: String = String(key_variant)
 		if canonical_minor_module_type(source_key) != canonical_type:
 			continue
-		return maxi(int(minor_module_levels.get(source_key, default_level)), default_level)
+		return maxi(int(minor_module_levels[source_key]), default_level)
 	return default_level
 
 static func major_module_level(module_type: String, major_module_levels: Dictionary) -> int:
-	return int(major_module_levels.get(module_type, 1))
+	if major_module_levels.has(module_type):
+		return int(major_module_levels[module_type])
+	return 1
 
 static func minor_module_unlocked(module_type: String, minor_module_levels: Dictionary) -> bool:
 	return minor_module_level(module_type, minor_module_levels) > 0

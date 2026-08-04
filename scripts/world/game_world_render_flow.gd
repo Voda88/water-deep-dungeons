@@ -564,13 +564,32 @@ static func draw_room_overlays(game: Node) -> void:
 	var view_rect: Rect2 = current_view_world_rect(game, 160.0)
 	for room_coord_variant in game.rooms.keys():
 		var room_coord: Vector2i = room_coord_variant
-		if not game.rooms[room_coord]["opened"]:
-			continue
 		var room: Dictionary = game.rooms[room_coord]
+		var opened: bool = bool(room.get("opened", false))
+		var scry_revealed: bool = bool(room.get("scry_revealed", false))
+		if not opened and not scry_revealed:
+			continue
 		var rect: Rect2 = game.room_rect(room_coord)
 		if not view_rect.intersects(rect):
 			continue
+		if scry_revealed and not opened:
+			var pulse: float = 0.5 + 0.5 * sin(float(Time.get_ticks_msec()) / 210.0 + float(room_coord.x + room_coord.y) * 0.2)
+			var scry_fill: Color = Color(0.30, 0.68, 0.92, 0.12 + 0.05 * pulse)
+			var scry_outline: Color = Color(0.68, 0.90, 1.0, 0.74)
+			game.draw_rect(rect.grow(-8.0), scry_fill, true)
+			game.draw_rect(rect.grow(-8.0), scry_outline, false, 2.2)
+			var sigil_center: Vector2 = rect.get_center() + Vector2(0.0, -10.0)
+			game.draw_arc(sigil_center, 24.0 + 2.0 * pulse, 0.0, TAU, 36, Color(0.76, 0.94, 1.0, 0.54), 2.2, true)
+			game.draw_string(ThemeDB.fallback_font, rect.position + Vector2(14.0, 22.0), "SCRY", HORIZONTAL_ALIGNMENT_LEFT, 56.0, 12, Color("d8f4ff"))
+			continue
 		var warning_ratio: float = clampf(float(room.get("warning_timer_left", 0.0)) / maxf(game.WAVE_WARNING_DURATION, 0.001), 0.0, 1.0)
+		var sanctuary_ratio: float = clampf(float(room.get("sanctuary_time_left", 0.0)) / maxf(float(room.get("sanctuary_duration", room.get("sanctuary_time_left", 1.0))), 0.001), 0.0, 1.0)
+		if float(room.get("sanctuary_time_left", 0.0)) > 0.0:
+			var aura_pulse: float = 0.5 + 0.5 * sin(float(Time.get_ticks_msec()) / 150.0 + float(room_coord.x - room_coord.y) * 0.33)
+			var aura_inset: float = 10.0 + 5.0 * aura_pulse
+			game.draw_rect(rect.grow(-aura_inset), Color(0.88, 1.0, 0.72, 0.08 + 0.05 * aura_pulse), false, 3.0)
+			var sanctuary_label: String = "Sanctuary %ds" % int(ceil(float(room.get("sanctuary_time_left", 0.0))))
+			game.draw_string(ThemeDB.fallback_font, rect.position + Vector2(12.0, rect.size.y - 12.0), sanctuary_label, HORIZONTAL_ALIGNMENT_LEFT, 118.0, 12, Color(0.93, 1.0, 0.82, 0.78 + 0.18 * sanctuary_ratio))
 		var room_has_hero: bool = false
 		var room_has_selected_hero: bool = false
 		for hero in game.heroes:
@@ -726,9 +745,14 @@ static func room_summary(game: Node, room_coord: Vector2i) -> String:
 	if room_coord == game.crystal_room:
 		var crystal_state: String = "crystal present" if game.crystal_ground_room == game.crystal_room and game.crystal_holder == null else "crystal removed"
 		return "Crystal Chamber, permanently lit, %s" % crystal_state
-	if not game.rooms.has(room_coord) or not game.rooms[room_coord]["opened"]:
+	if not game.rooms.has(room_coord):
 		return "Unknown Chamber"
 	var room: Dictionary = game.rooms[room_coord]
+	if not bool(room.get("opened", false)):
+		if bool(room.get("scry_revealed", false)):
+			var theme_name: String = String(room.get("template_name", "Room"))
+			return "%s, %s, scry-revealed (still sealed)" % [room_title(game, room_coord), theme_name]
+		return "Unknown Chamber"
 	var state: String = "open"
 	if room_coord == game.opening_room:
 		state = "opening"

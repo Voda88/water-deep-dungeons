@@ -169,6 +169,7 @@ static func advance_pending_melee_attacks(game: Node, delta: float) -> void:
 		var incoming_damage: float = float(pending_attack.get("damage", 0.0))
 		var defeated: bool = false
 		if game.is_hero_actor(target):
+			incoming_damage = game.adjusted_incoming_damage_for_hero(target, incoming_damage)
 			defeated = target.take_damage(incoming_damage, false)
 			if defeated and game.try_auto_cast_fatal_shield(target, incoming_damage):
 				continue

@@ -2097,6 +2097,22 @@ func find_enemy_by_uid(enemy_uid: int) -> Variant:
 func find_hero_by_index(hero_index: int) -> Variant:
 	return GAME_ACTOR_COMBAT_FLOW.find_hero_by_index(self, hero_index)
 
+func room_sanctuary_damage_multiplier(room_coord: Vector2i) -> float:
+	if room_coord == INVALID_ROOM or not rooms.has(room_coord):
+		return 1.0
+	var room_data: Dictionary = rooms[room_coord]
+	if float(room_data.get("sanctuary_time_left", 0.0)) <= 0.0:
+		return 1.0
+	return clampf(float(room_data.get("sanctuary_damage_multiplier", 1.0)), 0.35, 1.0)
+
+func hero_incoming_damage_multiplier(hero: Variant) -> float:
+	if hero == null or not is_instance_valid(hero):
+		return 1.0
+	return room_sanctuary_damage_multiplier(Vector2i(hero.current_room))
+
+func adjusted_incoming_damage_for_hero(hero: Variant, base_damage: float) -> float:
+	return maxf(base_damage, 0.0) * hero_incoming_damage_multiplier(hero)
+
 func knockback_actor(actor: Variant, direction: Vector2, impulse_strength: float, recovery_duration: float, room_coord: Vector2i) -> void:
 	GAME_ACTOR_COMBAT_FLOW.knockback_actor(self, actor, direction, impulse_strength, recovery_duration, room_coord)
 

@@ -406,6 +406,7 @@ static func open_room(game: Node, room_coord: Vector2i) -> void:
 	advance_temporary_room_lights(game, 1)
 	var room: Dictionary = game.rooms[room_coord]
 	room["opened"] = true
+	room["scry_revealed"] = false
 	game.opened_rooms += 1
 	game.doors_opened += 1
 	GAME_INVENTORY_ITEM_FLOW.clear_all_merchant_buybacks(game)
@@ -573,10 +574,26 @@ static func pending_door_wave_spawn_count_for_wave_recovery(game: Node) -> int:
 		pending_count += maxi(int(pending_spawn.get("remaining", 0)), 0)
 	return pending_count
 
+static func dismiss_temporary_summons_on_calm(game: Node) -> int:
+	var dismissed_count: int = 0
+	for enemy_variant in game.enemies:
+		if enemy_variant == null or not is_instance_valid(enemy_variant):
+			continue
+		if not game.enemy_is_active(enemy_variant):
+			continue
+		if not enemy_variant.has_meta("temporary_summon"):
+			continue
+		enemy_variant.converted_time_left = 0.0
+		enemy_variant.begin_death()
+		enemy_variant.remove_meta("temporary_summon")
+		dismissed_count += 1
+	return dismissed_count
+
 static func advance_wave_recovery(game: Node, delta: float) -> void:
 	var pending_door_wave_spawns: int = pending_door_wave_spawn_count_for_wave_recovery(game)
 	var active_door_wave_enemies: int = active_hostile_door_wave_enemy_count_for_wave_recovery(game)
 	var calm_now: bool = pending_door_wave_spawns <= 0 and active_door_wave_enemies <= 0
+	var dismissed_summons: int = dismiss_temporary_summons_on_calm(game) if calm_now else 0
 	if calm_now and bool(game.door_wave_spawns_incoming):
 		game.door_wave_spawns_incoming = false
 	var has_pending_room_rewards: bool = not game.pending_door_open_income.is_empty()
@@ -600,6 +617,8 @@ static func advance_wave_recovery(game: Node, delta: float) -> void:
 	if game.door_wave_healing_active:
 		var settled_door_reward: Dictionary = apply_room_open_rewards_on_wave_defeat(game)
 		var settled_major_reward: Dictionary = apply_major_module_wave_rewards(game)
+		if dismissed_summons > 0:
+			game.status_message += " %d summoned unit%s fade as calm returns." % [dismissed_summons, "" if dismissed_summons == 1 else "s"]
 		if not settled_door_reward.is_empty():
 			game.status_message += " Room reward +%d food, +%d materials, +%d arcana, +%d dust." % [
 				int(settled_door_reward.get("food", 0)),

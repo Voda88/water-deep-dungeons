@@ -28,6 +28,7 @@ const TEMPLATE_VISUALS = preload("res://scripts/world/rooms/dungeon_room_templat
 var runtime_game = null
 var runtime_room_coord: Vector2i = Vector2i.ZERO
 var runtime_room: Dictionary = {}
+var runtime_scry_revealed: bool = false
 
 func _ready() -> void:
 	sync_control_input_passthrough()
@@ -37,7 +38,14 @@ func apply_room_state(next_game, room_coord: Vector2i, room_data: Dictionary) ->
 	runtime_game = next_game
 	runtime_room_coord = room_coord
 	runtime_room = room_data.duplicate(true)
+	runtime_scry_revealed = bool(runtime_room.get("scry_revealed", false)) and not bool(runtime_room.get("opened", false))
 	sync_control_input_passthrough()
+	refresh_room_visuals()
+
+func set_scry_revealed(enabled: bool) -> void:
+	if runtime_scry_revealed == enabled:
+		return
+	runtime_scry_revealed = enabled
 	refresh_room_visuals()
 
 func build_template_metadata() -> Dictionary:

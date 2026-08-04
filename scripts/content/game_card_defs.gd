@@ -135,6 +135,19 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"web_duration_max": 12.0,
 				"color": Color("c9f0ff"),
 			}
+		"scry_card":
+			return {
+				"id": "scry_card",
+				"name": "Scry",
+				"spell_class": game.HERO_CLASS_WIZARD,
+				"spell_level": 2,
+				"target_scope": "opened_room",
+				"phase": "out_of_combat",
+				"description_lines": ["Target one discovered room", "Reveal adjacent unopened room contents", "Revealed rooms glow with supernatural light", "Recharges after 2 opened rooms from a slotted spell"],
+				"stamina_cost": 1.0,
+				"door_interval": 2,
+				"color": Color("9ed7ff"),
+			}
 		"shield_card":
 			return {
 				"id": "shield_card",
@@ -189,6 +202,24 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"door_interval": 2,
 				"color": Color("ffb366"),
 			}
+		"summon_arcane_sentinel_card":
+			return {
+				"id": "summon_arcane_sentinel_card",
+				"name": "Summon Arcane Sentinel",
+				"spell_class": game.HERO_CLASS_WIZARD,
+				"spell_level": 2,
+				"target_scope": "opened_room",
+				"requires_line_of_effect": true,
+				"phase": "combat",
+				"description_lines": ["Target one opened room", "Summon a temporary allied construct", "The summon fights like a converted enemy", "It fades when the room becomes calm"],
+				"stamina_cost": 2.0,
+				"cast_adjacent_hops": 1,
+				"summon_enemy_role": game.ENEMY_TYPE_GOLEM,
+				"summon_count": 1,
+				"summon_conversion_duration": 600.0,
+				"door_interval": 2,
+				"color": Color("b8d1ff"),
+			}
 		"lantern_torch_card":
 			return {
 				"id": "lantern_torch_card",
@@ -228,14 +259,34 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"name": "Sanctuary",
 				"spell_class": game.HERO_CLASS_CLERIC,
 				"spell_level": 1,
-				"target_scope": "same_hero",
+				"target_scope": "opened_room",
 				"phase": "combat",
-				"description_lines": ["Gain a brief divine ward", "Recharges after 3 opened rooms from a prepared prayer"],
+				"description_lines": ["Target one opened room", "Blesses the room with Sanctuary", "Heroes inside take reduced damage and regenerate slowly", "Recharges after 2 opened rooms from a prepared prayer"],
 				"stamina_cost": 1.0,
-				"shield_amount": 24.0,
-				"shield_duration": 8.0,
+				"cast_adjacent_hops": 1,
+				"sanctuary_duration": 10.0,
+				"sanctuary_damage_multiplier": 0.78,
+				"sanctuary_regen_per_second": 3.0,
 				"door_interval": 2,
 				"color": Color("e3ff9f"),
+			}
+		"summon_warden_spirit_card":
+			return {
+				"id": "summon_warden_spirit_card",
+				"name": "Summon Warden Spirit",
+				"spell_class": game.HERO_CLASS_CLERIC,
+				"spell_level": 2,
+				"target_scope": "opened_room",
+				"requires_line_of_effect": true,
+				"phase": "combat",
+				"description_lines": ["Target one opened room", "Summon a temporary allied spirit-warden", "The summon fights like a converted enemy", "It fades when the room becomes calm"],
+				"stamina_cost": 2.0,
+				"cast_adjacent_hops": 1,
+				"summon_enemy_role": game.ENEMY_TYPE_ORC_RIDER,
+				"summon_count": 1,
+				"summon_conversion_duration": 600.0,
+				"door_interval": 2,
+				"color": Color("d0ffbe"),
 			}
 		"mend_card":
 			return {

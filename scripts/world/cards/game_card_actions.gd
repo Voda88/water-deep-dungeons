@@ -720,6 +720,28 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			cast_web_spell(game, hero, target_world_position, web_room, hand_card)
 			game.status_message = "%s cast Web." % hero.hero_name
 			return true
+		"scry_card":
+			var anchor_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
+			if anchor_room == game.INVALID_ROOM or not game.rooms.has(anchor_room):
+				return false
+			var revealed_rooms: int = cast_scry_spell(game, hero, anchor_room, hand_card)
+			if revealed_rooms <= 0:
+				game.status_message = "No unopened adjacent rooms to scry from %s." % game.room_title(anchor_room)
+				return false
+			game.status_message = "%s cast Scry and revealed %d adjacent room%s." % [hero.hero_name, revealed_rooms, "" if revealed_rooms == 1 else "s"]
+			return true
+		"summon_arcane_sentinel_card", "summon_warden_spirit_card":
+			if not game.wave_in_progress():
+				game.status_message = "%s can only be cast during combat." % String(hand_card.get("name", "That summon"))
+				return false
+			var summon_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
+			if summon_room == game.INVALID_ROOM or not game.rooms.has(summon_room):
+				return false
+			var summon_count: int = cast_temporary_summon_spell(game, hero, summon_room, hand_card)
+			if summon_count <= 0:
+				return false
+			game.status_message = "%s cast %s in %s." % [hero.hero_name, String(hand_card.get("name", "a summon")), game.room_title(summon_room)]
+			return true
 		"shield_card":
 			cast_shield_spell(game, hero, hand_card)
 			game.status_message = "%s cast Shield." % hero.hero_name
@@ -738,13 +760,11 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			game.status_message = "%s cast Cure Light Wounds." % hero.hero_name
 			return true
 		"sanctuary_card":
-			cast_shield_spell(game, hero, {
-				"shield_amount": float(hand_card.get("shield_amount", 24.0)),
-				"shield_duration": float(hand_card.get("shield_duration", 8.0)),
-				"color": hand_card.get("color", Color("e3ff9f")),
-			})
-			append_timed_effect_projectile(game, "priest_attack_effect", hero.global_position, Color(hand_card.get("color", Color("e3ff9f"))), 0.28, 0.28)
-			game.status_message = "%s invoked Sanctuary." % hero.hero_name
+			var sanctuary_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
+			if sanctuary_room == game.INVALID_ROOM or not game.rooms.has(sanctuary_room):
+				return false
+			cast_sanctuary_spell(game, hero, sanctuary_room, hand_card)
+			game.status_message = "%s invoked Sanctuary in %s." % [hero.hero_name, game.room_title(sanctuary_room)]
 			return true
 		"lightning_bolt_card":
 			var bolt_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
@@ -1197,6 +1217,75 @@ static func cast_web_spell(game: Node, hero: Variant, target_world_position: Vec
 	})
 	game.add_resource_floating_text(web_position, "Web" if rooted_count > 0 else "Miss", Color(hand_card.get("color", Color("c9f0ff"))))
 
+static func cast_scry_spell(game: Node, hero: Variant, anchor_room: Vector2i, hand_card: Dictionary) -> int:
+	if anchor_room == game.INVALID_ROOM or not game.rooms.has(anchor_room):
+		return 0
+	var reveal_count: int = 0
+	for neighbor_variant in Array(game.rooms[anchor_room].get("neighbors", [])):
+		var neighbor_room: Vector2i = Vector2i(neighbor_variant)
+		if not game.rooms.has(neighbor_room):
+			continue
+		var room_data: Dictionary = Dictionary(game.rooms[neighbor_room])
+		if bool(room_data.get("opened", false)) or bool(room_data.get("scry_revealed", false)):
+			continue
+		room_data["scry_revealed"] = true
+		game.rooms[neighbor_room] = room_data
+		reveal_count += 1
+		var reveal_position: Vector2 = game.room_center(neighbor_room)
+		append_timed_effect_projectile(game, "shield_flash", reveal_position, Color(hand_card.get("color", Color("9ed7ff"))), 0.4, 0.4)
+	if reveal_count > 0:
+		hero.trigger_attack(game.room_center(anchor_room), "laser")
+		game.add_resource_floating_text(game.room_center(anchor_room) + Vector2(0.0, -22.0), "Scry +%d" % reveal_count, Color(hand_card.get("color", Color("9ed7ff"))))
+	return reveal_count
+
+static func cast_temporary_summon_spell(game: Node, hero: Variant, target_room: Vector2i, hand_card: Dictionary) -> int:
+	if target_room == game.INVALID_ROOM or not game.rooms.has(target_room):
+		return 0
+	var summon_role: String = String(hand_card.get("summon_enemy_role", game.ENEMY_TYPE_ORC))
+	var summon_count: int = maxi(1, int(hand_card.get("summon_count", 1)))
+	var conversion_duration: float = maxf(float(hand_card.get("summon_conversion_duration", 600.0)), 0.1)
+	var spawned_count: int = 0
+	for _spawn_index in range(summon_count):
+		var next_spawn_uid: int = game.next_enemy_uid
+		game.spawn_wave_enemy(target_room, summon_role)
+		var summoned_enemy: Variant = game.find_enemy_by_uid(next_spawn_uid)
+		if summoned_enemy == null or not is_instance_valid(summoned_enemy):
+			continue
+		if summoned_enemy.has_method("apply_conversion"):
+			summoned_enemy.apply_conversion(conversion_duration)
+		else:
+			summoned_enemy.converted_time_left = maxf(float(summoned_enemy.get("converted_time_left")), conversion_duration)
+		summoned_enemy.set_meta("temporary_summon", true)
+		summoned_enemy.set_meta("summon_owner_hero_index", hero.hero_index)
+		summoned_enemy.set_meta("summon_card_id", String(hand_card.get("id", "")))
+		summoned_enemy.set_meta("spawn_source", "summon_spell")
+		append_timed_effect_projectile(game, "necromancer_attack_effect", summoned_enemy.global_position, Color(hand_card.get("color", Color("b8d1ff"))), 0.36, 0.36)
+		spawned_count += 1
+	if spawned_count > 0:
+		hero.trigger_attack(game.room_center(target_room), "laser")
+		game.add_resource_floating_text(game.room_center(target_room) + Vector2(0.0, -20.0), "Summoned", Color(hand_card.get("color", Color("b8d1ff"))))
+	return spawned_count
+
+static func cast_sanctuary_spell(game: Node, hero: Variant, target_room: Vector2i, hand_card: Dictionary) -> void:
+	if target_room == game.INVALID_ROOM or not game.rooms.has(target_room):
+		return
+	var room_data: Dictionary = Dictionary(game.rooms[target_room])
+	var duration: float = maxf(float(hand_card.get("sanctuary_duration", 10.0)), 0.1)
+	var mitigation: float = clampf(float(hand_card.get("sanctuary_damage_multiplier", 0.78)), 0.35, 1.0)
+	var regen_per_second: float = maxf(float(hand_card.get("sanctuary_regen_per_second", 3.0)), 0.0)
+	room_data["sanctuary_duration"] = maxf(float(room_data.get("sanctuary_duration", 0.0)), duration)
+	room_data["sanctuary_time_left"] = maxf(float(room_data.get("sanctuary_time_left", 0.0)), duration)
+	room_data["sanctuary_damage_multiplier"] = minf(float(room_data.get("sanctuary_damage_multiplier", 1.0)), mitigation)
+	room_data["sanctuary_regen_per_second"] = maxf(float(room_data.get("sanctuary_regen_per_second", 0.0)), regen_per_second)
+	game.rooms[target_room] = room_data
+	var sanctuary_center: Vector2 = game.room_center(target_room)
+	hero.trigger_attack(sanctuary_center, "heal_cast")
+	append_timed_effect_projectile(game, "priest_heal_effect", sanctuary_center, Color(hand_card.get("color", Color("e3ff9f"))), 0.52, 0.52)
+	for room_hero in game.heroes_in_room(target_room):
+		if room_hero == null or not is_instance_valid(room_hero) or room_hero.current_health <= 0.0:
+			continue
+		append_timed_effect_projectile(game, "shield_flash", room_hero.global_position, Color(hand_card.get("color", Color("e3ff9f"))), 0.24, 0.24)
+
 static func cast_shield_spell(game: Node, hero: Variant, hand_card: Dictionary) -> void:
 	var barrier_amount: float = float(hand_card.get("shield_amount", 34.0))
 	var barrier_duration: float = float(hand_card.get("shield_duration", 10.0))
@@ -1260,8 +1349,9 @@ static func try_auto_cast_fatal_shield(game: Node, hero: Variant, incoming_damag
 static func apply_spell_damage_to_hero(game: Node, hero: Variant, damage: float, source_label: String) -> bool:
 	if hero == null or not is_instance_valid(hero):
 		return false
-	var defeated: bool = hero.take_damage(damage, false)
-	if defeated and try_auto_cast_fatal_shield(game, hero, damage):
+	var adjusted_damage: float = game.adjusted_incoming_damage_for_hero(hero, damage)
+	var defeated: bool = hero.take_damage(adjusted_damage, false)
+	if defeated and try_auto_cast_fatal_shield(game, hero, adjusted_damage):
 		return false
 	if defeated:
 		game.finalize_hero_death(hero, source_label)
@@ -1594,7 +1684,7 @@ static func explode_enemy_fireball(game: Node, room_coord: Vector2i, target_posi
 		if hero_distance > impact_radius:
 			continue
 		var distance_ratio: float = 1.0 - clampf(hero_distance / maxf(impact_radius, 0.001), 0.0, 1.0)
-		var applied_damage: float = damage * (0.7 + distance_ratio * 0.3)
+		var applied_damage: float = game.adjusted_incoming_damage_for_hero(hero, damage * (0.7 + distance_ratio * 0.3))
 		var defeated: bool = hero.take_damage(applied_damage, false)
 		if defeated and try_auto_cast_fatal_shield(game, hero, applied_damage):
 			hit_any = true

@@ -91,9 +91,9 @@ static func default_slotted_spells_for_class(class_id: String, card_lookup: Call
 static func implemented_spellbook_spells_for_class(class_id: String) -> Array[String]:
 	match class_id:
 		HERO_CLASS_WIZARD:
-			return ["magic_missile_card", "shield_card", "misty_step_card", "web_card", "scorching_ray_card", "fireball_card", "lightning_bolt_card"]
+			return ["magic_missile_card", "shield_card", "misty_step_card", "web_card", "scry_card", "scorching_ray_card", "summon_arcane_sentinel_card", "fireball_card", "lightning_bolt_card"]
 		HERO_CLASS_CLERIC:
-			return ["cure_light_wounds_card", "sanctuary_card"]
+			return ["cure_light_wounds_card", "sanctuary_card", "summon_warden_spirit_card"]
 		_:
 			return []
 

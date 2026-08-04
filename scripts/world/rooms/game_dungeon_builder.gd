@@ -405,6 +405,11 @@ static func create_room(game: Node, room_coord: Vector2i, template_id: String, d
 		"feature_force_loot": false,
 		"feature_spawn_priority": false,
 		"feature_bonus_resource_event": "",
+		"scry_revealed": false,
+		"sanctuary_time_left": 0.0,
+		"sanctuary_duration": 0.0,
+		"sanctuary_damage_multiplier": 1.0,
+		"sanctuary_regen_per_second": 0.0,
 	}
 	if template_metadata.has("major_slot_normalized"):
 		room_data["major_slot_normalized"] = Vector2(template_metadata["major_slot_normalized"])

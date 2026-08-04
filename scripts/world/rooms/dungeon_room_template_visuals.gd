@@ -157,17 +157,23 @@ static func sync_backdrop_visuals(room: Node) -> void:
 	var palette: Dictionary = room_theme_palette(room, current_theme_id(room), current_lit(room), current_crystal(room))
 	var filter_id: String = current_room_color_filter_id(room)
 	var base_fill: Color = apply_color_filter(Color(palette.get("base_fill", room.PREVIEW_BACKGROUND)), filter_id)
+	var scry_revealed: bool = bool(room.get("runtime_scry_revealed"))
+	if scry_revealed:
+		base_fill = base_fill.lerp(Color("5ea9d7"), 0.42)
 	var backdrop_node: ColorRect = room.get_node_or_null(room.BACKDROP_NODE_PATH)
 	if backdrop_node != null:
-		backdrop_node.color = Color(base_fill.r, base_fill.g, base_fill.b, 0.94)
+		backdrop_node.color = Color(base_fill.r, base_fill.g, base_fill.b, 0.76 if scry_revealed else 0.94)
 	var inner_wall_node: ColorRect = room.get_node_or_null(room.INNER_WALL_NODE_PATH)
 	if inner_wall_node != null:
-		var inner_alpha: float = 0.10 if Engine.is_editor_hint() else 0.0
+		var inner_alpha: float = 0.18 if scry_revealed else (0.10 if Engine.is_editor_hint() else 0.0)
 		inner_wall_node.color = Color(base_fill.r, base_fill.g, base_fill.b, inner_alpha)
 
 static func sync_tilemap_lighting(room: Node) -> void:
 	var lit: bool = current_lit(room)
 	var room_modulate: Color = room_lit_modulate_color(room) if lit else room_dark_modulate_color(room)
+	var scry_revealed: bool = bool(room.get("runtime_scry_revealed"))
+	if scry_revealed:
+		room_modulate = room_modulate.lerp(Color(0.58, 0.86, 1.0, room_modulate.a), 0.38)
 	var dungeon_tilemap: CanvasItem = room.get_node_or_null(room.DUNGEON_TILEMAP_NODE_PATH) as CanvasItem
 	if dungeon_tilemap != null:
 		dungeon_tilemap.modulate = room_modulate
@@ -176,7 +182,10 @@ static func sync_tilemap_lighting(room: Node) -> void:
 		water_tilemap.modulate = room_modulate
 	var door_art_root: CanvasItem = room.get_node_or_null(room.DOOR_ART_ROOT_PATH) as CanvasItem
 	if door_art_root != null:
-		door_art_root.modulate = room_modulate
+		if scry_revealed:
+			door_art_root.modulate = room_modulate.lerp(Color(0.78, 0.94, 1.0, room_modulate.a), 0.45)
+		else:
+			door_art_root.modulate = room_modulate
 
 static func sync_door_art(room: Node) -> void:
 	var door_art_root: Node = room.get_node_or_null(room.DOOR_ART_ROOT_PATH)
