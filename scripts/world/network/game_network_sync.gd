@@ -40,10 +40,6 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 			"player_command_locked": hero.player_command_locked,
 			"current_health": hero.current_health,
 			"max_health": hero.max_health,
-			"stamina": hero.stamina,
-			"max_stamina": hero.max_stamina,
-			"stamina_regen_rate": hero.stamina_regen_rate,
-			"stamina_regen_time_left": hero.stamina_regen_time_left,
 			"barrier_amount": hero.barrier_amount,
 			"barrier_capacity": hero.barrier_capacity,
 			"barrier_time_left": hero.barrier_time_left,
@@ -52,6 +48,13 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 			"combo_points": hero.combo_points,
 			"combo_attack_progress": hero.combo_attack_progress,
 			"combo_decay_time_left": hero.combo_decay_time_left,
+			"food_attack_cooldown_multiplier": hero.food_attack_cooldown_multiplier,
+			"food_attack_speed_time_left": hero.food_attack_speed_time_left,
+			"food_defence_bonus": hero.food_defence_bonus,
+			"food_defence_time_left": hero.food_defence_time_left,
+			"food_move_speed_multiplier": hero.food_move_speed_multiplier,
+			"food_move_speed_time_left": hero.food_move_speed_time_left,
+			"skulking_visual_active": hero.skulking_visual_active,
 			"operate_room": hero.operate_room,
 			"operate_started_at_door": hero.operate_started_at_door,
 			"operate_attuned": hero.operate_attuned,
@@ -179,7 +182,6 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 		"minor_module_levels": game.minor_module_levels.duplicate(true),
 		"major_module_levels": game.major_module_levels.duplicate(true),
 		"active_research": game.active_research.duplicate(true),
-		"stamina_use_enabled": false,
 		"opened_rooms": game.opened_rooms,
 		"wave_index": game.wave_index,
 		"doors_opened": game.doors_opened,
@@ -231,7 +233,6 @@ static func apply_network_snapshot(game: Node, snapshot: Dictionary) -> void:
 	game.minor_module_levels = game.normalized_minor_module_levels(Dictionary(snapshot.get("minor_module_levels", game.initialized_minor_module_levels())).duplicate(true))
 	game.major_module_levels = game.normalized_major_module_levels(Dictionary(snapshot.get("major_module_levels", game.initialized_major_module_levels())).duplicate(true))
 	game.active_research = Dictionary(snapshot.get("active_research", {})).duplicate(true)
-	game.stamina_use_enabled = false
 	game.opened_rooms = int(snapshot.get("opened_rooms", game.opened_rooms))
 	game.wave_index = int(snapshot.get("wave_index", game.wave_index))
 	game.doors_opened = int(snapshot.get("doors_opened", game.doors_opened))
@@ -301,10 +302,6 @@ static func apply_hero_snapshots(game: Node, hero_states: Array) -> void:
 		game.sanitize_hero_spellbook(hero)
 		game.hero_profiles[hero_index]["learned_spells"] = hero.learned_spells.duplicate()
 		game.hero_profiles[hero_index]["slotted_spells"] = hero.slotted_spells.duplicate()
-		hero.stamina = float(hero_state.get("stamina", hero.stamina))
-		hero.max_stamina = float(hero_state.get("max_stamina", hero.max_stamina))
-		hero.stamina_regen_rate = float(hero_state.get("stamina_regen_rate", hero.stamina_regen_rate))
-		hero.stamina_regen_time_left = float(hero_state.get("stamina_regen_time_left", hero.stamina_regen_time_left))
 		hero.barrier_amount = float(hero_state.get("barrier_amount", hero.barrier_amount))
 		hero.barrier_capacity = float(hero_state.get("barrier_capacity", hero.barrier_capacity))
 		hero.barrier_time_left = float(hero_state.get("barrier_time_left", hero.barrier_time_left))
@@ -313,6 +310,13 @@ static func apply_hero_snapshots(game: Node, hero_states: Array) -> void:
 		hero.combo_points = int(hero_state.get("combo_points", hero.combo_points))
 		hero.combo_attack_progress = int(hero_state.get("combo_attack_progress", hero.combo_attack_progress))
 		hero.combo_decay_time_left = float(hero_state.get("combo_decay_time_left", hero.combo_decay_time_left))
+		hero.food_attack_cooldown_multiplier = float(hero_state.get("food_attack_cooldown_multiplier", hero.food_attack_cooldown_multiplier))
+		hero.food_attack_speed_time_left = float(hero_state.get("food_attack_speed_time_left", hero.food_attack_speed_time_left))
+		hero.food_defence_bonus = float(hero_state.get("food_defence_bonus", hero.food_defence_bonus))
+		hero.food_defence_time_left = float(hero_state.get("food_defence_time_left", hero.food_defence_time_left))
+		hero.food_move_speed_multiplier = float(hero_state.get("food_move_speed_multiplier", hero.food_move_speed_multiplier))
+		hero.food_move_speed_time_left = float(hero_state.get("food_move_speed_time_left", hero.food_move_speed_time_left))
+		hero.skulking_visual_active = bool(hero_state.get("skulking_visual_active", hero.skulking_visual_active))
 		hero.operate_room = hero_state.get("operate_room", hero.operate_room)
 		hero.operate_started_at_door = int(hero_state.get("operate_started_at_door", hero.operate_started_at_door))
 		hero.operate_attuned = bool(hero_state.get("operate_attuned", hero.operate_attuned))
@@ -545,14 +549,6 @@ static func server_request_exit_floor(game: Node, hero_index: int) -> void:
 	assign_multiplayer_hero_owners_after_floor_transition(game)
 	game.selected_room = game.crystal_room
 	game.center_camera()
-	game.update_hud()
-	broadcast_network_snapshot(game)
-
-static func server_request_set_stamina_use_enabled(game: Node, _enabled: bool) -> void:
-	if not game.multiplayer.is_server():
-		return
-	game.stamina_use_enabled = false
-	game.status_message = "Stamina has been removed."
 	game.update_hud()
 	broadcast_network_snapshot(game)
 

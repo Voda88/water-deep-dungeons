@@ -13,8 +13,6 @@ static func ui_button_hold_button(game: Node, button_id: String) -> Button:
 	match button_id:
 		"inventory":
 			return game.inventory_button
-		"stamina":
-			return game.stamina_toggle_button
 		"restart":
 			return game.restart_button
 		"lobby_enter":

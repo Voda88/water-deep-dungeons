@@ -75,8 +75,6 @@ static func first_reaction_card_index_for_trigger(game: Node, hero: Variant, tri
 		var hand_card: Dictionary = hero.hand_cards[hand_index]
 		if String(hand_card.get("reaction_trigger", "")) != trigger_id or not bool(hand_card.get("reaction_enabled", false)):
 			continue
-		if trigger_id == "stamina_negative" and String(hand_card.get("card_id", "")) == "emergency_snack_card":
-			continue
 		if not game.hand_card_phase_allows_play(hand_card):
 			continue
 		var nonrenewable_cost: int = reaction_nonrenewable_cost(hand_card)
@@ -129,10 +127,9 @@ static func trigger_first_reaction_card(game: Node, hero: Variant, trigger_id: S
 		return false
 	return play_reaction_card_for_hero_at_index(game, hero, hand_index, trigger_id)
 
-static func spend_hero_stamina_with_reactions(game: Node, hero: Variant, amount: float) -> bool:
+static func can_activate_card_with_reactions(_game: Node, hero: Variant, _activation_cost: float = 0.0) -> bool:
 	if hero == null or not is_instance_valid(hero):
 		return false
-	# Stamina is no longer a gameplay gate for card use.
 	return true
 
 static func cooldown_level_for_generator(game: Node, generator: Dictionary, card_def: Dictionary) -> int:
@@ -939,28 +936,32 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			var ration_heal_percent: float = clampf(float(hand_card.get("heal_percent", 0.4)), 0.0, 1.0)
 			var ration_heal_amount: float = maxf(ration_target.max_health * ration_heal_percent, 1.0)
 			ration_target.heal(ration_heal_amount)
-			var combo_gain: int = maxi(0, int(hand_card.get("combo_gain", 0))) if String(ration_target.hero_class_id) == game.HERO_CLASS_ROGUE else 0
-			if combo_gain > 0:
-				ration_target.combo_points += combo_gain
-			var stamina_before: float = ration_target.stamina
-			var stamina_restore_percent: float = clampf(float(hand_card.get("stamina_restore_percent", 0.0)), 0.0, 1.0)
-			if stamina_restore_percent > 0.0:
-				ration_target.restore_stamina(maxf(ration_target.max_stamina * stamina_restore_percent, 0.0))
 			hero.trigger_attack(ration_target.global_position, "laser")
-			if ration_target.current_health <= previous_ration_health + 0.001:
-				game.status_message = "%s does not need %s right now." % [ration_target.hero_name, String(hand_card.get("name", "that food")).to_lower()]
-				return false
+			var card_def: Dictionary = game.card_definition(String(hand_card.get("card_id", "")))
+			var buff_duration: float = maxf(float(hand_card.get("food_buff_duration", card_def.get("food_buff_duration", 0.0))), 0.0)
 			var ration_healed: int = int(round(maxf(ration_target.current_health - previous_ration_health, 0.0)))
 			var detail_tokens: Array[String] = []
-			if combo_gain > 0:
-				detail_tokens.append("+%d Combo" % combo_gain)
-			var stamina_restored: int = int(round(maxf(ration_target.stamina - stamina_before, 0.0)))
-			if stamina_restored > 0:
-				detail_tokens.append("+%d STA" % stamina_restored)
-			var detail_suffix: String = ""
-			if not detail_tokens.is_empty():
-				detail_suffix = ", %s" % ", ".join(detail_tokens)
-			game.status_message = "%s used %s (+%d HP%s)." % [ration_target.hero_name, String(hand_card.get("name", "an exotic food")).to_lower(), ration_healed, detail_suffix]
+			if buff_duration > 0.0:
+				var attack_cooldown_multiplier: float = clampf(float(hand_card.get("food_attack_cooldown_multiplier", card_def.get("food_attack_cooldown_multiplier", 1.0))), 0.1, 1.0)
+				if attack_cooldown_multiplier < 0.999 and ration_target.has_method("apply_food_attack_speed_buff"):
+					ration_target.apply_food_attack_speed_buff(attack_cooldown_multiplier, buff_duration)
+					detail_tokens.append("Atk Spd")
+				var defence_bonus: float = maxf(float(hand_card.get("food_defence_bonus", card_def.get("food_defence_bonus", 0.0))), 0.0)
+				if defence_bonus > 0.0 and ration_target.has_method("apply_food_defence_buff"):
+					ration_target.apply_food_defence_buff(defence_bonus, buff_duration)
+					detail_tokens.append("Def")
+				var move_speed_multiplier: float = maxf(float(hand_card.get("food_move_speed_multiplier", card_def.get("food_move_speed_multiplier", 1.0))), 1.0)
+				if move_speed_multiplier > 1.001 and ration_target.has_method("apply_food_move_speed_buff"):
+					ration_target.apply_food_move_speed_buff(move_speed_multiplier, buff_duration)
+					detail_tokens.append("Move")
+			if ration_healed <= 0 and detail_tokens.is_empty():
+				game.status_message = "%s does not need %s right now." % [ration_target.hero_name, String(hand_card.get("name", "that food")).to_lower()]
+				return false
+			var effect_tokens: Array[String] = []
+			if ration_healed > 0:
+				effect_tokens.append("+%d HP" % ration_healed)
+			effect_tokens.append_array(detail_tokens)
+			game.status_message = "%s used %s (%s)." % [ration_target.hero_name, String(hand_card.get("name", "an exotic food")).to_lower(), ", ".join(effect_tokens)]
 			return true
 		"dagger_card":
 			spawn_dagger_card_projectiles(game, hero, target_world_position, hand_card)

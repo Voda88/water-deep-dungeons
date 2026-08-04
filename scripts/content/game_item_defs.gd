@@ -190,7 +190,7 @@ static func build_item_defs() -> Dictionary:
 			"short": "SPJ",
 			"size": Vector2i(1, 1),
 			"color": Color("ffb07a"),
-			"description_lines": ["Exotic combat ration", "Auto-triggers on fatal damage", "Restore health and gain combo"],
+			"description_lines": ["Exotic combat ration", "Auto-triggers on fatal damage", "Restore health and boost attack speed"],
 			"tags": ["food", "food_sun", "support"],
 			"hand_cards": [
 				{"card_id": "sunpepper_jerky_card", "generation_mode": "single", "consume_item_on_play": true, "max_stored_cards": 1},
@@ -201,7 +201,7 @@ static func build_item_defs() -> Dictionary:
 			"short": "MTR",
 			"size": Vector2i(1, 1),
 			"color": Color("d8c6ff"),
-			"description_lines": ["Silvery deep-cavern delicacy", "Auto-triggers on fatal damage", "Restore a large chunk of health"],
+			"description_lines": ["Silvery deep-cavern delicacy", "Auto-triggers on fatal damage", "Restore health and boost defence"],
 			"tags": ["food", "food_moon", "support"],
 			"hand_cards": [
 				{"card_id": "moon_truffle_card", "generation_mode": "single", "consume_item_on_play": true, "max_stored_cards": 1},
@@ -212,7 +212,7 @@ static func build_item_defs() -> Dictionary:
 			"short": "TKR",
 			"size": Vector2i(1, 1),
 			"color": Color("84d9d1"),
-			"description_lines": ["Cold-brined abyssal seaweed", "Auto-triggers on fatal damage", "Restore health and stamina"],
+			"description_lines": ["Cold-brined abyssal seaweed", "Auto-triggers on fatal damage", "Restore health and boost movement speed"],
 			"tags": ["food", "food_tide", "support"],
 			"hand_cards": [
 				{"card_id": "tidekelp_roll_card", "generation_mode": "single", "consume_item_on_play": true, "max_stored_cards": 1},

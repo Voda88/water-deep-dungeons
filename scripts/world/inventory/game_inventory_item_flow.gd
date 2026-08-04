@@ -349,13 +349,11 @@ static func empty_inventory_effect_summary(_game: Node) -> Dictionary:
 		"speed": 0.0,
 		"health": 0.0,
 		"attack": 0.0,
-		"stamina": 0.0,
 		"hand_size": 0,
 		"card_damage": 0.0,
 		"projectile_count": 0,
 		"dagger_backstab_bonus": 0.0,
 		"card_charge_mult": 1.0,
-		"stamina_cost_mult": 1.0,
 		"synergies": 0,
 		"card_generators": [],
 		"combat_passives": [],
@@ -368,7 +366,7 @@ static func apply_inventory_effect_bonuses(target: Dictionary, bonus_stats: Dict
 		match bonus_key:
 			"hand_size", "projectile_count":
 				target[bonus_key] = int(target.get(bonus_key, 0)) + int(bonus_stats[bonus_key_variant])
-			"card_charge_mult", "stamina_cost_mult":
+			"card_charge_mult":
 				target[bonus_key] = float(target.get(bonus_key, 1.0)) * float(bonus_stats[bonus_key_variant])
 			_:
 				target[bonus_key] = float(target.get(bonus_key, 0.0)) + float(bonus_stats[bonus_key_variant])

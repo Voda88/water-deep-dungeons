@@ -371,7 +371,7 @@ static func format_ability_metric(_game: Node, value: float) -> String:
 		return str(int(round(value)))
 	return "%.1f" % value
 
-static func ability_detail_text(game: Node, cooldown: float, power_text: String, _stamina_cost: float, extra_text: String = "") -> String:
+static func ability_detail_text(game: Node, cooldown: float, power_text: String, extra_text: String = "") -> String:
 	var detail: String = "CD %ss  Pow %s" % [format_ability_metric(game, cooldown), power_text]
 	if extra_text != "":
 		detail += "  %s" % extra_text
@@ -392,7 +392,7 @@ static func build_inventory_ability_sections(game: Node, hero: Variant) -> Array
 		return sections
 	var class_def: Dictionary = game.hero_class_definition(hero.hero_class_id)
 	var attack_style: String = String(class_def.get("attack_style", hero.preferred_attack_style))
-	var basic_attack_detail: String = ability_detail_text(game, hero.attack_cooldown, format_ability_metric(game, hero.attack_damage), 0.0, "%s %d rng" % ["Melee" if attack_style == "melee" else "Ranged", int(round(hero.attack_range))])
+	var basic_attack_detail: String = ability_detail_text(game, hero.attack_cooldown, format_ability_metric(game, hero.attack_damage), "%s %d rng" % ["Melee" if attack_style == "melee" else "Ranged", int(round(hero.attack_range))])
 	sections.append({
 		"title": "Current",
 		"entries": [{
@@ -413,7 +413,7 @@ static func build_inventory_ability_sections(game: Node, hero: Variant) -> Array
 		var passive_payload: Dictionary = game.build_passive_combat_payload(passive_ability, effect_summary)
 		gear_entries.append({
 			"name": "%s: %s" % [String(item_def.get("name", item_id.capitalize())), String(card_def.get("name", "Passive"))],
-			"detail": ability_detail_text(game, effective_cooldown, ability_power_text(game, String(card_def.get("id", "")), passive_payload), float(passive_payload.get("stamina_cost", 0.0))),
+			"detail": ability_detail_text(game, effective_cooldown, ability_power_text(game, String(card_def.get("id", "")), passive_payload)),
 		})
 	if not gear_entries.is_empty():
 		sections.append({
@@ -482,7 +482,6 @@ static func apply_inventory_stats_to_hero(game: Node, hero: Variant) -> void:
 		float(level_bonuses.get("health", 0.0)) + float(bonuses["health"]),
 		float(level_bonuses.get("attack", 0.0)) + float(bonuses["attack"]),
 		float(level_bonuses.get("defence", 0.0)) + float(bonuses.get("defence", bonuses.get("defense", 0.0))),
-		0.0,
 		int(bonuses.get("hand_size", 0)),
 		int(bonuses["synergies"])
 	)

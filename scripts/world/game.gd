@@ -240,7 +240,6 @@ const CARDINAL_DIRS: Array[Vector2i] = [
 @onready var room_label: Label = $UI/BottomBar/Margin/Panel/VBox/RoomLabel
 @onready var hint_label: Label = $UI/BottomBar/Margin/Panel/VBox/HintLabel
 @onready var inventory_button: Button = $UI/BottomBar/Margin/Panel/VBox/Actions/InventoryButton
-@onready var stamina_toggle_button: Button = $UI/BottomBar/Margin/Panel/VBox/Actions/StaminaToggleButton
 @onready var restart_button: Button = $UI/BottomBar/Margin/Panel/VBox/Actions/RestartButton
 @onready var build_menu: Control = $UI/BuildMenu
 @onready var build_menu_title: Label = $UI/BuildMenu/Panel/VBox/Title
@@ -286,7 +285,6 @@ var dust: int = 24
 var food: int = 10
 var industry: int = 14
 var science: int = 0
-var stamina_use_enabled: bool = false
 var opened_rooms: int = 0
 var wave_index: int = 0
 var doors_opened: int = 0
@@ -399,7 +397,6 @@ func _ready() -> void:
 	setup_multiplayer_callbacks()
 	center_button.pressed.connect(_on_center_button_pressed)
 	inventory_button.pressed.connect(_on_inventory_button_pressed)
-	stamina_toggle_button.toggled.connect(_on_stamina_toggle_button_toggled)
 	turret_button.pressed.connect(_on_turret_button_pressed)
 	food_major_button.pressed.connect(_on_food_major_button_pressed)
 	science_major_button.pressed.connect(_on_science_major_button_pressed)
@@ -444,11 +441,13 @@ func _physics_process(delta: float) -> void:
 		maybe_broadcast_network_snapshot(delta)
 		return
 	advance_room_action_hold(delta)
+	sync_hero_skulking_visual_states()
 	if not authoritative_simulation_active():
 		return
 	update_hero_combat_movement_mode()
 	advance_room_opening(delta)
 	advance_hero_movement()
+	sync_hero_skulking_visual_states()
 	sync_hero_operate_attunement_states()
 	advance_spell_scroll_studies()
 	advance_pending_enemy_spawns(delta)
@@ -458,7 +457,7 @@ func _physics_process(delta: float) -> void:
 	advance_floating_resource_texts(delta)
 	advance_room_constructions(delta)
 	process_combat(delta)
-	advance_hero_stamina_effects(delta)
+	advance_hero_defensive_effects(delta)
 	advance_passive_item_combat_procs(delta)
 	process_modules(delta)
 	cleanup_enemies()
@@ -550,6 +549,21 @@ func hero_operate_wit(hero: Variant) -> int:
 
 func hero_has_skulker(hero: Variant) -> bool:
 	return GAME_HERO_DEFS.hero_has_skulker(hero)
+
+func sync_hero_skulking_visual_states() -> void:
+	for hero_variant in heroes:
+		var hero: Variant = hero_variant
+		if hero == null or not is_instance_valid(hero):
+			continue
+		var skulking_active_now: bool = false
+		if hero_is_active(hero) and hero_has_skulker(hero) and hero.pending_room == HERO_INVALID_ROOM:
+			var hero_room: Vector2i = Vector2i(hero.current_room)
+			if rooms.has(hero_room):
+				var room: Dictionary = rooms[hero_room]
+				skulking_active_now = bool(room.get("opened", false)) and not bool(room.get("lit", true)) and room_rect(hero_room).has_point(hero.global_position)
+		if bool(hero.skulking_visual_active) != skulking_active_now:
+			hero.skulking_visual_active = skulking_active_now
+			hero.queue_redraw()
 
 func default_hero_class_for_slot(hero_index: int) -> String:
 	return GAME_HERO_DEFS.default_hero_class_for_slot(hero_index, HERO_CLASS_ORDER)
@@ -1131,8 +1145,8 @@ func build_inventory_stat_lines(hero: Variant, items: Array) -> Array[String]:
 func format_ability_metric(value: float) -> String:
 	return GAME_HERO_PROGRESSION_FLOW.format_ability_metric(self, value)
 
-func ability_detail_text(cooldown: float, power_text: String, stamina_cost: float, extra_text: String = "") -> String:
-	return GAME_HERO_PROGRESSION_FLOW.ability_detail_text(self, cooldown, power_text, stamina_cost, extra_text)
+func ability_detail_text(cooldown: float, power_text: String, extra_text: String = "") -> String:
+	return GAME_HERO_PROGRESSION_FLOW.ability_detail_text(self, cooldown, power_text, extra_text)
 
 func ability_power_text(card_id: String, payload: Dictionary) -> String:
 	return GAME_HERO_PROGRESSION_FLOW.ability_power_text(self, card_id, payload)
@@ -1956,7 +1970,7 @@ func advance_passive_item_combat_procs(delta: float) -> void:
 				if room_target == null:
 					continue
 				var once_payload: Dictionary = build_passive_combat_payload(passive_ability, effect_summary)
-				if not spend_hero_stamina_with_reactions(hero, float(once_payload.get("stamina_cost", 0.0))):
+				if not can_activate_card_with_reactions(hero):
 					continue
 				match String(once_payload.get("card_id", "")):
 					"dagger_card", "rogue_combo_dagger_card":
@@ -1973,7 +1987,7 @@ func advance_passive_item_combat_procs(delta: float) -> void:
 			if timer_left > 0.0 or room_target == null:
 				continue
 			var passive_payload: Dictionary = build_passive_combat_payload(passive_ability, effect_summary)
-			if not spend_hero_stamina_with_reactions(hero, float(passive_payload.get("stamina_cost", 0.0))):
+			if not can_activate_card_with_reactions(hero):
 				continue
 			match String(passive_payload.get("card_id", "")):
 				"dagger_card", "rogue_combo_dagger_card":
@@ -1983,7 +1997,7 @@ func advance_passive_item_combat_procs(delta: float) -> void:
 			passive_state["timer_left"] = effective_cooldown
 			global_item_passive_timers[key] = passive_state
 
-func advance_hero_stamina_effects(delta: float) -> void:
+func advance_hero_defensive_effects(delta: float) -> void:
 	if delta <= 0.0:
 		return
 	for hero in heroes:
@@ -2016,8 +2030,8 @@ func play_reaction_card_for_hero_at_index(hero: Variant, hand_index: int) -> boo
 func trigger_first_reaction_card(hero: Variant, trigger_id: String) -> bool:
 	return GAME_CARD_ACTIONS.trigger_first_reaction_card(self, hero, trigger_id)
 
-func spend_hero_stamina_with_reactions(hero: Variant, amount: float) -> bool:
-	return GAME_CARD_ACTIONS.spend_hero_stamina_with_reactions(self, hero, amount)
+func can_activate_card_with_reactions(hero: Variant, activation_cost: float = 0.0) -> bool:
+	return GAME_CARD_ACTIONS.can_activate_card_with_reactions(self, hero, activation_cost)
 
 func commit_hand_state(hero_index: int, hand_state: Array) -> void:
 	GAME_CARD_ACTIONS.commit_hand_state(self, hero_index, hand_state)
@@ -2306,9 +2320,6 @@ func server_request_exit_floor(hero_index: int) -> void:
 	GAME_NETWORK_SYNC.server_request_exit_floor(self, hero_index)
 
 @rpc("any_peer", "call_remote", "reliable")
-func server_request_set_stamina_use_enabled(enabled: bool) -> void:
-	GAME_NETWORK_SYNC.server_request_set_stamina_use_enabled(self, enabled)
-
 func assign_multiplayer_hero_owners_after_floor_transition() -> void:
 	GAME_NETWORK_SYNC.assign_multiplayer_hero_owners_after_floor_transition(self)
 
@@ -2842,13 +2853,6 @@ func _on_inventory_button_pressed() -> void:
 	close_merchant_overlay()
 	open_hero_inventory(hero)
 	status_message = "Inventory open for %s." % hero.hero_name
-	update_hud()
-
-func _on_stamina_toggle_button_toggled(enabled: bool) -> void:
-	stamina_use_enabled = false
-	if stamina_toggle_button != null:
-		stamina_toggle_button.set_pressed_no_signal(false)
-	status_message = "Stamina has been removed."
 	update_hud()
 
 func _on_center_button_pressed() -> void:

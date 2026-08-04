@@ -980,7 +980,7 @@ static func process_combat(game: Node, delta: float) -> void:
 			hero.trigger_attack(melee_target.global_position, hero.preferred_attack_style)
 			note_hero_combo_attack(game, hero)
 			game.queue_pending_melee_attack(hero, melee_target, hero.attack_damage, hero.melee_impact_delay(), hero.hero_name)
-			hero.cooldown_left = hero.attack_cooldown
+			hero.cooldown_left = hero.current_attack_cooldown()
 			continue
 		var hero_target: Variant = nearest_enemy_in_room(game, hero.current_room, hero.global_position, hero.attack_range)
 		if hero_target != null:
@@ -1004,7 +1004,7 @@ static func process_combat(game: Node, delta: float) -> void:
 				})
 			else:
 				spawn_laser_projectile(game, hero.global_position, hero_target, hero.attack_damage, Color("ffe48a"), 5.5, 1220.0)
-			hero.cooldown_left = hero.attack_cooldown
+			hero.cooldown_left = hero.current_attack_cooldown()
 	for hero in game.heroes:
 		if not game.hero_is_active(hero):
 			continue

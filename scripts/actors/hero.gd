@@ -53,7 +53,6 @@ static var hero_sprite_frames_cache: Dictionary = {}
 @export var combat_move_speed_multiplier: float = 0.72
 @export var crystal_carry_speed_multiplier: float = 0.4
 @export var max_health: float = 100.0
-@export var max_stamina: float = 5.0
 @export var attack_damage: float = 20.0
 @export var defence: float = 0.0
 @export var attack_range: float = 150.0
@@ -72,7 +71,6 @@ var hero_class_id: String = "fighter"
 var level: int = 1
 var base_move_speed: float = 0.0
 var base_max_health: float = 0.0
-var base_max_stamina: float = 0.0
 var base_attack_damage: float = 0.0
 var base_defence: float = 0.0
 var base_attack_range: float = 0.0
@@ -85,7 +83,6 @@ var pack_modules: Array = []
 var inventory_items: Array = []
 var synergy_count: int = 0
 var current_health: float = 0.0
-var stamina: float = 0.0
 var cooldown_left: float = 0.0
 var current_room: Vector2i = Vector2i.ZERO
 var pending_room: Vector2i = INVALID_ROOM
@@ -105,6 +102,13 @@ var max_hand_size: int = 4
 var combo_points: int = 0
 var combo_attack_progress: int = 0
 var combo_decay_time_left: float = 0.0
+var food_attack_cooldown_multiplier: float = 1.0
+var food_attack_speed_time_left: float = 0.0
+var food_defence_bonus: float = 0.0
+var food_defence_time_left: float = 0.0
+var food_move_speed_multiplier: float = 1.0
+var food_move_speed_time_left: float = 0.0
+var skulking_visual_active: bool = false
 var operate_room: Vector2i = INVALID_ROOM
 var operate_started_at_door: int = -1
 var operate_attuned: bool = false
@@ -112,8 +116,6 @@ var applied_poisons: Array = []
 var hand_cards: Array = []
 var card_generation_timers: Dictionary = {}
 var passive_combat_timers: Dictionary = {}
-var stamina_regen_rate: float = 0.0
-var stamina_regen_time_left: float = 0.0
 var barrier_amount: float = 0.0
 var barrier_capacity: float = 0.0
 var barrier_time_left: float = 0.0
@@ -144,14 +146,12 @@ var evasive_roll_spin_speed: float = 0.0
 func _ready() -> void:
 	base_move_speed = move_speed
 	base_max_health = max_health
-	base_max_stamina = max_stamina
 	base_attack_damage = attack_damage
 	base_defence = defence
 	base_attack_range = attack_range
 	base_attack_cooldown = attack_cooldown
 	base_max_hand_size = max_hand_size
 	current_health = max_health
-	stamina = max_stamina
 	destination = global_position
 	ensure_sprite_setup()
 	if animated_sprite != null and not animated_sprite.animation_finished.is_connected(_on_animated_sprite_animation_finished):
@@ -227,10 +227,23 @@ func ensure_sprite_setup() -> void:
 func sprite_tint_for_class() -> Color:
 	return Color.WHITE
 
+func active_food_buff_tint() -> Color:
+	var tint: Color = Color.WHITE
+	var pulse: float = 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.012)
+	if food_attack_speed_time_left > 0.0:
+		tint = tint.lerp(Color(1.0, 0.74, 0.56, 1.0), 0.18 + 0.10 * pulse)
+	if food_defence_time_left > 0.0:
+		tint = tint.lerp(Color(0.68, 0.84, 1.0, 1.0), 0.18 + 0.10 * pulse)
+	if food_move_speed_time_left > 0.0:
+		tint = tint.lerp(Color(0.62, 1.0, 0.82, 1.0), 0.18 + 0.10 * pulse)
+	return tint
+
 func apply_sprite_tint() -> void:
 	if animated_sprite == null:
 		return
-	animated_sprite.modulate = sprite_tint_for_class()
+	var base_tint: Color = sprite_tint_for_class()
+	var buff_tint: Color = active_food_buff_tint()
+	animated_sprite.modulate = Color(base_tint.r * buff_tint.r, base_tint.g * buff_tint.g, base_tint.b * buff_tint.b, base_tint.a)
 
 func desired_sprite_animation(move_offset: Vector2) -> String:
 	if dead_started:
@@ -265,7 +278,7 @@ func animation_speed_scale_for(animation_name: String) -> float:
 			if animated_sprite != null and animated_sprite.sprite_frames != null and animated_sprite.sprite_frames.has_animation(animation_name):
 				var frame_count: int = animated_sprite.sprite_frames.get_frame_count(animation_name)
 				var fps: float = animated_sprite.sprite_frames.get_animation_speed(animation_name)
-				var minimum_scale: float = float(frame_count) / maxf(fps * maxf(attack_cooldown, 0.001), 0.001)
+				var minimum_scale: float = float(frame_count) / maxf(fps * maxf(current_attack_cooldown(), 0.001), 0.001)
 				return maxf(base_scale, minimum_scale)
 			return base_scale
 		_:
@@ -431,11 +444,61 @@ func clamp_to_knockback_bounds() -> void:
 
 func mitigated_damage_by_defence(attack_power: float) -> float:
 	var safe_attack_power: float = maxf(attack_power, 0.0)
-	var safe_defence: float = maxf(defence, 0.0)
+	var safe_defence: float = maxf(defence + (food_defence_bonus if food_defence_time_left > 0.0 else 0.0), 0.0)
 	if safe_attack_power <= 0.0 or safe_defence <= 0.0:
 		return safe_attack_power
 	var mitigation_ratio: float = safe_defence / (safe_defence + 100.0)
 	return safe_attack_power * (1.0 - mitigation_ratio)
+
+func current_attack_cooldown() -> float:
+	var cooldown_multiplier: float = food_attack_cooldown_multiplier if food_attack_speed_time_left > 0.0 else 1.0
+	return maxf(attack_cooldown * maxf(cooldown_multiplier, 0.1), 0.08)
+
+func apply_food_attack_speed_buff(cooldown_multiplier: float, duration: float) -> void:
+	if duration <= 0.0 or cooldown_multiplier <= 0.0:
+		return
+	food_attack_cooldown_multiplier = minf(food_attack_cooldown_multiplier, cooldown_multiplier)
+	food_attack_speed_time_left = maxf(food_attack_speed_time_left, duration)
+	apply_sprite_tint()
+	queue_redraw()
+
+func apply_food_defence_buff(defence_bonus: float, duration: float) -> void:
+	if duration <= 0.0 or defence_bonus <= 0.0:
+		return
+	food_defence_bonus = maxf(food_defence_bonus, defence_bonus)
+	food_defence_time_left = maxf(food_defence_time_left, duration)
+	apply_sprite_tint()
+	queue_redraw()
+
+func apply_food_move_speed_buff(speed_multiplier: float, duration: float) -> void:
+	if duration <= 0.0 or speed_multiplier <= 1.0:
+		return
+	food_move_speed_multiplier = maxf(food_move_speed_multiplier, speed_multiplier)
+	food_move_speed_time_left = maxf(food_move_speed_time_left, duration)
+	apply_sprite_tint()
+	queue_redraw()
+
+func advance_food_buffs(delta: float) -> void:
+	if delta <= 0.0:
+		return
+	var changed: bool = false
+	if food_attack_speed_time_left > 0.0:
+		food_attack_speed_time_left = maxf(food_attack_speed_time_left - delta, 0.0)
+		changed = true
+		if food_attack_speed_time_left <= 0.0:
+			food_attack_cooldown_multiplier = 1.0
+	if food_defence_time_left > 0.0:
+		food_defence_time_left = maxf(food_defence_time_left - delta, 0.0)
+		changed = true
+		if food_defence_time_left <= 0.0:
+			food_defence_bonus = 0.0
+	if food_move_speed_time_left > 0.0:
+		food_move_speed_time_left = maxf(food_move_speed_time_left - delta, 0.0)
+		changed = true
+		if food_move_speed_time_left <= 0.0:
+			food_move_speed_multiplier = 1.0
+	if changed:
+		apply_sprite_tint()
 
 func take_damage(amount: float, allow_lethal_death: bool = true) -> bool:
 	if dead_started:
@@ -460,40 +523,6 @@ func take_damage(amount: float, allow_lethal_death: bool = true) -> bool:
 
 func restore_health() -> void:
 	current_health = max_health
-	queue_redraw()
-
-func refill_stamina() -> void:
-	stamina = max_stamina
-	queue_redraw()
-
-func can_use_stamina_cost(amount: float) -> bool:
-	return amount <= 0.0 or stamina >= -0.001
-
-func spend_stamina(amount: float) -> bool:
-	if amount <= 0.0:
-		return true
-	if not can_use_stamina_cost(amount):
-		return false
-	stamina = clampf(stamina - amount, -maxf(max_stamina, 1.0), max_stamina)
-	queue_redraw()
-	return true
-
-func restore_stamina(amount: float) -> void:
-	if amount <= 0.0:
-		return
-	stamina = clampf(stamina + amount, -maxf(max_stamina, 1.0), max_stamina)
-	queue_redraw()
-
-func apply_stamina_regen_buff(rate: float, duration: float) -> void:
-	if duration <= 0.0 or rate <= 0.0:
-		return
-	stamina_regen_rate = maxf(stamina_regen_rate, rate)
-	stamina_regen_time_left = maxf(stamina_regen_time_left, duration)
-	queue_redraw()
-
-func clear_stamina_regen_buff() -> void:
-	stamina_regen_rate = 0.0
-	stamina_regen_time_left = 0.0
 	queue_redraw()
 
 func apply_barrier(amount: float, duration: float) -> void:
@@ -569,12 +598,10 @@ func heal(amount: float) -> bool:
 		queue_redraw()
 	return current_health >= max_health
 
-func apply_inventory_stats(move_bonus: float, health_bonus: float, attack_bonus: float, defence_bonus: float, stamina_bonus: float, hand_bonus: int, next_synergy_count: int) -> void:
+func apply_inventory_stats(move_bonus: float, health_bonus: float, attack_bonus: float, defence_bonus: float, _hand_bonus: int, next_synergy_count: int) -> void:
 	move_speed = base_move_speed + move_bonus
 	var previous_max_health: float = max_health
 	max_health = base_max_health + health_bonus
-	var previous_max_stamina: float = max_stamina
-	max_stamina = base_max_stamina + stamina_bonus
 	attack_damage = base_attack_damage + attack_bonus
 	defence = maxf(base_defence + defence_bonus, 0.0)
 	max_hand_size = UNLIMITED_HAND_SIZE
@@ -583,16 +610,16 @@ func apply_inventory_stats(move_bonus: float, health_bonus: float, attack_bonus:
 		current_health = max_health
 	else:
 		current_health = clampf(current_health + (max_health - previous_max_health), 1.0, max_health)
-	if previous_max_stamina <= 0.001:
-		stamina = max_stamina
-	else:
-		stamina = clampf(stamina + (max_stamina - previous_max_stamina), -maxf(max_stamina, 1.0), max_stamina)
 	combo_points = maxi(combo_points, 0)
 	combo_attack_progress = maxi(combo_attack_progress, 0)
 	combo_decay_time_left = maxf(combo_decay_time_left, 0.0)
+	food_attack_speed_time_left = maxf(food_attack_speed_time_left, 0.0)
+	food_defence_time_left = maxf(food_defence_time_left, 0.0)
+	food_move_speed_time_left = maxf(food_move_speed_time_left, 0.0)
 	if operate_attuned and operate_room == INVALID_ROOM:
 		operate_attuned = false
 	operate_started_at_door = maxi(operate_started_at_door, -1)
+	apply_sprite_tint()
 	queue_redraw()
 
 func trigger_attack(target_position: Vector2, style: String = "laser") -> void:
@@ -633,14 +660,12 @@ func configure_archetype(class_id: String, display_name: String, next_move_speed
 	core_color = next_core_color
 	base_move_speed = next_move_speed
 	base_max_health = next_max_health
-	base_max_stamina = max_stamina
 	base_attack_damage = next_attack_damage
 	base_defence = defence
 	base_attack_range = next_attack_range
 	base_attack_cooldown = next_attack_cooldown
 	base_max_hand_size = max_hand_size
 	current_health = clampf(current_health if current_health > 0.0 else max_health, 1.0, max_health)
-	stamina = clampf(stamina if stamina > 0.0 else max_stamina, 0.0, max_stamina)
 	ensure_sprite_setup()
 	apply_sprite_tint()
 	update_sprite_state(destination - global_position)
@@ -654,6 +679,8 @@ func set_calm_movement_multiplier(multiplier: float) -> void:
 
 func movement_speed() -> float:
 	var speed: float = move_speed * (combat_move_speed_multiplier if combat_movement_mode else calm_move_speed_multiplier)
+	if food_move_speed_time_left > 0.0:
+		speed *= maxf(food_move_speed_multiplier, 1.0)
 	if evasive_roll_time_left > 0.0:
 		speed *= maxf(evasive_roll_speed_multiplier, 1.0)
 	if carrying_crystal:
@@ -689,6 +716,8 @@ func is_idle() -> bool:
 func _physics_process(delta: float) -> void:
 	if permanently_hidden_dead:
 		return
+	advance_food_buffs(delta)
+	apply_sprite_tint()
 	if dead_started:
 		var corpse_impulse: Vector2 = advance_knockback(delta)
 		velocity = corpse_impulse
@@ -755,6 +784,16 @@ func _draw() -> void:
 		var shimmer: float = 0.55 + 0.45 * sin(Time.get_ticks_msec() * 0.018)
 		draw_arc(Vector2.ZERO, 27.0, 0.0, TAU, 44, Color(0.96, 0.98, 1.0, 0.56 + shimmer * 0.30), 3.2, true)
 		draw_circle(Vector2.ZERO, 22.0, Color(0.75, 0.9, 1.0, 0.12 + shimmer * 0.08))
+	if skulking_visual_active:
+		var skulker_time: float = float(Time.get_ticks_msec()) * 0.0035
+		for particle_index in range(9):
+			var angle: float = skulker_time + float(particle_index) * (TAU / 9.0)
+			var radial_pulse: float = 0.5 + 0.5 * sin(skulker_time * 2.2 + float(particle_index) * 0.7)
+			var radius: float = 12.0 + radial_pulse * 10.0
+			var particle_position: Vector2 = Vector2(cos(angle), sin(angle) * 0.65) * radius + Vector2(0.0, -4.0)
+			var particle_size: float = 1.3 + 1.1 * radial_pulse
+			draw_circle(particle_position, particle_size, Color(0.70, 0.86, 1.0, 0.28 + 0.26 * radial_pulse))
+		draw_arc(Vector2(0.0, -4.0), 20.0 + 2.0 * (0.5 + 0.5 * sin(skulker_time * 1.7)), 0.0, TAU, 30, Color(0.78, 0.9, 1.0, 0.34), 1.4, true)
 	if operate_room != INVALID_ROOM:
 		var head_center: Vector2 = Vector2(0.0, -52.0)
 		var pulse: float = 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.016)

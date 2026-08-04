@@ -163,13 +163,6 @@ size_flags_horizontal = 4
 theme_override_font_sizes/font_size = 20
 text = "Inventory"
 
-[node name="StaminaToggleButton" type="CheckBox" parent="UI/BottomBar/Margin/Panel/VBox/Actions"]
-custom_minimum_size = Vector2(0, 64)
-layout_mode = 2
-size_flags_horizontal = 4
-theme_override_font_sizes/font_size = 20
-text = "Stamina On"
-
 [node name="RestartButton" type="Button" parent="UI/BottomBar/Margin/Panel/VBox/Actions"]
 custom_minimum_size = Vector2(0, 64)
 layout_mode = 2
