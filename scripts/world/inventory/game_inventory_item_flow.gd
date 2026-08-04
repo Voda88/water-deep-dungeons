@@ -33,8 +33,12 @@ static func normalize_item_instance(game: Node, item_variant: Variant) -> Dictio
 	if not item.has("uid"):
 		item["uid"] = game.next_item_uid
 		game.next_item_uid += 1
-	if item_def.has("max_charges") and not item.has("charges_left"):
-		item["charges_left"] = int(item_def.get("max_charges", 0))
+	if item_def.has("max_charges"):
+		var max_charges: int = maxi(0, int(item_def.get("max_charges", 0)))
+		if not item.has("charges_left"):
+			item["charges_left"] = max_charges
+		else:
+			item["charges_left"] = clampi(int(item.get("charges_left", max_charges)), 0, max_charges)
 	if not item.has("item_level"):
 		item["item_level"] = inferred_level
 	else:
@@ -71,16 +75,16 @@ static func default_inventory_items_for_class(game: Node, class_id: String) -> A
 	match class_id:
 		game.HERO_CLASS_WIZARD:
 			items.append(make_inventory_item(game, "spellbook", base_anchor))
-			items.append(make_inventory_item(game, "wizard_emergency_snack", base_anchor + Vector2i(1, 0)))
+			items.append(make_inventory_item(game, "rogue_emergency_snack", base_anchor + Vector2i(1, 0)))
 			items.append(make_inventory_item(game, "arcana_conduit", base_anchor + Vector2i(1, 1)))
 		game.HERO_CLASS_CLERIC:
 			items.append(make_inventory_item(game, "holy_symbol", base_anchor))
-			items.append(make_inventory_item(game, "cleric_emergency_snack", base_anchor + Vector2i(1, 0)))
+			items.append(make_inventory_item(game, "rogue_emergency_snack", base_anchor + Vector2i(1, 0)))
 		game.HERO_CLASS_ROGUE:
 			items.append(make_inventory_item(game, "rogue_bandolier", base_anchor))
 			items.append(make_inventory_item(game, "rogue_emergency_snack", base_anchor + Vector2i(0, 1)))
 		_:
-			items.append(make_inventory_item(game, "fighter_emergency_snack", base_anchor))
+			items.append(make_inventory_item(game, "rogue_emergency_snack", base_anchor))
 	return items
 
 static func roll_ground_item_id(game: Node) -> String:
@@ -95,6 +99,7 @@ static func roll_ground_item_id(game: Node) -> String:
 		"serpent_venom",
 		"wyvern_toxin",
 		"blacklotus_oil",
+		"cloak_of_shadows",
 		"rogue_bandolier",
 		"axe",
 		"daggers",

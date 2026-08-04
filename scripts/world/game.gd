@@ -548,6 +548,10 @@ func hero_operate_wit(hero: Variant) -> int:
 	return GAME_HERO_DEFS.hero_operate_wit(hero)
 
 func hero_has_skulker(hero: Variant) -> bool:
+	if hero == null or not is_instance_valid(hero):
+		return false
+	if int(hero.temporary_skulker_until_doors_opened) > int(doors_opened):
+		return true
 	return GAME_HERO_DEFS.hero_has_skulker(hero)
 
 func sync_hero_skulking_visual_states() -> void:

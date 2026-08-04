@@ -54,6 +54,7 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 			"food_defence_time_left": hero.food_defence_time_left,
 			"food_move_speed_multiplier": hero.food_move_speed_multiplier,
 			"food_move_speed_time_left": hero.food_move_speed_time_left,
+			"temporary_skulker_until_doors_opened": hero.temporary_skulker_until_doors_opened,
 			"skulking_visual_active": hero.skulking_visual_active,
 			"operate_room": hero.operate_room,
 			"operate_started_at_door": hero.operate_started_at_door,
@@ -320,6 +321,7 @@ static func apply_hero_snapshots(game: Node, hero_states: Array) -> void:
 		hero.food_defence_time_left = float(hero_state.get("food_defence_time_left", hero.food_defence_time_left))
 		hero.food_move_speed_multiplier = float(hero_state.get("food_move_speed_multiplier", hero.food_move_speed_multiplier))
 		hero.food_move_speed_time_left = float(hero_state.get("food_move_speed_time_left", hero.food_move_speed_time_left))
+		hero.temporary_skulker_until_doors_opened = int(hero_state.get("temporary_skulker_until_doors_opened", hero.temporary_skulker_until_doors_opened))
 		hero.skulking_visual_active = bool(hero_state.get("skulking_visual_active", hero.skulking_visual_active))
 		hero.operate_room = hero_state.get("operate_room", hero.operate_room)
 		hero.operate_started_at_door = int(hero_state.get("operate_started_at_door", hero.operate_started_at_door))

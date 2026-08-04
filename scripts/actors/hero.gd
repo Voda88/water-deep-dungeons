@@ -108,6 +108,7 @@ var food_defence_bonus: float = 0.0
 var food_defence_time_left: float = 0.0
 var food_move_speed_multiplier: float = 1.0
 var food_move_speed_time_left: float = 0.0
+var temporary_skulker_until_doors_opened: int = 0
 var skulking_visual_active: bool = false
 var operate_room: Vector2i = INVALID_ROOM
 var operate_started_at_door: int = -1

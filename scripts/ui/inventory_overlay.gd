@@ -57,6 +57,7 @@ const ITEM_SYMBOLS: Dictionary = {
 	"axe": "A",
 	"daggers": "D",
 	"ricochet_dagger": "G",
+	"cloak_of_shadows": "S",
 	"rogue_bandolier": "R",
 	"fighter_emergency_snack": "F",
 	"cleric_emergency_snack": "C",

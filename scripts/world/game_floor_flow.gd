@@ -113,8 +113,22 @@ static func apply_wave_torch_light_to_room(game: Node, room_coord: Vector2i) -> 
 	refresh_room_lighting_states(game)
 	return true
 
-static func apply_portable_item_effects_on_door_open(_game: Node) -> void:
-	return
+static func apply_portable_item_effects_on_door_open(game: Node) -> void:
+	for hero_variant in game.heroes:
+		var hero: Variant = hero_variant
+		if hero == null or not is_instance_valid(hero):
+			continue
+		var kept_poisons: Array = []
+		for poison_variant in Array(hero.applied_poisons):
+			var poison_state: Dictionary = Dictionary(poison_variant).duplicate(true)
+			var expires_on_doors_opened: int = int(poison_state.get("expires_on_doors_opened", -1))
+			if expires_on_doors_opened >= 0 and game.doors_opened >= expires_on_doors_opened:
+				continue
+			kept_poisons.append(poison_state)
+		hero.applied_poisons = kept_poisons
+		if int(hero.temporary_skulker_until_doors_opened) > 0 and game.doors_opened >= int(hero.temporary_skulker_until_doors_opened):
+			hero.temporary_skulker_until_doors_opened = 0
+	game.sync_hero_skulking_visual_states()
 
 static func crystal_dust_damage_for_enemy(game: Node, enemy: Variant) -> float:
 	if enemy == null or not is_instance_valid(enemy):

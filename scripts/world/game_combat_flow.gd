@@ -91,6 +91,7 @@ static func apply_poison_coating_to_hero(_game: Node, hero: Variant, coating: Di
 	var incoming_stacks: int = maxi(1, int(coating.get("stacks", 1)))
 	var max_stacks: int = maxi(1, int(coating.get("max_stacks", 1)))
 	var incoming_hits: int = int(coating.get("remaining_hits", 8))
+	var incoming_expires_on_doors_opened: int = int(coating.get("expires_on_doors_opened", -1))
 	var merged: Dictionary = coating.duplicate(true)
 	if existing_index >= 0:
 		var existing: Dictionary = Dictionary(applied[existing_index])
@@ -98,10 +99,14 @@ static func apply_poison_coating_to_hero(_game: Node, hero: Variant, coating: Di
 		var next_stacks: int = min(existing_stacks + incoming_stacks, max_stacks) if stackable else max(existing_stacks, incoming_stacks)
 		merged["stacks"] = next_stacks
 		merged["remaining_hits"] = maxi(int(existing.get("remaining_hits", incoming_hits)), incoming_hits)
+		if incoming_expires_on_doors_opened >= 0:
+			merged["expires_on_doors_opened"] = maxi(int(existing.get("expires_on_doors_opened", -1)), incoming_expires_on_doors_opened)
 		applied[existing_index] = merged
 	else:
 		merged["stacks"] = min(incoming_stacks, max_stacks)
 		merged["remaining_hits"] = incoming_hits
+		if incoming_expires_on_doors_opened >= 0:
+			merged["expires_on_doors_opened"] = incoming_expires_on_doors_opened
 		applied.append(merged)
 	hero.applied_poisons = applied
 	return {
@@ -109,6 +114,7 @@ static func apply_poison_coating_to_hero(_game: Node, hero: Variant, coating: Di
 		"name": String(merged.get("name", poison_id.capitalize())),
 		"stacks": int(merged.get("stacks", 1)),
 		"remaining_hits": int(merged.get("remaining_hits", 0)),
+		"expires_on_doors_opened": int(merged.get("expires_on_doors_opened", -1)),
 	}
 
 static func apply_enemy_poison_instance_from_hit(_game: Node, enemy: Variant, poison_state: Dictionary) -> void:
@@ -144,6 +150,9 @@ static func register_hero_enemy_hit(game: Node, hero: Variant, enemy: Variant, i
 	var updated_poisons: Array = []
 	for poison_variant in Array(hero.applied_poisons):
 		var poison_state: Dictionary = Dictionary(poison_variant).duplicate(true)
+		var expires_on_doors_opened: int = int(poison_state.get("expires_on_doors_opened", -1))
+		if expires_on_doors_opened >= 0 and game.doors_opened >= expires_on_doors_opened:
+			continue
 		var stacks: int = maxi(1, int(poison_state.get("stacks", 1)))
 		var hit_damage: float = maxf(float(poison_state.get("on_hit_damage_per_stack", 0.0)), 0.0) * float(stacks)
 		if game.enemy_is_active(enemy) and hit_damage > 0.0:
@@ -165,6 +174,9 @@ static func register_hero_enemy_hit(game: Node, hero: Variant, enemy: Variant, i
 					clampf(float(poison_state.get("flatfooted_attack_speed_multiplier", 1.0)), 0.0, 1.0),
 					maxf(float(poison_state.get("flatfooted_damage_taken_multiplier", 1.3)), 1.0)
 				)
+		if expires_on_doors_opened >= 0:
+			updated_poisons.append(poison_state)
+			continue
 		var remaining_hits: int = int(poison_state.get("remaining_hits", -1))
 		if remaining_hits > 0:
 			remaining_hits -= 1
@@ -895,6 +907,8 @@ static func apply_card_projectile_hits(game: Node, projectile: Dictionary) -> vo
 						"impact_radius": maxf(float(projectile.get("bounce_explosion_impact_radius", projectile.get("impact_radius", 92.0))), 12.0),
 						"damage": damage * maxf(float(projectile.get("bounce_explosion_damage_multiplier", 1.0)), 0.0),
 						"color": projectile.get("color", Color("ffd7a6")),
+						"owner_hero_index": owner_index,
+						"apply_owner_on_hit_effects": true,
 						"source_label": "%s's Ricochet Dagger" % (owner_hero.hero_name if owner_hero != null and is_instance_valid(owner_hero) else "Rogue"),
 					}
 					if combo_level >= 3:

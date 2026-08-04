@@ -877,11 +877,22 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			var spent_arcana: int = int(reset_result.get("total_cost", 0))
 			game.status_message = "%s spent %d arcana to refresh %d cooldown%s." % [hero.hero_name, spent_arcana, refresh_count, "" if refresh_count == 1 else "s"]
 			return true
+		"cloak_of_shadows_card":
+			var cloak_target: Variant = target_data.get("hero", hero)
+			if cloak_target == null or not is_instance_valid(cloak_target):
+				return false
+			var cloak_duration_doors: int = maxi(1, int(hand_card.get("skulker_duration_doors", 1)))
+			cloak_target.temporary_skulker_until_doors_opened = maxi(int(cloak_target.temporary_skulker_until_doors_opened), game.doors_opened + cloak_duration_doors)
+			hero.trigger_attack(cloak_target.global_position, "laser")
+			game.sync_hero_skulking_visual_states()
+			game.status_message = "%s wrapped %s in shadow for 1 turn." % [hero.hero_name, cloak_target.hero_name]
+			return true
 		"serpent_venom_card", "wyvern_toxin_card", "blacklotus_oil_card":
 			var poison_target: Variant = target_data.get("hero", hero)
 			if poison_target == null or not is_instance_valid(poison_target):
 				return false
 			var poison_def: Dictionary = game.card_definition(String(hand_card.get("card_id", "")))
+			var poison_turn_duration_doors: int = maxi(1, int(poison_def.get("poison_turn_duration_doors", 1)))
 			var poison_payload: Dictionary = {
 				"poison_id": String(poison_def.get("poison_id", hand_card.get("card_id", ""))),
 				"name": String(poison_def.get("poison_name", hand_card.get("name", "Poison"))),
@@ -889,6 +900,8 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 				"stacks": maxi(1, int(poison_def.get("poison_apply_stacks", 1))),
 				"max_stacks": maxi(1, int(poison_def.get("poison_max_stacks", 1))),
 				"remaining_hits": int(poison_def.get("poison_hit_charges", 8)),
+				"expires_on_doors_opened": game.doors_opened + poison_turn_duration_doors,
+				"physical_only": bool(poison_def.get("poison_physical_only", true)),
 				"on_hit_damage_per_stack": maxf(float(poison_def.get("poison_on_hit_damage_per_stack", 0.0)), 0.0),
 				"dot_damage_per_second": maxf(float(poison_def.get("poison_dot_damage_per_second", 0.0)), 0.0),
 				"dot_duration": maxf(float(poison_def.get("poison_dot_duration", 0.0)), 0.0),
@@ -905,7 +918,7 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			if applied_poison.is_empty():
 				return false
 			hero.trigger_attack(poison_target.global_position, "laser")
-			game.status_message = "%s coated %s with %s (x%d, %d hits)." % [hero.hero_name, poison_target.hero_name, String(applied_poison.get("name", "poison")), int(applied_poison.get("stacks", 1)), int(applied_poison.get("remaining_hits", 0))]
+			game.status_message = "%s coated %s with %s for 1 turn (all physical attacks)." % [hero.hero_name, poison_target.hero_name, String(applied_poison.get("name", "poison"))]
 			return true
 		"emergency_snack_card":
 			var snack_target: Variant = target_data.get("hero", hero)
@@ -1243,6 +1256,7 @@ static func apply_whirling_blade_sweep_damage(game: Node, hero: Variant, from_ro
 		if impact_direction == Vector2.ZERO:
 			impact_direction = Vector2.RIGHT
 		enemy.take_damage(damage, impact_direction)
+		game.register_hero_enemy_hit(hero, enemy, impact_direction)
 		game.knockback_actor(enemy, impact_direction, knockback_force, knockback_duration, enemy.current_room)
 		hit_count += 1
 	if hit_count > 0:
@@ -1318,6 +1332,7 @@ static func cast_shield_bash(game: Node, hero: Variant, target_world_position: V
 			if acos(arc_dot) > half_arc_radians:
 				continue
 		enemy.take_damage(damage, impact_direction)
+		game.register_hero_enemy_hit(hero, enemy, impact_direction)
 		game.knockback_actor(enemy, impact_direction, knockback_force, knockback_duration, target_room)
 		if slow_duration > 0.0:
 			if enemy.has_method("apply_flatfooted_debuff"):
@@ -1945,6 +1960,12 @@ static func explode_fireball_projectile(game: Node, projectile: Dictionary) -> v
 	var combo_flatfooted_move_multiplier: float = clampf(float(projectile.get("combo_flatfooted_move_multiplier", 1.0)), 0.0, 1.0)
 	var combo_flatfooted_attack_speed_multiplier: float = clampf(float(projectile.get("combo_flatfooted_attack_speed_multiplier", 1.0)), 0.0, 1.0)
 	var combo_flatfooted_damage_taken_multiplier: float = maxf(float(projectile.get("combo_flatfooted_damage_taken_multiplier", 1.5)), 1.0)
+	var apply_owner_on_hit_effects: bool = bool(projectile.get("apply_owner_on_hit_effects", false))
+	var owner_hero: Variant = null
+	if apply_owner_on_hit_effects:
+		var owner_index: int = int(projectile.get("owner_hero_index", -1))
+		if owner_index >= 0 and owner_index < game.heroes.size():
+			owner_hero = game.heroes[owner_index]
 	var hit_any: bool = false
 	var source_label: String = String(projectile.get("source_label", "Fireball"))
 	for enemy in game.enemies:
@@ -1958,6 +1979,8 @@ static func explode_fireball_projectile(game: Node, projectile: Dictionary) -> v
 		if push_direction == Vector2.ZERO:
 			push_direction = Vector2.RIGHT
 		enemy.take_damage(damage, push_direction)
+		if owner_hero != null and is_instance_valid(owner_hero):
+			game.register_hero_enemy_hit(owner_hero, enemy, push_direction)
 		if apply_combo_flatfooted and combo_flatfooted_duration > 0.0 and enemy.has_method("apply_flatfooted_debuff"):
 			enemy.apply_flatfooted_debuff(
 				combo_flatfooted_duration,
