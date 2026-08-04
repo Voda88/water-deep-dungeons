@@ -23,6 +23,9 @@ static func ensure_hero_select_toggle_button(game: Node) -> void:
 	game.hero_select_toggle_button.text = "Lobby"
 	game.hero_select_toggle_button.add_theme_font_size_override("font_size", 16)
 	game.hero_select_toggle_button.pressed.connect(game._on_hero_select_toggle_button_pressed)
+	game.hero_select_toggle_button.button_down.connect(game._on_ui_button_hold_down.bind("lobby_enter"))
+	game.hero_select_toggle_button.button_up.connect(game._on_ui_button_hold_up.bind("lobby_enter"))
+	game.hero_select_toggle_button.mouse_exited.connect(game._on_ui_button_hold_cancel.bind("lobby_enter"))
 	hbox.add_child(game.hero_select_toggle_button)
 	hbox.move_child(game.hero_select_toggle_button, max(hbox.get_child_count() - 2, 0))
 

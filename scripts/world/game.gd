@@ -210,6 +210,7 @@ const CARD_HAND_RETURN_DURATION: float = 0.18
 const CARD_HAND_TAP_DISTANCE: float = 18.0
 const UI_BUTTON_HOLD_DURATION: float = 0.3
 const UI_RESTART_HOLD_DURATION: float = 1.0
+const UI_LOBBY_ENTER_HOLD_DURATION: float = 2.0
 const CARDINAL_DIRS: Array[Vector2i] = [
 	Vector2i.LEFT,
 	Vector2i.RIGHT,
@@ -617,7 +618,17 @@ func set_hero_select_overlay_visible(visible: bool) -> void:
 func update_hero_select_overlay() -> void:
 	GAME_MULTIPLAYER_LOBBY.update_hero_select_overlay(self)
 
+func should_require_lobby_enter_hold() -> bool:
+	return lobby_game_started and (hero_select_overlay == null or not hero_select_overlay.visible)
+
 func _on_hero_select_toggle_button_pressed() -> void:
+	if should_require_lobby_enter_hold():
+		status_message = "Hold Lobby for 2s to return."
+		update_hud()
+		return
+	GAME_MULTIPLAYER_LOBBY.on_hero_select_toggle_button_pressed(self)
+
+func _on_hero_select_toggle_button_hold_completed() -> void:
 	GAME_MULTIPLAYER_LOBBY.on_hero_select_toggle_button_pressed(self)
 
 func _on_hero_select_card_pressed(hero_index: int) -> void:

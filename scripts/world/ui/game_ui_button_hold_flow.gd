@@ -4,6 +4,8 @@ static func ui_button_hold_duration(game: Node, button_id: String) -> float:
 	match button_id:
 		"restart":
 			return game.UI_RESTART_HOLD_DURATION
+		"lobby_enter":
+			return game.UI_LOBBY_ENTER_HOLD_DURATION
 		_:
 			return game.UI_BUTTON_HOLD_DURATION
 
@@ -15,6 +17,8 @@ static func ui_button_hold_button(game: Node, button_id: String) -> Button:
 			return game.stamina_toggle_button
 		"restart":
 			return game.restart_button
+		"lobby_enter":
+			return game.hero_select_toggle_button
 		_:
 			return null
 
@@ -67,3 +71,5 @@ static func trigger_ui_button_hold_action(game: Node, button_id: String) -> void
 	match button_id:
 		"restart":
 			game._on_restart_button_pressed()
+		"lobby_enter":
+			game._on_hero_select_toggle_button_hold_completed()

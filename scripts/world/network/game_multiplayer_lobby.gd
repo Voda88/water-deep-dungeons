@@ -191,7 +191,12 @@ static func update_network_ui(game: Node) -> void:
 	if game.network_disconnect_button != null:
 		game.network_disconnect_button.disabled = not active
 	if game.hero_select_toggle_button != null:
-		game.hero_select_toggle_button.text = "Close" if game.hero_select_overlay != null and game.hero_select_overlay.visible else "Lobby"
+		var overlay_visible: bool = game.hero_select_overlay != null and game.hero_select_overlay.visible
+		var base_toggle_text: String = "Close" if overlay_visible else "Lobby"
+		if not overlay_visible and game.should_require_lobby_enter_hold():
+			game.hero_select_toggle_button.text = game.hold_button_text(base_toggle_text, "lobby_enter")
+		else:
+			game.hero_select_toggle_button.text = base_toggle_text
 		game.hero_select_toggle_button.visible = game.lobby_game_started or (game.hero_select_overlay != null and game.hero_select_overlay.visible)
 	update_hero_select_overlay(game)
 
@@ -209,7 +214,10 @@ static func set_hero_select_overlay_visible(game: Node, visible: bool) -> void:
 		game.clear_build_mode()
 	game.hero_select_overlay.visible = visible
 	if game.hero_select_toggle_button != null:
-		game.hero_select_toggle_button.text = "Close" if visible else "Lobby"
+		if not visible and game.should_require_lobby_enter_hold():
+			game.hero_select_toggle_button.text = game.hold_button_text("Lobby", "lobby_enter")
+		else:
+			game.hero_select_toggle_button.text = "Close" if visible else "Lobby"
 	update_hero_select_overlay(game)
 	game.update_hud()
 
