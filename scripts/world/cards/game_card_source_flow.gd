@@ -104,6 +104,7 @@ static func build_hand_card_from_generator(game: Node, hero: Variant, generator:
 	var effective_interval: int = generator_effective_door_interval(game, generator, card_def, item_bonus)
 	var hand_card: Dictionary = {
 		"uid": game.next_card_uid,
+		"id": card_id,
 		"card_id": card_id,
 		"name": String(generator.get("name_override", card_def.get("name", "Card"))),
 		"item_uid": int(generator.get("item_uid", -1)),
@@ -167,6 +168,18 @@ static func build_hand_card_from_generator(game: Node, hero: Variant, generator:
 		"reaction_enabled": reaction_enabled,
 		"reaction_priority": int(card_def.get("reaction_priority", 0)),
 		"auto_cast_on_fatal": bool(card_def.get("auto_cast_on_fatal", false)),
+		"summon_enemy_role": String(card_def.get("summon_enemy_role", "")),
+		"summon_enemy_roles": Array(card_def.get("summon_enemy_roles", [])).duplicate(true),
+		"summon_count": int(card_def.get("summon_count", 1)),
+		"summon_attack_damage_override": float(card_def.get("summon_attack_damage_override", 0.0)),
+		"summon_behavior": String(card_def.get("summon_behavior", "")),
+		"summon_applies_flatfooted": bool(card_def.get("summon_applies_flatfooted", false)),
+		"summon_flatfooted_duration": float(card_def.get("summon_flatfooted_duration", 6.0)),
+		"summon_flatfooted_move_multiplier": float(card_def.get("summon_flatfooted_move_multiplier", 0.0)),
+		"summon_flatfooted_attack_speed_multiplier": float(card_def.get("summon_flatfooted_attack_speed_multiplier", 0.0)),
+		"summon_flatfooted_damage_taken_multiplier": float(card_def.get("summon_flatfooted_damage_taken_multiplier", 1.5)),
+		"summon_source_label": String(card_def.get("summon_source_label", "A summoned ally")),
+		"summon_conversion_duration": float(card_def.get("summon_conversion_duration", 600.0)),
 	}
 	game.next_card_uid += 1
 	return hand_card

@@ -134,12 +134,29 @@ static func spell_focus_item_uid_for_hero(game: Node, hero: Variant) -> int:
 static func hero_can_prepare_spell(game: Node, hero: Variant, spell_id: String) -> bool:
 	if hero == null or not is_instance_valid(hero):
 		return false
-	if spell_id == "" or game.spell_class_id(spell_id) != String(hero.hero_class_id):
+	if spell_id == "" or not game.spell_is_available_to_class(spell_id, String(hero.hero_class_id)):
 		return false
 	var required_level: int = game.spell_level(spell_id)
 	if required_level <= 0:
 		return false
 	return required_level <= game.hero_max_spell_level_for_class_level(String(hero.hero_class_id), int(hero.level))
+
+static func class_spells_available_for_level(game: Node, class_id: String, level_value: int) -> Array[String]:
+	var available_spells: Array[String] = []
+	if class_id == "":
+		return available_spells
+	var max_spell_level: int = game.hero_max_spell_level_for_class_level(class_id, level_value)
+	for spell_variant in game.implemented_spellbook_spells_for_class(class_id):
+		var spell_id: String = String(spell_variant)
+		if spell_id == "" or available_spells.has(spell_id):
+			continue
+		if not game.spell_is_available_to_class(spell_id, class_id):
+			continue
+		var required_level: int = game.spell_level(spell_id)
+		if required_level <= 0 or required_level > max_spell_level:
+			continue
+		available_spells.append(spell_id)
+	return available_spells
 
 static func hero_spell_repertoire_editable(game: Node, hero: Variant) -> bool:
 	return hero != null and is_instance_valid(hero) and hero_supports_spell_repertoire(game, hero)
@@ -232,6 +249,7 @@ static func sanitize_hero_spellbook(game: Node, hero: Variant) -> void:
 		hero.learned_spells.clear()
 		hero.slotted_spells.clear()
 		hero.active_floor_spells.clear()
+		hero.pending_item_fusions.clear()
 		hero.studying_spell_id = ""
 		hero.studying_room = game.INVALID_ROOM
 		hero.studying_started_at_door = -1
@@ -240,10 +258,12 @@ static func sanitize_hero_spellbook(game: Node, hero: Variant) -> void:
 	var cleaned_known: Array[String] = []
 	for spell_variant in hero.learned_spells:
 		var spell_id: String = String(spell_variant)
-		if spell_id == "" or known_map.has(spell_id) or game.spell_class_id(spell_id) != String(hero.hero_class_id):
+		if spell_id == "" or known_map.has(spell_id) or not game.spell_is_available_to_class(spell_id, String(hero.hero_class_id)):
 			continue
 		known_map[spell_id] = true
 		cleaned_known.append(spell_id)
+	if String(hero.hero_class_id) == game.HERO_CLASS_CLERIC:
+		cleaned_known = class_spells_available_for_level(game, String(hero.hero_class_id), int(hero.level))
 	if cleaned_known.is_empty():
 		cleaned_known = game.default_learned_spells_for_class(hero.hero_class_id).duplicate()
 	hero.learned_spells = cleaned_known

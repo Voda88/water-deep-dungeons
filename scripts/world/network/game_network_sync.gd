@@ -69,6 +69,7 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 			"learned_spells": hero.learned_spells.duplicate(),
 			"slotted_spells": hero.slotted_spells.duplicate(),
 			"active_floor_spells": hero.active_floor_spells.duplicate(),
+			"pending_item_fusions": hero.pending_item_fusions.duplicate(true),
 			"studying_spell_id": hero.studying_spell_id,
 			"studying_room": hero.studying_room,
 			"studying_started_at_door": hero.studying_started_at_door,
@@ -277,6 +278,7 @@ static func apply_hero_snapshots(game: Node, hero_states: Array) -> void:
 		hero.learned_spells = Array(hero_state.get("learned_spells", hero.learned_spells)).duplicate()
 		hero.slotted_spells = Array(hero_state.get("slotted_spells", hero.slotted_spells)).duplicate()
 		hero.active_floor_spells = Array(hero_state.get("active_floor_spells", hero.active_floor_spells)).duplicate()
+		hero.pending_item_fusions = Array(hero_state.get("pending_item_fusions", hero.pending_item_fusions)).duplicate(true)
 		hero.studying_spell_id = String(hero_state.get("studying_spell_id", hero.studying_spell_id))
 		hero.studying_room = hero_state.get("studying_room", hero.studying_room)
 		hero.studying_started_at_door = int(hero_state.get("studying_started_at_door", hero.studying_started_at_door))

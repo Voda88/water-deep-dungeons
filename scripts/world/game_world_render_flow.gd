@@ -166,12 +166,12 @@ static func draw_active_hand_card_target_preview(game: Node) -> void:
 		var target_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
 		if target_room != game.INVALID_ROOM and game.rooms.has(target_room):
 			var projectile_card_preview: bool = card_uses_projectile_target_indicator(card_id)
-			var shield_bash_preview: bool = card_id == "shield_bash_card"
+			var cone_sector_preview: bool = card_id == "shield_bash_card" or card_id == "fear_card"
 			var room_highlight_rect: Rect2 = game.room_rect(target_room).grow(-8.0)
 			game.draw_rect(room_highlight_rect, fill_color, true)
 			game.draw_rect(room_highlight_rect, outline_color, false, 4.0)
 			var target_position: Vector2 = Vector2(preview.get("world_position", game.room_center(target_room)))
-			if shield_bash_preview:
+			if cone_sector_preview:
 				draw_shield_bash_sector_indicator(game, preview, target_position, fill_color, outline_color)
 			else:
 				var indicator_radius: float = clampf(float(card_preview.get("impact_radius", card_preview.get("radius", 28.0))), 22.0, 86.0)
@@ -189,13 +189,16 @@ static func draw_active_hand_card_target_preview(game: Node) -> void:
 					var bounce_count: int = maxi(0, int(card_preview.get("bounce_count", 2)))
 					var bolt_points: Array = game.build_lightning_bolt_points(preview_hero.global_position, target_position, target_room, bounce_count)
 					if bolt_points.size() >= 2:
+						var preview_pulse: float = 0.5 + 0.5 * sin(float(Time.get_ticks_msec()) / 65.0)
+						var outer_width: float = 9.5 + preview_pulse * 4.0
+						var core_width: float = 4.6 + preview_pulse * 1.8
 						for point_index in range(1, bolt_points.size()):
 							var segment_start: Vector2 = Vector2(bolt_points[point_index - 1])
 							var segment_end: Vector2 = Vector2(bolt_points[point_index])
-							game.draw_line(segment_start, segment_end, Color(1.0, 0.98, 0.86, 0.82 if bool(preview.get("valid", false)) else 0.42), 8.0, true)
-							game.draw_line(segment_start, segment_end, Color(preview_color.r, preview_color.g, preview_color.b, 0.92 if bool(preview.get("valid", false)) else 0.5), 4.8, true)
+							game.draw_line(segment_start, segment_end, Color(preview_color.r * 0.7, preview_color.g * 0.92, 1.0, 0.74 if bool(preview.get("valid", false)) else 0.36), outer_width, true)
+							game.draw_line(segment_start, segment_end, Color(0.84, 0.96, 1.0, 0.94 if bool(preview.get("valid", false)) else 0.52), core_width, true)
 						for point_variant in bolt_points:
-							game.draw_circle(Vector2(point_variant), 4.2, Color(preview_color.r, preview_color.g, preview_color.b, 0.75 if bool(preview.get("valid", false)) else 0.42))
+							game.draw_circle(Vector2(point_variant), 4.8 + preview_pulse * 1.4, Color(preview_color.r * 0.72, preview_color.g * 0.94, 1.0, 0.78 if bool(preview.get("valid", false)) else 0.45))
 	if target_data.has("hero"):
 		var target_hero: Variant = target_data.get("hero", null)
 		if target_hero != null and is_instance_valid(target_hero):
@@ -581,6 +584,7 @@ static func draw_room_overlays(game: Node) -> void:
 			var sigil_center: Vector2 = rect.get_center() + Vector2(0.0, -10.0)
 			game.draw_arc(sigil_center, 24.0 + 2.0 * pulse, 0.0, TAU, 36, Color(0.76, 0.94, 1.0, 0.54), 2.2, true)
 			game.draw_string(ThemeDB.fallback_font, rect.position + Vector2(14.0, 22.0), "SCRY", HORIZONTAL_ALIGNMENT_LEFT, 56.0, 12, Color("d8f4ff"))
+			draw_scry_room_intel(game, room_coord, room, rect)
 			continue
 		var warning_ratio: float = clampf(float(room.get("warning_timer_left", 0.0)) / maxf(game.WAVE_WARNING_DURATION, 0.001), 0.0, 1.0)
 		var sanctuary_ratio: float = clampf(float(room.get("sanctuary_time_left", 0.0)) / maxf(float(room.get("sanctuary_duration", room.get("sanctuary_time_left", 1.0))), 0.001), 0.0, 1.0)
@@ -741,6 +745,81 @@ static func draw_room_overlays(game: Node) -> void:
 static func room_title(_game: Node, room_coord: Vector2i) -> String:
 	return "Room %d-%d" % [room_coord.x + 1, room_coord.y + 1]
 
+static func scry_bonus_event_label(game: Node, event_id: String) -> String:
+	match event_id:
+		game.BONUS_RESOURCE_EVENT_FOOD:
+			return "bonus food cache"
+		game.BONUS_RESOURCE_EVENT_INDUSTRY:
+			return "bonus materials cache"
+		game.BONUS_RESOURCE_EVENT_SCIENCE:
+			return "bonus arcana cache"
+		_:
+			return ""
+
+static func scry_spawn_forecast(game: Node, room: Dictionary) -> String:
+	if bool(room.get("research_crystal", false)):
+		return "no (research room opens are calm)"
+	if String(room.get("merchant_theme", "")) != "":
+		return "no (merchant room opens are calm)"
+	if bool(room.get("permanent_light", false)) or bool(room.get("permanent_light_seeded", false)):
+		return "no (seeded light room)"
+	if bool(room.get("feature_spawn_priority", false)):
+		return "yes (priority dark-room source)"
+	return "yes (dark-room source)"
+
+static func scry_special_features(game: Node, room_coord: Vector2i, room: Dictionary) -> Array[String]:
+	var features: Array[String] = []
+	if room_coord == game.exit_room or bool(room.get("exit", false)):
+		features.append("exit room")
+	if bool(room.get("research_crystal", false)):
+		features.append("research crystal")
+	var merchant_theme: String = String(room.get("merchant_theme", ""))
+	if merchant_theme != "":
+		features.append("merchant (%s)" % merchant_theme)
+	if bool(room.get("feature_force_loot", false)):
+		features.append("forced loot")
+	if bool(room.get("feature_spawn_priority", false)):
+		features.append("spawn priority")
+	var bonus_event_id: String = String(room.get("feature_bonus_resource_event", ""))
+	if bonus_event_id != "" and bonus_event_id != game.BONUS_RESOURCE_EVENT_NONE:
+		var bonus_label: String = scry_bonus_event_label(game, bonus_event_id)
+		if bonus_label != "":
+			features.append(bonus_label)
+	if bool(room.get("permanent_light_seeded", false)):
+		features.append("seeded permanent light")
+	return features
+
+static func scry_hidden_dust_reward(game: Node, room_coord: Vector2i, room: Dictionary) -> int:
+	if room.has("hidden_dust_reward"):
+		return maxi(int(room.get("hidden_dust_reward", 0)), 0)
+	var room_rng: RandomNumberGenerator = RandomNumberGenerator.new()
+	var seed_text: String = "%d:%d:%d:%s" % [game.floor_index, room_coord.x, room_coord.y, String(room.get("profile", "room"))]
+	room_rng.seed = int(hash(seed_text))
+	if room_rng.randf() < game.ROOM_OPEN_DUST_CHANCE:
+		return room_rng.randi_range(game.ROOM_OPEN_DUST_MIN, game.ROOM_OPEN_DUST_MAX)
+	return 0
+
+static func draw_scry_room_intel(game: Node, room_coord: Vector2i, room: Dictionary, rect: Rect2) -> void:
+	var spawn_forecast: String = scry_spawn_forecast(game, room)
+	var dust_reward: int = scry_hidden_dust_reward(game, room_coord, room)
+	var minor_slots: int = int(room.get("minor_slots", game.effective_minor_slot_count(room_coord)))
+	var major_slots: int = int(room.get("major_slots", 0))
+	var feature_list: Array[String] = scry_special_features(game, room_coord, room)
+	var lines: Array[String] = [
+		"Spawn: %s" % spawn_forecast,
+		"Dust: %d" % dust_reward,
+		"Slots: m%d / M%d" % [minor_slots, major_slots],
+	]
+	if not feature_list.is_empty():
+		lines.append("Special: %s" % ", ".join(PackedStringArray(feature_list)))
+	var panel_rect: Rect2 = Rect2(rect.position + Vector2(12.0, 28.0), Vector2(rect.size.x - 24.0, minf(78.0, rect.size.y - 36.0)))
+	game.draw_rect(panel_rect, Color(0.07, 0.16, 0.22, 0.46), true)
+	game.draw_rect(panel_rect, Color(0.74, 0.92, 1.0, 0.42), false, 1.6)
+	var line_y: float = panel_rect.position.y + 14.0
+	for line_text in lines:
+		game.draw_string(ThemeDB.fallback_font, Vector2(panel_rect.position.x + 8.0, line_y), line_text, HORIZONTAL_ALIGNMENT_LEFT, panel_rect.size.x - 12.0, 12, Color("d9f4ff"))
+		line_y += 14.0
+
 static func room_summary(game: Node, room_coord: Vector2i) -> String:
 	if room_coord == game.crystal_room:
 		var crystal_state: String = "crystal present" if game.crystal_ground_room == game.crystal_room and game.crystal_holder == null else "crystal removed"
@@ -751,7 +830,13 @@ static func room_summary(game: Node, room_coord: Vector2i) -> String:
 	if not bool(room.get("opened", false)):
 		if bool(room.get("scry_revealed", false)):
 			var theme_name: String = String(room.get("template_name", "Room"))
-			return "%s, %s, scry-revealed (still sealed)" % [room_title(game, room_coord), theme_name]
+			var spawn_forecast: String = scry_spawn_forecast(game, room)
+			var dust_reward: int = scry_hidden_dust_reward(game, room_coord, room)
+			var minor_slots: int = int(room.get("minor_slots", game.effective_minor_slot_count(room_coord)))
+			var major_slots: int = int(room.get("major_slots", 0))
+			var feature_list: Array[String] = scry_special_features(game, room_coord, room)
+			var features_text: String = ", features: %s" % ", ".join(PackedStringArray(feature_list)) if not feature_list.is_empty() else ""
+			return "%s, %s, scry-revealed (still sealed), spawn: %s, dust: %d, slots: minor %d, major %d%s" % [room_title(game, room_coord), theme_name, spawn_forecast, dust_reward, minor_slots, major_slots, features_text]
 		return "Unknown Chamber"
 	var state: String = "open"
 	if room_coord == game.opening_room:

@@ -91,11 +91,29 @@ static func default_slotted_spells_for_class(class_id: String, card_lookup: Call
 static func implemented_spellbook_spells_for_class(class_id: String) -> Array[String]:
 	match class_id:
 		HERO_CLASS_WIZARD:
-			return ["magic_missile_card", "shield_card", "misty_step_card", "web_card", "scry_card", "scorching_ray_card", "summon_arcane_sentinel_card", "fireball_card", "lightning_bolt_card"]
+			return ["magic_missile_card", "shield_card", "misty_step_card", "web_card", "scry_card", "summon_arcane_sentinel_card", "summon_warden_spirit_card", "fireball_card", "lightning_bolt_card"]
 		HERO_CLASS_CLERIC:
-			return ["cure_light_wounds_card", "sanctuary_card", "summon_warden_spirit_card"]
+			return ["cure_light_wounds_card", "sanctuary_card", "hold_person_card", "fear_card", "spiritual_weapon_card", "summon_warden_spirit_card"]
 		_:
 			return []
+
+static func spell_classes_for_spell(spell_id: String, card_lookup: Callable) -> Array[String]:
+	var classes: Array[String] = []
+	var card_def: Dictionary = card_definition(spell_id, card_lookup)
+	for class_variant in Array(card_def.get("spell_classes", [])):
+		var class_id: String = String(class_variant)
+		if class_id == "" or classes.has(class_id):
+			continue
+		classes.append(class_id)
+	var legacy_class_id: String = String(card_def.get("spell_class", ""))
+	if legacy_class_id != "" and not classes.has(legacy_class_id):
+		classes.append(legacy_class_id)
+	return classes
+
+static func spell_is_available_to_class(spell_id: String, class_id: String, card_lookup: Callable) -> bool:
+	if class_id == "":
+		return false
+	return spell_classes_for_spell(spell_id, card_lookup).has(class_id)
 
 static func starting_known_spells_for_class(class_id: String, card_lookup: Callable) -> Array[String]:
 	var learned: Array[String] = []
@@ -186,7 +204,10 @@ static func spell_level(spell_id: String, card_lookup: Callable) -> int:
 	return maxi(0, int(card_definition(spell_id, card_lookup).get("spell_level", 0)))
 
 static func spell_class_id(spell_id: String, card_lookup: Callable) -> String:
-	return String(card_definition(spell_id, card_lookup).get("spell_class", ""))
+	var spell_classes: Array[String] = spell_classes_for_spell(spell_id, card_lookup)
+	if not spell_classes.is_empty():
+		return String(spell_classes[0])
+	return ""
 
 static func spell_slot_counts_for_class_level(class_id: String, level_value: int) -> Array[int]:
 	match class_id:

@@ -265,8 +265,21 @@ static func apply_opened_door_event(game: Node, room_coord: Vector2i) -> Diction
 static func build_room_open_reward_bundle(game: Node, room_coord: Vector2i) -> Dictionary:
 	var door_reward: Dictionary = calculate_door_rewards(game)
 	var dust_reward: int = 0
-	if game.rng.randf() < game.ROOM_OPEN_DUST_CHANCE:
-		dust_reward = game.rng.randi_range(game.ROOM_OPEN_DUST_MIN, game.ROOM_OPEN_DUST_MAX)
+	if game.rooms.has(room_coord) and game.rooms[room_coord].has("hidden_dust_reward"):
+		dust_reward = maxi(int(game.rooms[room_coord].get("hidden_dust_reward", 0)), 0)
+	else:
+		if game.rooms.has(room_coord):
+			var room_data: Dictionary = Dictionary(game.rooms[room_coord]).duplicate(true)
+			var room_rng: RandomNumberGenerator = RandomNumberGenerator.new()
+			var seed_text: String = "%d:%d:%d:%s" % [game.floor_index, room_coord.x, room_coord.y, String(room_data.get("profile", "room"))]
+			room_rng.seed = int(hash(seed_text))
+			if room_rng.randf() < game.ROOM_OPEN_DUST_CHANCE:
+				dust_reward = room_rng.randi_range(game.ROOM_OPEN_DUST_MIN, game.ROOM_OPEN_DUST_MAX)
+			room_data["hidden_dust_reward"] = dust_reward
+			game.rooms[room_coord] = room_data
+		else:
+			if game.rng.randf() < game.ROOM_OPEN_DUST_CHANCE:
+				dust_reward = game.rng.randi_range(game.ROOM_OPEN_DUST_MIN, game.ROOM_OPEN_DUST_MAX)
 	var opened_door_bonus: Dictionary = apply_opened_door_event(game, room_coord)
 	return {
 		"door_reward": door_reward,

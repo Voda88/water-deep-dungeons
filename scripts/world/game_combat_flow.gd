@@ -1356,19 +1356,39 @@ static func draw_projectiles(game: Node, canvas: CanvasItem = null) -> void:
 			continue
 		if projectile_kind == "lightning_bolt":
 			var bolt_duration: float = maxf(float(projectile.get("blast_duration", 0.18)), 0.001)
-			var bolt_ratio: float = clampf(float(projectile.get("lifetime_left", 0.0)) / bolt_duration, 0.0, 1.0)
+			var bolt_life_left: float = clampf(float(projectile.get("lifetime_left", 0.0)), 0.0, bolt_duration)
+			var bolt_ratio: float = bolt_life_left / bolt_duration
+			var elapsed_ratio: float = 1.0 - bolt_ratio
+			var pulse_speed: float = maxf(float(projectile.get("pulse_speed", 0.065)), 0.001)
+			var pulse_strength: float = clampf(float(projectile.get("pulse_strength", 0.3)), 0.0, 1.0)
+			var pulse_wave: float = 0.5 + 0.5 * sin(float(Time.get_ticks_msec()) * pulse_speed)
+			var growth_ratio: float = pow(elapsed_ratio, 0.42)
+			var beam_start_width: float = maxf(float(projectile.get("beam_start_width", width * 0.85)), 2.0)
+			var beam_end_width: float = maxf(float(projectile.get("beam_end_width", width * 2.8)), beam_start_width)
+			var pulsed_width: float = lerpf(beam_start_width, beam_end_width, growth_ratio) * (1.0 + pulse_wave * pulse_strength)
+			var glow_alpha: float = 0.2 + 0.3 * bolt_ratio
+			var beam_alpha: float = 0.85 * bolt_ratio + 0.15
+			var glow_color_outer: Color = Color(color.r * 0.62, color.g * 0.9, 1.0, glow_alpha)
+			var glow_color_mid: Color = Color(color.r * 0.76, color.g * 0.96, 1.0, minf(glow_alpha + 0.18, 0.9))
+			var core_color: Color = Color(0.84, 0.96, 1.0, beam_alpha)
+			var hot_color: Color = Color(0.95, 0.99, 1.0, minf(beam_alpha + 0.1, 1.0))
 			var bolt_points: Array = Array(projectile.get("points", []))
 			if bolt_points.size() >= 2:
 				for point_index in range(1, bolt_points.size()):
 					var segment_start: Vector2 = Vector2(bolt_points[point_index - 1])
 					var segment_end: Vector2 = Vector2(bolt_points[point_index])
-					surface.draw_line(segment_start, segment_end, Color(1.0, 0.98, 0.86, 0.95 * bolt_ratio), width + 3.0, true)
-					surface.draw_line(segment_start, segment_end, Color(color.r, color.g, color.b, 0.9 * bolt_ratio), width, true)
+					surface.draw_line(segment_start, segment_end, glow_color_outer, pulsed_width * 2.3, true)
+					surface.draw_line(segment_start, segment_end, glow_color_mid, pulsed_width * 1.45, true)
+					surface.draw_line(segment_start, segment_end, core_color, pulsed_width * 0.8, true)
+					surface.draw_line(segment_start, segment_end, hot_color, maxf(pulsed_width * 0.32, 1.8), true)
 			else:
 				var origin: Vector2 = projectile.get("previous", current_position)
-				surface.draw_line(origin, current_position, Color(1.0, 0.98, 0.86, 0.95 * bolt_ratio), width + 3.0, true)
-				surface.draw_line(origin, current_position, Color(color.r, color.g, color.b, 0.9 * bolt_ratio), width, true)
-			surface.draw_circle(current_position, 6.0 + 6.0 * bolt_ratio, Color(color.r, color.g, color.b, 0.38))
+				surface.draw_line(origin, current_position, glow_color_outer, pulsed_width * 2.3, true)
+				surface.draw_line(origin, current_position, glow_color_mid, pulsed_width * 1.45, true)
+				surface.draw_line(origin, current_position, core_color, pulsed_width * 0.8, true)
+				surface.draw_line(origin, current_position, hot_color, maxf(pulsed_width * 0.32, 1.8), true)
+			surface.draw_circle(current_position, maxf(pulsed_width * 0.9, 6.0), Color(color.r * 0.72, color.g * 0.94, 1.0, 0.28))
+			surface.draw_circle(current_position, maxf(pulsed_width * 0.42, 3.0), Color(0.96, 0.99, 1.0, 0.9 * bolt_ratio))
 			continue
 		if projectile_kind == "gas_pulse":
 			var gas_duration: float = maxf(float(projectile.get("blast_duration", 0.22)), 0.001)

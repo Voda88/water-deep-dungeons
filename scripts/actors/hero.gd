@@ -114,6 +114,7 @@ var light_cantrip_active: bool = false
 var learned_spells: Array[String] = []
 var slotted_spells: Array[String] = []
 var active_floor_spells: Array[String] = []
+var pending_item_fusions: Array = []
 var studying_spell_id: String = ""
 var studying_room: Vector2i = INVALID_ROOM
 var studying_started_at_door: int = -1

@@ -174,7 +174,19 @@ static func advance_pending_melee_attacks(game: Node, delta: float) -> void:
 			if defeated and game.try_auto_cast_fatal_shield(target, incoming_damage):
 				continue
 		else:
+			var melee_auto_crit: bool = false
+			if target.has_method("is_held_person") and bool(target.is_held_person()):
+				melee_auto_crit = true
+			if melee_auto_crit:
+				incoming_damage *= 2.0
 			defeated = target.take_damage(incoming_damage, (target.global_position - attacker.global_position).normalized())
+			if game.is_enemy_actor(attacker) and bool(attacker.get_meta("summon_applies_flatfooted", false)) and target.has_method("apply_flatfooted_debuff"):
+				var flatfooted_duration: float = maxf(float(attacker.get_meta("summon_flatfooted_duration", 6.0)), 0.0)
+				if flatfooted_duration > 0.0:
+					var flatfooted_move_multiplier: float = clampf(float(attacker.get_meta("summon_flatfooted_move_multiplier", 0.0)), 0.0, 1.0)
+					var flatfooted_attack_speed_multiplier: float = clampf(float(attacker.get_meta("summon_flatfooted_attack_speed_multiplier", 0.0)), 0.0, 1.0)
+					var flatfooted_damage_taken_multiplier: float = maxf(float(attacker.get_meta("summon_flatfooted_damage_taken_multiplier", 1.5)), 1.0)
+					target.apply_flatfooted_debuff(flatfooted_duration, flatfooted_move_multiplier, flatfooted_attack_speed_multiplier, flatfooted_damage_taken_multiplier)
 		apply_weighted_melee_knockback(game, attacker, target, attack_room)
 		if defeated and game.is_hero_actor(target):
 			finalize_hero_death(game, target, String(pending_attack.get("source_label", "An enemy")))

@@ -4,7 +4,12 @@ const TYPE_ORC_RIDER: String = "orc_rider"
 const TYPE_ORC: String = "orc"
 const TYPE_BAT: String = "bat"
 const TYPE_GOLEM: String = "golem"
+const TYPE_DEMON_A: String = "demon_a"
 const TYPE_DEMON_D: String = "demon_d"
+const TYPE_SKELETON: String = "skeleton"
+const TYPE_SKELETON_ARMORED: String = "skeleton_armored"
+const TYPE_SKELETON_GREATSWORD: String = "skeleton_greatsword"
+const TYPE_SPIRITUAL_WEAPON: String = "spiritual_weapon"
 const TYPE_ORC_SHAMAN: String = "orc_shaman"
 const TYPE_SKELETON_ARCHER: String = "skeleton_archer"
 
@@ -44,12 +49,47 @@ const ENEMY_SPRITE_PROFILES := {
 		"attack_path": "res://assets/characters/packs/pack02/characters_split_100x100/Flame Golem/Flame Golem/Flame Golem_Attack03.png",
 		"death_path": "res://assets/characters/packs/pack02/characters_split_100x100/Flame Golem/Flame Golem/Flame Golem_Death.png",
 	},
+	TYPE_DEMON_A: {
+		"idle_path": "res://assets/characters/packs/pack02/characters_split_100x100/Demon_A/Demon_A/Demon_A_Idle.png",
+		"walk_path": "res://assets/characters/packs/pack02/characters_split_100x100/Demon_A/Demon_A/Demon_A_Walk.png",
+		"hurt_path": "res://assets/characters/packs/pack02/characters_split_100x100/Demon_A/Demon_A/Demon_A_Hurt.png",
+		"attack_path": "res://assets/characters/packs/pack02/characters_split_100x100/Demon_A/Demon_A/Demon_A_Attack01.png",
+		"death_path": "res://assets/characters/packs/pack02/characters_split_100x100/Demon_A/Demon_A/Demon_A_Death.png",
+	},
 	TYPE_DEMON_D: {
 		"idle_path": "res://assets/characters/packs/pack02/characters_split_100x100/Demon_D/Demon_D/Demon_D_Idle.png",
 		"walk_path": "res://assets/characters/packs/pack02/characters_split_100x100/Demon_D/Demon_D/Demon_D_Walk.png",
 		"hurt_path": "res://assets/characters/packs/pack02/characters_split_100x100/Demon_D/Demon_D/Demon_D_Hurt.png",
 		"attack_path": "res://assets/characters/packs/pack02/characters_split_100x100/Demon_D/Demon_D/Demon_D_Attack01.png",
 		"death_path": "res://assets/characters/packs/pack02/characters_split_100x100/Demon_D/Demon_D/Demon_D_Death.png",
+	},
+	TYPE_SKELETON: {
+		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Skeleton/Skeleton/Skeleton_Idle.png",
+		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Skeleton/Skeleton/Skeleton_Walk.png",
+		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Skeleton/Skeleton/Skeleton_Hurt.png",
+		"attack_path": "res://assets/characters/packs/pack01/characters_split_100x100/Skeleton/Skeleton/Skeleton_Attack01.png",
+		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Skeleton/Skeleton/Skeleton_Death.png",
+	},
+	TYPE_SKELETON_ARMORED: {
+		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Armored Skeleton/Armored Skeleton/Armored Skeleton_Idle.png",
+		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Armored Skeleton/Armored Skeleton/Armored Skeleton_Walk.png",
+		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Armored Skeleton/Armored Skeleton/Armored Skeleton_Hurt.png",
+		"attack_path": "res://assets/characters/packs/pack01/characters_split_100x100/Armored Skeleton/Armored Skeleton/Armored Skeleton_Attack01.png",
+		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Armored Skeleton/Armored Skeleton/Armored Skeleton_Death.png",
+	},
+	TYPE_SKELETON_GREATSWORD: {
+		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Greatsword Skeleton/Greatsword Skeleton/Greatsword Skeleton_Idle.png",
+		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Greatsword Skeleton/Greatsword Skeleton/Greatsword Skeleton_Walk.png",
+		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Greatsword Skeleton/Greatsword Skeleton/Greatsword Skeleton_Hurt.png",
+		"attack_path": "res://assets/characters/packs/pack01/characters_split_100x100/Greatsword Skeleton/Greatsword Skeleton/Greatsword Skeleton_Attack01.png",
+		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Greatsword Skeleton/Greatsword Skeleton/Greatsword Skeleton_Death.png",
+	},
+	TYPE_SPIRITUAL_WEAPON: {
+		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/spiritual weapon/spiritual_weapon_idle.png",
+		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/spiritual weapon/spiritual_weapon_idle.png",
+		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/spiritual weapon/spiritual_weapon_idle.png",
+		"attack_path": "res://assets/characters/packs/pack01/characters_split_100x100/spiritual weapon/spiritual_weapon_attack.png",
+		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/spiritual weapon/spiritual_weapon_attack.png",
 	},
 	TYPE_SKELETON_ARCHER: {
 		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Skeleton Archer/Skeleton Archer/Skeleton Archer_Idle.png",
@@ -84,6 +124,16 @@ static func enemy_role_scale(enemy_type: String) -> float:
 			return 2.45
 		TYPE_ORC_RIDER:
 			return 2.15
+		TYPE_SKELETON_ARMORED:
+			return 2.35
+		TYPE_SKELETON_GREATSWORD:
+			return 2.12
+		TYPE_SKELETON:
+			return 1.88
+		TYPE_SPIRITUAL_WEAPON:
+			return 1.96
+		TYPE_DEMON_A:
+			return 1.96
 		TYPE_BAT:
 			return 1.54
 		TYPE_SKELETON_ARCHER:
@@ -130,6 +180,17 @@ static func enemy_role_definition(enemy_type: String) -> Dictionary:
 				"weight": 5.4,
 				"body_color": Color("8a887d"),
 			}
+		TYPE_DEMON_A:
+			return {
+				"id": TYPE_DEMON_A,
+				"move_speed": 74.0,
+				"max_health": 54.0,
+				"attack_damage": 9.0,
+				"attack_cooldown": 0.82,
+				"attack_range": 76.0,
+				"weight": 0.9,
+				"body_color": Color("d8b7ff"),
+			}
 		TYPE_DEMON_D:
 			return {
 				"id": TYPE_DEMON_D,
@@ -140,6 +201,50 @@ static func enemy_role_definition(enemy_type: String) -> Dictionary:
 				"attack_range": 74.0,
 				"weight": 1.65,
 				"body_color": Color("d46c57"),
+			}
+		TYPE_SKELETON:
+			return {
+				"id": TYPE_SKELETON,
+				"move_speed": 50.0,
+				"max_health": 84.0,
+				"attack_damage": 16.0,
+				"attack_cooldown": 1.0,
+				"attack_range": 70.0,
+				"weight": 1.1,
+				"body_color": Color("d9ded5"),
+			}
+		TYPE_SKELETON_ARMORED:
+			return {
+				"id": TYPE_SKELETON_ARMORED,
+				"move_speed": 36.0,
+				"max_health": 192.0,
+				"attack_damage": 14.0,
+				"attack_cooldown": 1.2,
+				"attack_range": 68.0,
+				"weight": 3.8,
+				"body_color": Color("a4a8b1"),
+			}
+		TYPE_SKELETON_GREATSWORD:
+			return {
+				"id": TYPE_SKELETON_GREATSWORD,
+				"move_speed": 58.0,
+				"max_health": 102.0,
+				"attack_damage": 30.0,
+				"attack_cooldown": 0.92,
+				"attack_range": 76.0,
+				"weight": 1.85,
+				"body_color": Color("e2ddd3"),
+			}
+		TYPE_SPIRITUAL_WEAPON:
+			return {
+				"id": TYPE_SPIRITUAL_WEAPON,
+				"move_speed": 84.0,
+				"max_health": 56.0,
+				"attack_damage": 18.0,
+				"attack_cooldown": 0.88,
+				"attack_range": 78.0,
+				"weight": 0.4,
+				"body_color": Color("ecedff"),
 			}
 		TYPE_ORC_SHAMAN:
 			return {
@@ -178,6 +283,8 @@ static func enemy_role_definition(enemy_type: String) -> Dictionary:
 static func enemy_pack_size(enemy_type: String) -> int:
 	match normalize_enemy_type(enemy_type):
 		TYPE_ORC_RIDER:
+			return 1
+		TYPE_DEMON_A:
 			return 1
 		TYPE_ORC:
 			return 3
@@ -244,6 +351,10 @@ static func enemy_available_on_floor(enemy_type: String, floor_index: int) -> bo
 	var resolved_type: String = normalize_enemy_type(enemy_type)
 	if resolved_type == TYPE_BAT:
 		return floor_index <= 1
+	if resolved_type == TYPE_DEMON_A:
+		return false
+	if resolved_type == TYPE_SKELETON or resolved_type == TYPE_SKELETON_ARMORED or resolved_type == TYPE_SKELETON_GREATSWORD or resolved_type == TYPE_SPIRITUAL_WEAPON:
+		return false
 	if resolved_type == TYPE_GOLEM or resolved_type == TYPE_DEMON_D:
 		return floor_index >= 2
 	return true

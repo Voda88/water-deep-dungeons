@@ -30,6 +30,9 @@ static func hero_spellbook_overlay_data(game: Node, hero: Variant) -> Dictionary
 			"slotted": [],
 			"capacity": 0,
 		}
+	if game.hero_supports_spell_repertoire(hero):
+		game.sanitize_hero_spellbook(hero)
+	sync_pending_item_fusions_for_hero(game, hero)
 	var focus_item_id: String = game.spell_focus_item_id_for_class(String(hero.hero_class_id))
 	return {
 		"enabled": game.hero_supports_spell_repertoire(hero) and game.hero_has_spell_focus_item(hero),
@@ -41,7 +44,9 @@ static func hero_spellbook_overlay_data(game: Node, hero: Variant) -> Dictionary
 		"capacity": hero_spell_slot_capacity(game, hero),
 		"slots_by_level": hero_spell_slot_counts(game, hero),
 		"editable": game.hero_spell_repertoire_editable(hero),
-		"prep_note": "Level %d spells. In the first room, slot edits immediately refresh generated spell cards, but no cards can be played until the first door opens. After that, edits save for next floor only, and existing generated cards stay until played." % game.hero_max_spell_level_for_class_level(String(hero.hero_class_id), int(hero.level)),
+		"fusion_glow_uids": fusion_glow_item_uids(hero),
+		"fusion_links": fusion_link_pairs(hero),
+		"prep_note": "Level %d spells. Before the first door, slot edits refresh prepared cards immediately (cards still cannot be played until a door opens). Mid-floor, newly assigned spells are added to this floor on cooldown." % game.hero_max_spell_level_for_class_level(String(hero.hero_class_id), int(hero.level)),
 	}
 
 static func hero_can_study_spell(game: Node, hero: Variant, spell_id: String) -> bool:
@@ -49,58 +54,223 @@ static func hero_can_study_spell(game: Node, hero: Variant, spell_id: String) ->
 		return false
 	if hero.hero_class_id != game.HERO_CLASS_WIZARD or not game.hero_has_spell_focus_item(hero):
 		return false
+	if spell_id == "" or not game.spell_is_available_to_class(spell_id, String(hero.hero_class_id)):
+		return false
 	if spell_id == "" or hero.learned_spells.has(spell_id):
 		return false
 	return not game.wave_in_progress()
 
 static func begin_spell_scroll_study(game: Node, hero: Variant, spell_id: String) -> bool:
-	if not hero_can_study_spell(game, hero, spell_id):
+	return false
+
+static func fusion_entry_key(entry: Dictionary) -> String:
+	return "%s:%d:%d" % [String(entry.get("kind", "")), int(entry.get("item_uid_left", -1)), int(entry.get("item_uid_right", -1))]
+
+static func pending_fusion_signature(entries: Array) -> String:
+	var tokens: Array[String] = []
+	for entry_variant in entries:
+		var entry: Dictionary = entry_variant
+		tokens.append("%s@%d:%s" % [fusion_entry_key(entry), int(entry.get("started_at_door", -1)), String(entry.get("learn_spell_id", ""))])
+	tokens.sort()
+	return "|".join(PackedStringArray(tokens))
+
+static func item_is_directly_right_of(game: Node, left_item: Dictionary, right_item: Dictionary) -> bool:
+	var left_anchor: Vector2i = left_item.get("anchor", game.INVALID_ROOM)
+	var right_anchor: Vector2i = right_item.get("anchor", game.INVALID_ROOM)
+	if left_anchor == game.INVALID_ROOM or right_anchor == game.INVALID_ROOM:
 		return false
-	hero.studying_spell_id = spell_id
-	hero.studying_room = game.active_hero_room_for_commands(hero)
-	hero.studying_started_at_door = game.doors_opened
-	game.status_message = "%s began studying %s. Stay in the room until the next door opens." % [hero.hero_name, game.spell_display_name(spell_id)]
+	var left_size: Vector2i = game.item_size_in_cells(left_item)
+	var right_size: Vector2i = game.item_size_in_cells(right_item)
+	var left_right_x: int = left_anchor.x + left_size.x
+	if right_anchor.x != left_right_x:
+		return false
+	var left_top: int = left_anchor.y
+	var left_bottom: int = left_anchor.y + left_size.y
+	var right_top: int = right_anchor.y
+	var right_bottom: int = right_anchor.y + right_size.y
+	return maxi(left_top, right_top) < mini(left_bottom, right_bottom)
+
+static func learnable_spell_id_from_item(game: Node, item: Dictionary) -> String:
+	var item_def: Dictionary = game.item_defs.get(String(item.get("item_id", "")), {})
+	var generators: Array = []
+	if item_def.has("hand_cards"):
+		generators = Array(item_def.get("hand_cards", [])).duplicate(true)
+	else:
+		var single_generator: Dictionary = Dictionary(item_def.get("hand_card", {}))
+		if not single_generator.is_empty():
+			generators.append(single_generator)
+	for generator_variant in generators:
+		var generator: Dictionary = generator_variant as Dictionary
+		if not bool(generator.get("learnable_spell_scroll", false)):
+			continue
+		var spell_id: String = String(generator.get("learn_spell_id", generator.get("card_id", "")))
+		if spell_id != "":
+			return spell_id
+	return ""
+
+static func build_item_fusion_candidates(game: Node, hero: Variant) -> Array:
+	var candidates: Array = []
+	if hero == null or not is_instance_valid(hero):
+		return candidates
+	if game.wave_in_progress():
+		return candidates
+	if String(hero.hero_class_id) != game.HERO_CLASS_WIZARD:
+		return candidates
+	var dedupe_keys: Dictionary = {}
+	for left_item_variant in hero.inventory_items:
+		var left_item: Dictionary = left_item_variant
+		if String(left_item.get("item_id", "")) != "spellbook":
+			continue
+		for right_item_variant in hero.inventory_items:
+			var right_item: Dictionary = right_item_variant
+			if int(right_item.get("uid", -1)) == int(left_item.get("uid", -1)):
+				continue
+			if not item_is_directly_right_of(game, left_item, right_item):
+				continue
+			var spell_id: String = learnable_spell_id_from_item(game, right_item)
+			if spell_id == "" or not hero_can_study_spell(game, hero, spell_id):
+				continue
+			var candidate: Dictionary = {
+				"kind": "spell_scroll_into_spellbook",
+				"item_uid_left": int(left_item.get("uid", -1)),
+				"item_uid_right": int(right_item.get("uid", -1)),
+				"learn_spell_id": spell_id,
+			}
+			var key: String = fusion_entry_key(candidate)
+			if dedupe_keys.has(key):
+				continue
+			dedupe_keys[key] = true
+			candidates.append(candidate)
+	return candidates
+
+static func sync_pending_item_fusions_for_hero(game: Node, hero: Variant) -> bool:
+	if hero == null or not is_instance_valid(hero):
+		return false
+	if hero.studying_spell_id != "":
+		hero.studying_spell_id = ""
+		hero.studying_room = game.INVALID_ROOM
+		hero.studying_started_at_door = -1
+	var previous_signature: String = pending_fusion_signature(Array(hero.pending_item_fusions))
+	var existing_by_key: Dictionary = {}
+	for existing_variant in Array(hero.pending_item_fusions):
+		var existing_entry: Dictionary = existing_variant
+		existing_by_key[fusion_entry_key(existing_entry)] = existing_entry
+	var next_entries: Array = []
+	for candidate_variant in build_item_fusion_candidates(game, hero):
+		var candidate: Dictionary = candidate_variant
+		var candidate_key: String = fusion_entry_key(candidate)
+		var next_entry: Dictionary = candidate.duplicate(true)
+		if existing_by_key.has(candidate_key):
+			next_entry["started_at_door"] = int(Dictionary(existing_by_key[candidate_key]).get("started_at_door", game.doors_opened))
+		else:
+			next_entry["started_at_door"] = game.doors_opened
+		next_entries.append(next_entry)
+	hero.pending_item_fusions = next_entries
+	return previous_signature != pending_fusion_signature(next_entries)
+
+static func fusion_glow_item_uids(hero: Variant) -> Array[int]:
+	var glow_uids_map: Dictionary = {}
+	for fusion_variant in Array(hero.pending_item_fusions):
+		var fusion_entry: Dictionary = fusion_variant
+		glow_uids_map[int(fusion_entry.get("item_uid_left", -1))] = true
+		glow_uids_map[int(fusion_entry.get("item_uid_right", -1))] = true
+	var glow_uids: Array[int] = []
+	for uid_variant in glow_uids_map.keys():
+		var uid: int = int(uid_variant)
+		if uid >= 0:
+			glow_uids.append(uid)
+	return glow_uids
+
+static func fusion_link_pairs(hero: Variant) -> Array:
+	var pairs: Array = []
+	for fusion_variant in Array(hero.pending_item_fusions):
+		var fusion_entry: Dictionary = fusion_variant
+		var left_uid: int = int(fusion_entry.get("item_uid_left", -1))
+		var right_uid: int = int(fusion_entry.get("item_uid_right", -1))
+		if left_uid < 0 or right_uid < 0:
+			continue
+		pairs.append({
+			"left_uid": left_uid,
+			"right_uid": right_uid,
+		})
+	return pairs
+
+static func hero_inventory_item_by_uid(hero: Variant, item_uid: int) -> Dictionary:
+	for item_variant in hero.inventory_items:
+		var item: Dictionary = item_variant
+		if int(item.get("uid", -1)) == item_uid:
+			return item
+	return {}
+
+static func prepare_newly_learned_spell(game: Node, hero: Variant, spell_id: String) -> void:
+	var prepared_level_index: int = game.spell_level(spell_id) - 1
+	var slot_counts: Array[int] = hero_spell_slot_counts(game, hero)
+	var prepared_count_for_level: int = 0
+	for slotted_spell_variant in hero.slotted_spells:
+		if game.spell_level(String(slotted_spell_variant)) == prepared_level_index + 1:
+			prepared_count_for_level += 1
+	if prepared_level_index >= 0 and prepared_level_index < slot_counts.size() and prepared_count_for_level < int(slot_counts[prepared_level_index]) and not hero.slotted_spells.has(spell_id):
+		hero.slotted_spells.append(spell_id)
+
+static func resolve_spell_scroll_fusion_entry(game: Node, hero: Variant, fusion_entry: Dictionary) -> bool:
+	if String(fusion_entry.get("kind", "")) != "spell_scroll_into_spellbook":
+		return false
+	var spell_id: String = String(fusion_entry.get("learn_spell_id", ""))
+	if spell_id == "" or not hero_can_study_spell(game, hero, spell_id):
+		return false
+	var scroll_uid: int = int(fusion_entry.get("item_uid_right", -1))
+	var scroll_item: Dictionary = hero_inventory_item_by_uid(hero, scroll_uid)
+	if scroll_item.is_empty():
+		return false
+	var scroll_name: String = String(game.item_defs.get(String(scroll_item.get("item_id", "")), {}).get("name", "scroll"))
+	if not hero.learned_spells.has(spell_id):
+		hero.learned_spells.append(spell_id)
+	prepare_newly_learned_spell(game, hero, spell_id)
+	game.remove_item_by_uid_from_world(scroll_uid)
+	game.sanitize_hero_spellbook(hero)
+	apply_inventory_stats_to_hero(game, hero)
+	game.status_message = "%s fused %s into the spellbook and learned %s." % [hero.hero_name, scroll_name, game.spell_display_name(spell_id)]
 	return true
 
 static func resolve_spell_scroll_studies(game: Node) -> void:
+	var overlay_needs_refresh: bool = false
 	for hero in game.heroes:
-		if hero == null or not is_instance_valid(hero) or hero.studying_spell_id == "":
+		if hero == null or not is_instance_valid(hero):
 			continue
-		if game.doors_opened <= hero.studying_started_at_door:
-			continue
-		var studied_spell_id: String = hero.studying_spell_id
-		var study_succeeded: bool = hero.current_room == hero.studying_room and hero.pending_room == game.INVALID_ROOM and hero.pending_open_room == game.INVALID_ROOM
-		hero.studying_spell_id = ""
-		hero.studying_room = game.INVALID_ROOM
-		hero.studying_started_at_door = -1
-		if not study_succeeded:
-			game.status_message = "%s lost focus and failed to learn %s." % [hero.hero_name, game.spell_display_name(studied_spell_id)]
-			continue
-		if not hero.learned_spells.has(studied_spell_id):
-			hero.learned_spells.append(studied_spell_id)
-		var prepared_level_index: int = game.spell_level(studied_spell_id) - 1
-		var slot_counts: Array[int] = hero_spell_slot_counts(game, hero)
-		var prepared_count_for_level: int = 0
-		for slotted_spell_variant in hero.slotted_spells:
-			if game.spell_level(String(slotted_spell_variant)) == prepared_level_index + 1:
-				prepared_count_for_level += 1
-		if prepared_level_index >= 0 and prepared_level_index < slot_counts.size() and prepared_count_for_level < int(slot_counts[prepared_level_index]) and not hero.slotted_spells.has(studied_spell_id):
-			hero.slotted_spells.append(studied_spell_id)
-		game.sanitize_hero_spellbook(hero)
-		apply_inventory_stats_to_hero(game, hero)
-		game.status_message = "%s learned %s." % [hero.hero_name, game.spell_display_name(studied_spell_id)]
+		sync_pending_item_fusions_for_hero(game, hero)
+		var candidate_by_key: Dictionary = {}
+		for candidate_variant in build_item_fusion_candidates(game, hero):
+			var candidate_entry: Dictionary = candidate_variant
+			candidate_by_key[fusion_entry_key(candidate_entry)] = candidate_entry
+		var kept_entries: Array = []
+		for fusion_variant in Array(hero.pending_item_fusions):
+			var fusion_entry: Dictionary = fusion_variant
+			var started_at_door: int = int(fusion_entry.get("started_at_door", game.doors_opened))
+			if game.doors_opened <= started_at_door:
+				kept_entries.append(fusion_entry.duplicate(true))
+				continue
+			var candidate_key: String = fusion_entry_key(fusion_entry)
+			if not candidate_by_key.has(candidate_key):
+				continue
+			var resolved_entry: Dictionary = Dictionary(candidate_by_key[candidate_key]).duplicate(true)
+			resolved_entry["started_at_door"] = started_at_door
+			if resolve_spell_scroll_fusion_entry(game, hero, resolved_entry):
+				overlay_needs_refresh = true
+		hero.pending_item_fusions = kept_entries
+		if sync_pending_item_fusions_for_hero(game, hero):
+			overlay_needs_refresh = true
+	if overlay_needs_refresh:
+		game.refresh_open_inventory_overlay()
 
 static func advance_spell_scroll_studies(game: Node) -> void:
+	var overlay_needs_refresh: bool = false
 	for hero in game.heroes:
-		if hero == null or not is_instance_valid(hero) or hero.studying_spell_id == "":
+		if hero == null or not is_instance_valid(hero):
 			continue
-		if hero.current_room == hero.studying_room and hero.pending_room == game.INVALID_ROOM and hero.pending_open_room == game.INVALID_ROOM:
-			continue
-		var studied_spell_id: String = hero.studying_spell_id
-		hero.studying_spell_id = ""
-		hero.studying_room = game.INVALID_ROOM
-		hero.studying_started_at_door = -1
-		game.status_message = "%s interrupted study of %s." % [hero.hero_name, game.spell_display_name(studied_spell_id)]
+		if sync_pending_item_fusions_for_hero(game, hero):
+			overlay_needs_refresh = true
+	if overlay_needs_refresh:
+		game.refresh_open_inventory_overlay()
 
 static func hero_next_level_unlock_names(game: Node, hero: Variant) -> Array[String]:
 	var unlock_names: Array[String] = []

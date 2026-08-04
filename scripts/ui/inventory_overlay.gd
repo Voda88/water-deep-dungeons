@@ -45,6 +45,43 @@ const INVENTORY_NUDGE_DURATION: float = 0.54
 const INVENTORY_NUDGE_HINT_OPENS: int = 3
 const GROUND_ITEM_TOUCH_PADDING: float = 14.0
 const GROUND_ITEM_MIN_HIT_SIZE: float = 78.0
+const ITEM_LEVEL_COLORS: Array[Color] = [
+	Color("7a8a94"),
+	Color("6ea877"),
+	Color("5c8fcd"),
+	Color("c59a62"),
+	Color("c96767"),
+	Color("8e9bd6"),
+]
+const ITEM_SYMBOLS: Dictionary = {
+	"axe": "A",
+	"daggers": "D",
+	"boots": "B",
+	"whirling_blade": "W",
+	"ration": "R",
+	"buckler": "K",
+	"lantern": "L",
+	"medkit": "M",
+	"torch": "T",
+	"spellbook": "P",
+	"holy_symbol": "H",
+	"scroll_fireball": "1",
+	"scroll_magic_missile": "2",
+	"scroll_misty_step": "3",
+	"scroll_web": "4",
+	"scroll_shield": "5",
+	"scroll_scorching_ray": "6",
+	"scroll_lightning_bolt": "7",
+	"scroll_light_cantrip": "8",
+	"scroll_scry": "9",
+	"scroll_summon_arcane_sentinel": "Q",
+	"scroll_cure_light_wounds": "C",
+	"scroll_sanctuary": "Y",
+	"scroll_hold_person": "O",
+	"scroll_fear": "F",
+	"scroll_spiritual_weapon": "W",
+	"scroll_summon_warden_spirit": "Z",
+}
 
 var hero_name: String = ""
 var hero_level: int = 1
@@ -101,6 +138,8 @@ var spellbook_focus_item_id: String = "spellbook"
 var selected_spellbook_spell_id: String = ""
 var spellbook_overlay_open: bool = false
 var synergy_shine_time: float = 0.0
+var fusion_glow_uids: Dictionary = {}
+var fusion_links: Array = []
 
 @onready var layout_root: Control = $LayoutRoot
 @onready var main_panel_guide: Control = $LayoutRoot/MainPanelGuide
@@ -346,6 +385,22 @@ func apply_spellbook_data(next_spellbook_data: Dictionary) -> void:
 	spellbook_title = String(next_spellbook_data.get("title", "Spellbook"))
 	spellbook_prep_note = String(next_spellbook_data.get("prep_note", ""))
 	spellbook_focus_item_id = String(next_spellbook_data.get("focus_item_id", "spellbook"))
+	fusion_glow_uids.clear()
+	fusion_links.clear()
+	for uid_variant in Array(next_spellbook_data.get("fusion_glow_uids", [])):
+		var uid: int = int(uid_variant)
+		if uid >= 0:
+			fusion_glow_uids[uid] = true
+	for link_variant in Array(next_spellbook_data.get("fusion_links", [])):
+		var link_entry: Dictionary = Dictionary(link_variant)
+		var left_uid: int = int(link_entry.get("left_uid", -1))
+		var right_uid: int = int(link_entry.get("right_uid", -1))
+		if left_uid < 0 or right_uid < 0:
+			continue
+		fusion_links.append({
+			"left_uid": left_uid,
+			"right_uid": right_uid,
+		})
 	spellbook_known.clear()
 	for spell_variant in Array(next_spellbook_data.get("known", [])):
 		spellbook_known.append(String(spell_variant))
@@ -848,8 +903,9 @@ func draw_grid() -> void:
 		var item: Dictionary = item_variant
 		if item_is_animating(item):
 			continue
-		draw_inventory_item(item_rect_for_anchor(item), item, false)
+		draw_inventory_item(item_rect_for_anchor(item), item, false, item_should_glow_for_fusion(item))
 	draw_item_snap_animations()
+	draw_item_fusion_links()
 	var preview_pack: Dictionary = dragging_pack if not dragging_pack.is_empty() else {}
 	if not preview_pack.is_empty():
 		var preview_pack_anchor: Vector2i = preview_anchor_for_pack(preview_pack, drag_pointer_local)
@@ -879,7 +935,7 @@ func draw_ground_items() -> void:
 		var slot_rect: Rect2 = item_rects[item_index]
 		draw_rect(slot_rect, Color("243841"), true)
 		draw_rect(slot_rect, Color("5a8593"), false, 1.0)
-		draw_inventory_item(ground_item_display_rect(slot_rect, ground_items[item_index]), ground_items[item_index], true)
+		draw_inventory_item(ground_item_display_rect(slot_rect, ground_items[item_index]), ground_items[item_index], true, item_should_glow_for_fusion(ground_items[item_index]))
 
 func draw_item_description_panel() -> void:
 	var description_rect: Rect2 = item_description_rect()
@@ -987,13 +1043,14 @@ func draw_rotate_button() -> void:
 func draw_dragging_item() -> void:
 	if dragging_item.is_empty():
 		return
-	draw_inventory_item(dragging_item_rect(), dragging_item, true)
+	draw_inventory_item(dragging_item_rect(), dragging_item, true, item_should_glow_for_fusion(dragging_item))
 
 func draw_item_snap_animations() -> void:
 	for animation_variant in item_snap_animations:
 		var animation: Dictionary = animation_variant
 		var animation_rect: Rect2 = interpolated_item_snap_rect(animation)
-		draw_inventory_item(animation_rect, animation.get("item", {}), true)
+		var animated_item: Dictionary = Dictionary(animation.get("item", {}))
+		draw_inventory_item(animation_rect, animated_item, true, item_should_glow_for_fusion(animated_item))
 
 func interpolated_item_snap_rect(animation: Dictionary) -> Rect2:
 	var from_rect: Rect2 = animation.get("from_rect", Rect2())
@@ -1020,20 +1077,89 @@ func draw_dragging_pack() -> void:
 	draw_pack_handle_marks(preview_rect)
 	draw_string(ThemeDB.fallback_font, preview_rect.position + Vector2(8.0, 18.0), "MOVING", HORIZONTAL_ALIGNMENT_LEFT, preview_rect.size.x - 12.0, 14, GRID_PACK_HIGHLIGHT)
 
-func draw_inventory_item(item_rect: Rect2, item: Dictionary, emphasize: bool) -> void:
+func draw_inventory_item(item_rect: Rect2, item: Dictionary, emphasize: bool, fusion_glow: bool = false) -> void:
 	var item_def: Dictionary = item_defs.get(String(item.get("item_id", "")), {})
+	var item_id: String = String(item.get("item_id", ""))
 	var item_level: int = maxi(1, int(item.get("item_level", item_def.get("item_level", 1))))
-	var fill: Color = item_def.get("color", Color("9ed4ff"))
+	if fusion_glow:
+		var glow_pulse: float = 0.5 + 0.5 * sin(synergy_shine_time * 7.0 + float(int(item.get("uid", -1)) % 11))
+		draw_rect(item_rect.grow(5.0 + glow_pulse * 1.8), Color(0.98, 0.90, 0.52, 0.16 + glow_pulse * 0.14), true)
+	var fill: Color = item_level_color(item_level)
 	if emphasize:
 		fill = fill.lightened(0.12)
 	draw_rect(item_rect, fill, true)
-	draw_rect(item_rect, Color("eff8ff"), false, 2.0)
+	var identity_tint: Color = item_def.get("color", Color("eff8ff"))
+	draw_rect(item_rect, identity_tint.lightened(0.34), false, 2.0)
+	if fusion_glow:
+		draw_rect(item_rect.grow(1.0), Color(1.0, 0.95, 0.72, 0.88), false, 2.0)
 	var font: Font = ThemeDB.fallback_font
 	var item_name: String = String(item_def.get("name", "Item"))
 	var short_label: String = String(item_def.get("short", item_name.substr(0, mini(item_name.length(), 3)).to_upper()))
-	draw_string(font, item_rect.position + Vector2(8.0, 22.0), short_label, HORIZONTAL_ALIGNMENT_LEFT, item_rect.size.x - 12.0, 18, Color("0f171b"))
-	draw_string(font, item_rect.position + Vector2(item_rect.size.x - 34.0, 14.0), "L%d" % item_level, HORIZONTAL_ALIGNMENT_LEFT, 30.0, 12, Color("132028"))
-	draw_string(font, item_rect.position + Vector2(8.0, item_rect.size.y - 8.0), item_name, HORIZONTAL_ALIGNMENT_LEFT, item_rect.size.x - 12.0, 14, Color("0f171b"))
+	var compact_tile: bool = item_rect.size.x < 96.0 or item_rect.size.y < 68.0
+	var symbol: String = item_symbol_for_item(item_id, short_label)
+	var symbol_size: int = 22 if compact_tile else 28
+	draw_string(font, item_rect.position + Vector2(item_rect.size.x * 0.5 - 10.0, item_rect.size.y * 0.5 + 8.0), symbol, HORIZONTAL_ALIGNMENT_LEFT, 24.0, symbol_size, Color("0e171c"))
+	var level_badge: Rect2 = Rect2(item_rect.position + Vector2(item_rect.size.x - 34.0, 4.0), Vector2(30.0, 14.0))
+	draw_rect(level_badge, Color(0.06, 0.11, 0.14, 0.46), true)
+	draw_rect(level_badge, Color(0.90, 0.96, 1.0, 0.62), false, 1.0)
+	draw_string(font, level_badge.position + Vector2(4.0, 11.0), "L%d" % item_level, HORIZONTAL_ALIGNMENT_LEFT, level_badge.size.x - 6.0, 11, Color("eaf6ff"))
+	if compact_tile:
+		draw_string(font, item_rect.position + Vector2(6.0, 14.0), short_label, HORIZONTAL_ALIGNMENT_LEFT, item_rect.size.x - 40.0, 12, Color("eef7ff"))
+		return
+	draw_string(font, item_rect.position + Vector2(8.0, 18.0), short_label, HORIZONTAL_ALIGNMENT_LEFT, item_rect.size.x - 40.0, 13, Color("eef7ff"))
+	draw_string(font, item_rect.position + Vector2(8.0, item_rect.size.y - 8.0), item_name, HORIZONTAL_ALIGNMENT_LEFT, item_rect.size.x - 12.0, 13, Color("f0f8ff"))
+
+func item_level_color(item_level: int) -> Color:
+	if ITEM_LEVEL_COLORS.is_empty():
+		return Color("7a8a94")
+	var palette_index: int = clampi(item_level, 1, ITEM_LEVEL_COLORS.size()) - 1
+	return ITEM_LEVEL_COLORS[palette_index]
+
+func draw_item_fusion_links() -> void:
+	for link_variant in fusion_links:
+		var link_entry: Dictionary = link_variant
+		var left_uid: int = int(link_entry.get("left_uid", -1))
+		var right_uid: int = int(link_entry.get("right_uid", -1))
+		var left_rect: Rect2 = item_rect_for_uid(left_uid)
+		var right_rect: Rect2 = item_rect_for_uid(right_uid)
+		if left_rect.size == Vector2.ZERO or right_rect.size == Vector2.ZERO:
+			continue
+		var start_point: Vector2 = left_rect.get_center()
+		var end_point: Vector2 = right_rect.get_center()
+		var pulse: float = 0.5 + 0.5 * sin(synergy_shine_time * 7.8 + float((left_uid + right_uid) % 23))
+		draw_line(start_point, end_point, Color(0.56, 0.84, 1.0, 0.22 + pulse * 0.14), 6.0 + pulse * 2.0, true)
+		draw_line(start_point, end_point, Color(0.98, 0.93, 0.74, 0.72 + pulse * 0.22), 2.2 + pulse * 0.8, true)
+		var spark_progress: float = fposmod(synergy_shine_time * 0.9 + float((left_uid * 3 + right_uid) % 11) * 0.09, 1.0)
+		var spark_position: Vector2 = start_point.lerp(end_point, spark_progress)
+		draw_circle(spark_position, 2.4 + pulse * 0.8, Color(1.0, 0.98, 0.88, 0.92))
+
+func item_rect_for_uid(item_uid: int) -> Rect2:
+	if item_uid < 0:
+		return Rect2()
+	for item_variant in items:
+		var item: Dictionary = item_variant
+		if int(item.get("uid", -1)) == item_uid:
+			return item_rect_for_anchor(item)
+	if not dragging_item.is_empty() and int(dragging_item.get("uid", -1)) == item_uid:
+		return dragging_item_rect()
+	for animation_variant in item_snap_animations:
+		var animation: Dictionary = animation_variant
+		var animation_item: Dictionary = Dictionary(animation.get("item", {}))
+		if int(animation_item.get("uid", -1)) == item_uid:
+			return interpolated_item_snap_rect(animation)
+	return Rect2()
+
+func item_should_glow_for_fusion(item: Dictionary) -> bool:
+	if item.is_empty():
+		return false
+	return fusion_glow_uids.has(int(item.get("uid", -1)))
+
+func item_symbol_for_item(item_id: String, fallback_short_label: String) -> String:
+	if ITEM_SYMBOLS.has(item_id):
+		return String(ITEM_SYMBOLS[item_id])
+	if fallback_short_label != "":
+		return fallback_short_label.left(1)
+	return "?"
 
 func draw_item_synergy_overlay() -> void:
 	for item_variant in items:

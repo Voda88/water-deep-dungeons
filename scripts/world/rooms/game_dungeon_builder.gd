@@ -141,6 +141,7 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 	game.finalize_room_slot_distribution()
 	assign_exit_room(game)
 	assign_special_room_features(game)
+	assign_hidden_room_reward_intel(game)
 	game.prepare_floor_enemy_spawn_types()
 	game.prewarm_enemy_pool_for_floor()
 	spawn_starting_room_test_items(game)
@@ -150,6 +151,8 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 	game.invalidate_static_dungeon_layer()
 
 static func spawn_starting_room_test_items(game: Node) -> void:
+	if game.floor_index != 1:
+		return
 	if not game.rooms.has(game.crystal_room):
 		return
 	var item_ids: Array[String] = []
@@ -405,6 +408,7 @@ static func create_room(game: Node, room_coord: Vector2i, template_id: String, d
 		"feature_force_loot": false,
 		"feature_spawn_priority": false,
 		"feature_bonus_resource_event": "",
+		"hidden_dust_reward": 0,
 		"scry_revealed": false,
 		"sanctuary_time_left": 0.0,
 		"sanctuary_duration": 0.0,
@@ -957,6 +961,23 @@ static func assign_special_room_features(game: Node) -> void:
 			game.rooms[permanent_light_room]["permanent_light"] = true
 			game.rooms[permanent_light_room]["permanent_light_seeded"] = true
 			game.rooms[permanent_light_room]["lit"] = true
+
+static func assign_hidden_room_reward_intel(game: Node) -> void:
+	for room_coord_variant in game.rooms.keys():
+		var room_coord: Vector2i = room_coord_variant
+		var room_data: Dictionary = Dictionary(game.rooms[room_coord]).duplicate(true)
+		if room_coord == game.crystal_room:
+			room_data["hidden_dust_reward"] = 0
+			game.rooms[room_coord] = room_data
+			continue
+		var room_rng: RandomNumberGenerator = RandomNumberGenerator.new()
+		var seed_text: String = "%d:%d:%d:%s" % [game.floor_index, room_coord.x, room_coord.y, String(room_data.get("profile", "room"))]
+		room_rng.seed = int(hash(seed_text))
+		var dust_reward: int = 0
+		if room_rng.randf() < game.ROOM_OPEN_DUST_CHANCE:
+			dust_reward = room_rng.randi_range(game.ROOM_OPEN_DUST_MIN, game.ROOM_OPEN_DUST_MAX)
+		room_data["hidden_dust_reward"] = dust_reward
+		game.rooms[room_coord] = room_data
 
 static func apply_merchant_to_room(game: Node, merchant_room: Vector2i) -> void:
 	if merchant_room == game.INVALID_ROOM or not game.rooms.has(merchant_room):

@@ -79,7 +79,12 @@ const ENEMY_TYPE_ORC_RIDER: String = "orc_rider"
 const ENEMY_TYPE_ORC: String = "orc"
 const ENEMY_TYPE_BAT: String = "bat"
 const ENEMY_TYPE_GOLEM: String = "golem"
+const ENEMY_TYPE_DEMON_A: String = "demon_a"
 const ENEMY_TYPE_DEMON_D: String = "demon_d"
+const ENEMY_TYPE_SKELETON: String = "skeleton"
+const ENEMY_TYPE_SKELETON_ARMORED: String = "skeleton_armored"
+const ENEMY_TYPE_SKELETON_GREATSWORD: String = "skeleton_greatsword"
+const ENEMY_TYPE_SPIRITUAL_WEAPON: String = "spiritual_weapon"
 const ENEMY_TYPE_ORC_SHAMAN: String = "orc_shaman"
 const ENEMY_TYPE_SKELETON_ARCHER: String = "skeleton_archer"
 const MINOR_MODULE_TURRET: String = "ballista_turret"
@@ -520,6 +525,12 @@ func spell_level(spell_id: String) -> int:
 
 func spell_class_id(spell_id: String) -> String:
 	return GAME_HERO_DEFS.spell_class_id(spell_id, Callable(self, "card_definition"))
+
+func spell_classes_for_spell(spell_id: String) -> Array[String]:
+	return GAME_HERO_DEFS.spell_classes_for_spell(spell_id, Callable(self, "card_definition"))
+
+func spell_is_available_to_class(spell_id: String, class_id: String) -> bool:
+	return GAME_HERO_DEFS.spell_is_available_to_class(spell_id, class_id, Callable(self, "card_definition"))
 
 func spell_slot_counts_for_class_level(class_id: String, level_value: int) -> Array[int]:
 	return GAME_HERO_DEFS.spell_slot_counts_for_class_level(class_id, level_value)

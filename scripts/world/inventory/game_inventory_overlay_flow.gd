@@ -140,7 +140,83 @@ static func commit_spell_slots(game: Node, hero_index: int, slotted_spells: Arra
 	if game.doors_opened == 0:
 		reset_hero_spellbook_generated_cards(game, hero)
 		game.refresh_active_floor_spells(hero, true)
+	else:
+		apply_midfloor_spell_slot_additions_on_cooldown(game, hero)
 	game.apply_inventory_stats_to_hero(hero)
+
+static func spell_count_map(spells: Array) -> Dictionary:
+	var counts: Dictionary = {}
+	for spell_variant in spells:
+		var spell_id: String = String(spell_variant)
+		if spell_id == "":
+			continue
+		counts[spell_id] = int(counts.get(spell_id, 0)) + 1
+	return counts
+
+static func spellbook_generator_key(hero_index: int, spell_index: int, spell_id: String) -> String:
+	return "spellbook:%d:%d:%s" % [hero_index, spell_index, spell_id]
+
+static func build_spellbook_generator_key_counts(hero: Variant, source_spells: Array) -> Dictionary:
+	var key_counts: Dictionary = {}
+	for spell_index in range(source_spells.size()):
+		var spell_id: String = String(source_spells[spell_index])
+		if spell_id == "":
+			continue
+		var key: String = spellbook_generator_key(int(hero.hero_index), spell_index, spell_id)
+		key_counts[key] = int(key_counts.get(key, 0)) + 1
+	return key_counts
+
+static func added_spell_copies(previous_spells: Array, slotted_spells: Array) -> Array[String]:
+	var additions: Array[String] = []
+	var previous_counts: Dictionary = spell_count_map(previous_spells)
+	var slotted_counts: Dictionary = spell_count_map(slotted_spells)
+	for spell_id_variant in slotted_counts.keys():
+		var spell_id: String = String(spell_id_variant)
+		var additional_copies: int = int(slotted_counts.get(spell_id, 0)) - int(previous_counts.get(spell_id, 0))
+		for copy_index in range(maxi(additional_copies, 0)):
+			additions.append(spell_id)
+	return additions
+
+static func apply_midfloor_spell_slot_additions_on_cooldown(game: Node, hero: Variant) -> void:
+	if hero == null or not is_instance_valid(hero) or not game.hero_supports_spell_repertoire(hero):
+		return
+	var previous_active_spells: Array = Array(hero.active_floor_spells).duplicate()
+	var new_spells: Array[String] = added_spell_copies(previous_active_spells, Array(hero.slotted_spells))
+	if new_spells.is_empty():
+		return
+	for spell_id in new_spells:
+		hero.active_floor_spells.append(spell_id)
+	var previous_key_counts: Dictionary = build_spellbook_generator_key_counts(hero, previous_active_spells)
+	var current_key_counts: Dictionary = build_spellbook_generator_key_counts(hero, Array(hero.active_floor_spells))
+	var added_generator_keys: Array[String] = []
+	for key_variant in current_key_counts.keys():
+		var key: String = String(key_variant)
+		var delta: int = int(current_key_counts.get(key, 0)) - int(previous_key_counts.get(key, 0))
+		for count_index in range(maxi(delta, 0)):
+			added_generator_keys.append(key)
+	if added_generator_keys.is_empty():
+		return
+	var effect_summary: Dictionary = game.inventory_effect_summary(hero.inventory_items)
+	game.sync_hero_card_sources(hero, effect_summary)
+	var filtered_hand: Array = []
+	for hand_card_variant in hero.hand_cards:
+		var hand_card: Dictionary = (hand_card_variant as Dictionary).duplicate(true)
+		var generator_key: String = String(hand_card.get("generator_key", ""))
+		if added_generator_keys.has(generator_key):
+			continue
+		filtered_hand.append(hand_card)
+	hero.hand_cards = filtered_hand
+	for generator_key_variant in added_generator_keys:
+		var added_key: String = String(generator_key_variant)
+		if not game.global_item_card_states.has(added_key):
+			continue
+		var state: Dictionary = Dictionary(game.global_item_card_states.get(added_key, {})).duplicate(true)
+		var interval: int = maxi(1, int(state.get("interval", 1)))
+		state["queued_cards"] = 0
+		state["remaining_doors"] = interval
+		game.global_item_card_states[added_key] = state
+	game.fill_queued_hand_cards(hero, effect_summary)
+	game.cleanup_global_item_card_states()
 
 static func _on_inventory_overlay_changed(game: Node, items: Array) -> void:
 	if game.inventory_session.is_empty():
