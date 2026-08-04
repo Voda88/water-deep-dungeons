@@ -173,6 +173,7 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 		"crystal_holder_index": game.crystal_holder.hero_index if game.crystal_holder != null and is_instance_valid(game.crystal_holder) else -1,
 		"door_wave_auto_heal_pending": game.door_wave_auto_heal_pending,
 		"door_wave_healing_active": game.door_wave_healing_active,
+		"door_wave_spawns_incoming": game.door_wave_spawns_incoming,
 		"next_enemy_uid": game.next_enemy_uid,
 		"next_item_uid": game.next_item_uid,
 	}
@@ -223,6 +224,7 @@ static func apply_network_snapshot(game: Node, snapshot: Dictionary) -> void:
 	game.crystal_ground_room = snapshot.get("crystal_ground_room", game.INVALID_ROOM)
 	game.door_wave_auto_heal_pending = bool(snapshot.get("door_wave_auto_heal_pending", false))
 	game.door_wave_healing_active = bool(snapshot.get("door_wave_healing_active", false))
+	game.door_wave_spawns_incoming = bool(snapshot.get("door_wave_spawns_incoming", false))
 	game.next_enemy_uid = int(snapshot.get("next_enemy_uid", game.next_enemy_uid))
 	game.next_item_uid = int(snapshot.get("next_item_uid", game.next_item_uid))
 	apply_hero_snapshots(game, Array(snapshot.get("heroes", [])))

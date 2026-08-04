@@ -40,6 +40,11 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 	game.floating_resource_texts.clear()
 	game.pending_enemy_spawns.clear()
 	game.pending_door_open_income.clear()
+	game.pending_room_open_reward_totals = {
+		"food": 0,
+		"industry": 0,
+		"science": 0,
+	}
 	game.pending_room_constructions.clear()
 	game.next_enemy_uid = 1
 	game.next_card_uid = 1
@@ -63,6 +68,7 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 	game.door_wave_auto_heal_pending = false
 	game.door_wave_healing_active = false
 	game.door_wave_major_payout_pending = false
+	game.door_wave_spawns_incoming = false
 	game.opening_room = game.INVALID_ROOM
 	game.opening_origin_room = game.INVALID_ROOM
 	game.opening_hero = null

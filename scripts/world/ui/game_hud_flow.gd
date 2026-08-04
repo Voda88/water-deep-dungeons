@@ -14,6 +14,26 @@ static func apply_hud_styling(game: Node) -> void:
 	game.crystal_label.add_theme_color_override("font_color", Color("f6e3a4"))
 	game.wave_label.add_theme_color_override("font_color", Color("d6e4ee"))
 
+static func status_message_is_combat_detail(status_text: String) -> bool:
+	if status_text == "":
+		return false
+	var lower_text: String = status_text.to_lower()
+	var combat_tokens: Array[String] = [
+		"lunges at",
+		"looses an arrow",
+		"swarming",
+		"striking the crystal",
+		"peppering the crystal",
+		"dive at the crystal",
+		"hammers",
+		"all heroes have fallen",
+		" killed ",
+	]
+	for token in combat_tokens:
+		if lower_text.find(token) >= 0:
+			return true
+	return false
+
 static func rebuild_hero_bar(game: Node) -> void:
 	if game.hero_bar == null:
 		return
@@ -116,13 +136,17 @@ static func update_hud(game: Node) -> void:
 	if research_open:
 		game.refresh_research_overlay()
 	var door_income: Dictionary = game.calculate_door_rewards()
+	var major_income: Dictionary = game.calculate_major_module_wave_rewards()
+	var projected_food_income: int = int(door_income.get("food", 0)) + int(major_income.get("food", 0))
+	var projected_industry_income: int = int(door_income.get("industry", 0)) + int(major_income.get("industry", 0))
+	var projected_science_income: int = int(door_income.get("science", 0)) + int(major_income.get("science", 0))
 	var crystal_carried: bool = game.crystal_holder != null and is_instance_valid(game.crystal_holder)
 	var calm_phase: bool = not game.wave_in_progress() and not crystal_carried
 	var inventory_allowed: bool = game.inventory_actions_allowed_for_local_peer()
 	game.dust_label.text = "Dust %d" % game.dust
-	game.food_label.text = "Food %d +%d" % [game.food, int(door_income["food"])]
-	game.industry_label.text = "Mat %d +%d" % [game.industry, int(door_income["industry"])]
-	game.science_label.text = "Arc %d +%d" % [game.science, int(door_income["science"])]
+	game.food_label.text = "Food %d +%d" % [game.food, projected_food_income]
+	game.industry_label.text = "Mat %d +%d" % [game.industry, projected_industry_income]
+	game.science_label.text = "Arc %d +%d" % [game.science, projected_science_income]
 	if game.crystal_holder != null and is_instance_valid(game.crystal_holder):
 		game.crystal_label.text = "Crystal  %s Carrying" % game.crystal_holder.hero_name
 	else:
@@ -152,7 +176,11 @@ static func update_hud(game: Node) -> void:
 	update_calm_speed_bar(game, calm_phase)
 	update_hero_button_text(game)
 	update_runtime_button_state(game)
-	game.hint_label.text = game.status_message
+	if not status_message_is_combat_detail(game.status_message):
+		game.room_flow_status_message = game.status_message
+	if String(game.room_flow_status_message) == "":
+		game.room_flow_status_message = game.status_message
+	game.hint_label.text = game.room_flow_status_message
 	game.update_network_ui()
 	game.update_hero_select_overlay()
 

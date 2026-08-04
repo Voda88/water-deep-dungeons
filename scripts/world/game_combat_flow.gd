@@ -2,6 +2,7 @@ extends RefCounted
 
 const GAME_ENEMY_DEFS: GDScript = preload("res://scripts/content/game_enemy_defs.gd")
 const GAME_INVENTORY_ITEM_FLOW: GDScript = preload("res://scripts/world/inventory/game_inventory_item_flow.gd")
+const GAME_FLOOR_FLOW: GDScript = preload("res://scripts/world/game_floor_flow.gd")
 const EFFECT_FRAME_SIZE: Vector2i = Vector2i(100, 100)
 const WIZARD_FIRE_BOLT_EFFECT: Texture2D = preload("res://assets/characters/packs/pack01/projectiles/magic/Wizard_Attack02_Effect.png")
 const NECROMANCER_ATTACK_EFFECT: Texture2D = preload("res://assets/characters/packs/pack01/projectiles/magic/Necromancer_Attack02_Effect.png")
@@ -11,8 +12,17 @@ const GHOSTFIRE_BEAM_EFFECT: Texture2D = preload("res://assets/characters/packs/
 const FLOOR_ENEMY_TYPE_COUNT: int = 4
 const MIN_PREWARM_ENEMIES_PER_TYPE: int = 4
 const BASE_PREWARM_TOTAL: int = 100
+const SPAWN_CLUSTER_BASE_RADIUS: float = 34.0
+const SPAWN_CLUSTER_RADIUS_STEP: float = 8.0
+const SPAWN_CLUSTER_MAX_RADIUS: float = 96.0
+const SPAWN_CLUSTER_CELL_SIZE: float = 18.0
+const SPAWN_CLUSTER_GOLDEN_ANGLE: float = 2.39996323
+const SPAWN_CLUSTER_MAX_CELL_RETRIES: int = 2
+const SPAWN_CENTER_SAFE_MARGIN: float = 72.0
+const SPAWN_CENTER_ANCHOR_JITTER: float = 14.0
 
 static func launch_wave(game: Node, entered_room: Vector2i) -> void:
+	var pending_spawn_count_before: int = game.pending_enemy_spawns.size()
 	var dark_rooms: Array[Vector2i] = []
 	var priority_dark_rooms: Array[Vector2i] = []
 	for room_coord_variant in game.rooms.keys():
@@ -24,6 +34,7 @@ static func launch_wave(game: Node, entered_room: Vector2i) -> void:
 		if bool(room.get("feature_spawn_priority", false)):
 			priority_dark_rooms.append(room_coord)
 	if dark_rooms.is_empty():
+		game.door_wave_spawns_incoming = false
 		game.door_wave_auto_heal_pending = false
 		game.door_wave_healing_active = true
 		game.status_message = "Opened a lit frontier. No dark room was available for a wave."
@@ -77,6 +88,7 @@ static func launch_wave(game: Node, entered_room: Vector2i) -> void:
 			queue_wave_spawn(game, room_coord, wave_points, immediate, delayed_room_order)
 			if not immediate:
 				delayed_room_order += 1
+	game.door_wave_spawns_incoming = game.pending_enemy_spawns.size() > pending_spawn_count_before
 	game.status_message = "Wave %d emerged from %d dark room%s." % [game.wave_index, chosen_rooms.size(), "" if chosen_rooms.size() == 1 else "s"]
 	game.update_hud()
 
@@ -86,6 +98,10 @@ static func queue_wave_spawn(game: Node, room_coord: Vector2i, wave_points: int,
 	var spawn_plan: Array[String] = build_enemy_spawn_plan(game, wave_points, false)
 	if spawn_plan.is_empty():
 		return
+	var cluster_anchor: Vector2 = centered_spawn_anchor(game, room_coord)
+	var cluster_radius: float = spawn_cluster_radius_for_room(game, room_coord, spawn_plan.size())
+	var cluster_base_angle: float = game.rng.randf() * TAU
+	var clustered_positions: Array = build_spawn_positions(game, room_coord, spawn_plan.size(), cluster_anchor, cluster_radius, cluster_base_angle)
 	var marker_lead: float = maxf(float(game.WAVE_PRESPAWN_MARKER_LEAD), 0.0)
 	var crystal_is_carried: bool = game.crystal_holder != null and is_instance_valid(game.crystal_holder)
 	var room_stagger_interval: float = game.WAVE_STAGGER_ROOM_INTERVAL if crystal_is_carried else 0.0
@@ -101,7 +117,10 @@ static func queue_wave_spawn(game: Node, room_coord: Vector2i, wave_points: int,
 		"total_count": spawn_plan.size(),
 		"spawned": 0,
 		"plan": spawn_plan,
-		"positions": [],
+		"positions": clustered_positions,
+		"cluster_anchor": cluster_anchor,
+		"cluster_radius": cluster_radius,
+		"cluster_base_angle": cluster_base_angle,
 	})
 
 static func advance_pending_enemy_spawns(game: Node, delta: float) -> void:
@@ -119,19 +138,37 @@ static func advance_pending_enemy_spawns(game: Node, delta: float) -> void:
 			var preview_positions: Array = Array(pending_spawn.get("positions", []))
 			var preview_room: Vector2i = Vector2i(pending_spawn.get("room", game.INVALID_ROOM))
 			var preview_target_count: int = int(pending_spawn.get("total_count", preview_positions.size()))
+			var preview_anchor: Vector2 = Vector2(pending_spawn.get("cluster_anchor", Vector2.INF))
+			var preview_radius: float = float(pending_spawn.get("cluster_radius", -1.0))
+			var preview_base_angle: float = float(pending_spawn.get("cluster_base_angle", -1.0))
+			if preview_anchor == Vector2.INF and not preview_positions.is_empty():
+				preview_anchor = Vector2(preview_positions[0])
+			if preview_radius <= 0.0:
+				preview_radius = spawn_cluster_radius(preview_target_count)
+			if preview_base_angle < 0.0:
+				preview_base_angle = game.rng.randf() * TAU
+			var preview_used_cells: Dictionary = {}
+			for preview_position_variant in preview_positions:
+				var preview_position: Vector2 = Vector2(preview_position_variant)
+				preview_used_cells[spawn_cluster_cell_key(preview_position)] = true
 			while preview_budget > 0 and preview_positions.size() < preview_target_count and game.rooms.has(preview_room):
-				preview_positions.append(game.random_walkable_point(preview_room))
+				var preview_spawn_index: int = preview_positions.size()
+				preview_positions.append(clustered_spawn_position(game, preview_room, preview_anchor, preview_radius, preview_spawn_index, preview_used_cells, preview_base_angle))
 				preview_budget -= 1
 			pending_spawn["positions"] = preview_positions
+			pending_spawn["cluster_anchor"] = preview_anchor
+			pending_spawn["cluster_radius"] = preview_radius
+			pending_spawn["cluster_base_angle"] = preview_base_angle
 		if spawn_budget > 0 and int(pending_spawn["remaining"]) > 0 and float(pending_spawn["delay_left"]) <= 0.0:
 			var plan: Array = Array(pending_spawn.get("plan", []))
 			var positions: Array = Array(pending_spawn.get("positions", []))
+			var spawn_source: String = String(pending_spawn.get("spawn_source", "door_wave"))
 			var spawn_index: int = int(pending_spawn.get("spawned", 0))
 			if spawn_index >= 0 and spawn_index < plan.size():
 				var spawn_position: Vector2 = Vector2.INF
 				if spawn_index < positions.size():
 					spawn_position = Vector2(positions[spawn_index])
-				spawn_wave_enemy_at(game, Vector2i(pending_spawn["room"]), String(plan[spawn_index]), spawn_position)
+				spawn_wave_enemy_at(game, Vector2i(pending_spawn["room"]), String(plan[spawn_index]), spawn_position, spawn_source)
 				pending_spawn["spawned"] = int(pending_spawn["spawned"]) + 1
 				pending_spawn["remaining"] = int(pending_spawn["remaining"]) - 1
 				pending_spawn["delay_left"] = float(pending_spawn["delay_left"]) + float(pending_spawn["interval"])
@@ -227,6 +264,10 @@ static func queue_pressure_spawn(game: Node, room_coord: Vector2i, count: int, m
 		spawn_plan.resize(max_spawn_entities)
 	if spawn_plan.is_empty():
 		return 0
+	var cluster_anchor: Vector2 = centered_spawn_anchor(game, room_coord)
+	var cluster_radius: float = spawn_cluster_radius_for_room(game, room_coord, spawn_plan.size())
+	var cluster_base_angle: float = game.rng.randf() * TAU
+	var clustered_positions: Array = build_spawn_positions(game, room_coord, spawn_plan.size(), cluster_anchor, cluster_radius, cluster_base_angle)
 	var marker_lead: float = maxf(float(game.WAVE_PRESPAWN_MARKER_LEAD), 0.0)
 	var first_spawn_delay: float = maxf(float(game.CRYSTAL_PRESSURE_WARNING_DURATION), 0.0) + marker_lead
 	game.rooms[room_coord]["warning_timer_left"] = maxf(float(game.rooms[room_coord].get("warning_timer_left", 0.0)), first_spawn_delay)
@@ -239,7 +280,10 @@ static func queue_pressure_spawn(game: Node, room_coord: Vector2i, count: int, m
 		"total_count": spawn_plan.size(),
 		"spawned": 0,
 		"plan": spawn_plan,
-		"positions": [],
+		"positions": clustered_positions,
+		"cluster_anchor": cluster_anchor,
+		"cluster_radius": cluster_radius,
+		"cluster_base_angle": cluster_base_angle,
 	})
 	return spawn_plan.size()
 
@@ -397,19 +441,107 @@ static func build_enemy_spawn_plan(game: Node, budget: int, pressure_spawn: bool
 
 static func spawn_wave(game: Node, room_coord: Vector2i, count: int) -> void:
 	var spawn_plan: Array[String] = build_enemy_spawn_plan(game, count, false)
-	for enemy_type in spawn_plan:
-		spawn_wave_enemy(game, room_coord, enemy_type)
+	if spawn_plan.is_empty():
+		return
+	var cluster_anchor: Vector2 = centered_spawn_anchor(game, room_coord)
+	var cluster_radius: float = spawn_cluster_radius_for_room(game, room_coord, spawn_plan.size())
+	var cluster_base_angle: float = game.rng.randf() * TAU
+	var positions: Array = build_spawn_positions(game, room_coord, spawn_plan.size(), cluster_anchor, cluster_radius, cluster_base_angle)
+	for spawn_index in range(spawn_plan.size()):
+		var spawn_position: Vector2 = Vector2.INF
+		if spawn_index < positions.size():
+			spawn_position = Vector2(positions[spawn_index])
+		spawn_wave_enemy_at(game, room_coord, String(spawn_plan[spawn_index]), spawn_position, "door_wave")
 
-static func build_spawn_positions(game: Node, room_coord: Vector2i, count: int) -> Array:
+static func spawn_cluster_radius(count: int) -> float:
+	if count <= 1:
+		return SPAWN_CLUSTER_BASE_RADIUS
+	return clampf(SPAWN_CLUSTER_BASE_RADIUS + (sqrt(float(count - 1)) * SPAWN_CLUSTER_RADIUS_STEP), SPAWN_CLUSTER_BASE_RADIUS, SPAWN_CLUSTER_MAX_RADIUS)
+
+static func spawn_cluster_center_rect(game: Node, room_coord: Vector2i) -> Rect2:
+	var center_rect: Rect2 = game.room_interior_rect(room_coord, SPAWN_CENTER_SAFE_MARGIN)
+	if center_rect.size.x <= 1.0 or center_rect.size.y <= 1.0:
+		center_rect = game.room_interior_rect(room_coord, SPAWN_CENTER_SAFE_MARGIN * 0.5)
+	return center_rect
+
+static func clamp_point_to_spawn_center_area(game: Node, room_coord: Vector2i, world_position: Vector2) -> Vector2:
+	var center_rect: Rect2 = spawn_cluster_center_rect(game, room_coord)
+	if center_rect.size.x <= 1.0 or center_rect.size.y <= 1.0:
+		return game.clamp_point_to_room(world_position, room_coord)
+	return Vector2(
+		clampf(world_position.x, center_rect.position.x, center_rect.position.x + center_rect.size.x),
+		clampf(world_position.y, center_rect.position.y, center_rect.position.y + center_rect.size.y)
+	)
+
+static func centered_spawn_anchor(game: Node, room_coord: Vector2i) -> Vector2:
+	var center_anchor: Vector2 = game.room_walkable_center(room_coord)
+	if SPAWN_CENTER_ANCHOR_JITTER <= 0.0:
+		return clamp_point_to_spawn_center_area(game, room_coord, center_anchor)
+	var jitter_angle: float = game.rng.randf() * TAU
+	var jitter_distance: float = game.rng.randf() * SPAWN_CENTER_ANCHOR_JITTER
+	var jittered_anchor: Vector2 = center_anchor + Vector2(cos(jitter_angle), sin(jitter_angle)) * jitter_distance
+	return clamp_point_to_spawn_center_area(game, room_coord, jittered_anchor)
+
+static func spawn_cluster_radius_for_room(game: Node, room_coord: Vector2i, count: int) -> float:
+	var base_radius: float = spawn_cluster_radius(count)
+	var center_rect: Rect2 = spawn_cluster_center_rect(game, room_coord)
+	if center_rect.size.x <= 1.0 or center_rect.size.y <= 1.0:
+		return minf(base_radius, SPAWN_CLUSTER_MAX_RADIUS * 0.6)
+	var room_radius_cap: float = maxf(minf(center_rect.size.x, center_rect.size.y) * 0.5, SPAWN_CLUSTER_BASE_RADIUS)
+	return minf(base_radius, room_radius_cap)
+
+static func spawn_cluster_cell_key(world_position: Vector2) -> String:
+	var cell_size: float = maxf(SPAWN_CLUSTER_CELL_SIZE, 1.0)
+	var cell_x: int = int(floor(world_position.x / cell_size))
+	var cell_y: int = int(floor(world_position.y / cell_size))
+	return "%d:%d" % [cell_x, cell_y]
+
+static func clustered_spawn_position(game: Node, room_coord: Vector2i, anchor: Vector2, radius: float, spawn_index: int, used_cells: Dictionary, base_angle: float) -> Vector2:
+	var spawn_anchor: Vector2 = anchor
+	if spawn_anchor == Vector2.INF:
+		spawn_anchor = centered_spawn_anchor(game, room_coord)
+	var clamped_radius: float = maxf(radius, 0.0)
+	if clamped_radius <= 0.001:
+		var fallback_position: Vector2 = clamp_point_to_spawn_center_area(game, room_coord, spawn_anchor)
+		used_cells[spawn_cluster_cell_key(fallback_position)] = true
+		return fallback_position
+	var angle: float = base_angle + float(spawn_index) * SPAWN_CLUSTER_GOLDEN_ANGLE
+	var distance: float = minf(clamped_radius, SPAWN_CLUSTER_CELL_SIZE * (1.0 + sqrt(float(maxi(spawn_index, 0)))))
+	var best_position: Vector2 = clamp_point_to_spawn_center_area(game, room_coord, spawn_anchor + Vector2(cos(angle), sin(angle)) * distance)
+	var best_key: String = spawn_cluster_cell_key(best_position)
+	var retry_count: int = 0
+	while used_cells.has(best_key) and retry_count < SPAWN_CLUSTER_MAX_CELL_RETRIES:
+		retry_count += 1
+		angle += PI * (0.6 + 0.15 * float(retry_count))
+		distance = minf(clamped_radius, distance + SPAWN_CLUSTER_CELL_SIZE * 0.7)
+		best_position = clamp_point_to_spawn_center_area(game, room_coord, spawn_anchor + Vector2(cos(angle), sin(angle)) * distance)
+		best_key = spawn_cluster_cell_key(best_position)
+	used_cells[best_key] = true
+	return best_position
+
+static func build_spawn_positions(game: Node, room_coord: Vector2i, count: int, cluster_anchor: Vector2 = Vector2.INF, cluster_radius: float = -1.0, cluster_base_angle: float = -1.0) -> Array:
 	var positions: Array = []
-	for _spawn_index in range(maxi(count, 0)):
-		positions.append(game.random_walkable_point(room_coord))
+	var spawn_count: int = maxi(count, 0)
+	if spawn_count <= 0:
+		return positions
+	var anchor: Vector2 = cluster_anchor
+	if anchor == Vector2.INF:
+		anchor = centered_spawn_anchor(game, room_coord)
+	var radius: float = cluster_radius
+	if radius <= 0.0:
+		radius = spawn_cluster_radius_for_room(game, room_coord, spawn_count)
+	var base_angle: float = cluster_base_angle
+	if base_angle < 0.0:
+		base_angle = game.rng.randf() * TAU
+	var used_cells: Dictionary = {}
+	for _spawn_index in range(spawn_count):
+		positions.append(clustered_spawn_position(game, room_coord, anchor, radius, _spawn_index, used_cells, base_angle))
 	return positions
 
 static func spawn_wave_enemy(game: Node, room_coord: Vector2i, enemy_type: String) -> void:
-	spawn_wave_enemy_at(game, room_coord, enemy_type, Vector2.INF)
+	spawn_wave_enemy_at(game, room_coord, enemy_type, Vector2.INF, "door_wave")
 
-static func spawn_wave_enemy_at(game: Node, room_coord: Vector2i, enemy_type: String, spawn_position_hint: Vector2 = Vector2.INF) -> void:
+static func spawn_wave_enemy_at(game: Node, room_coord: Vector2i, enemy_type: String, spawn_position_hint: Vector2 = Vector2.INF, spawn_source: String = "door_wave") -> void:
 	var enemy: Variant = acquire_enemy_from_pool(game, enemy_type)
 	var enemy_uid: int = game.next_enemy_uid
 	game.next_enemy_uid += 1
@@ -427,6 +559,10 @@ static func spawn_wave_enemy_at(game: Node, room_coord: Vector2i, enemy_type: St
 		enemy.previous_room = room_coord
 		enemy.next_room = room_coord
 		enemy.set_destination(spawn_position)
+	if spawn_source != "":
+		enemy.set_meta("spawn_source", spawn_source)
+	elif enemy.has_meta("spawn_source"):
+		enemy.remove_meta("spawn_source")
 	game.enemies.append(enemy)
 
 static func projectile_numeric_pierce(projectile: Dictionary) -> int:

@@ -257,6 +257,11 @@ var projectiles: Array = []
 var floating_resource_texts: Array = []
 var pending_enemy_spawns: Array = []
 var pending_door_open_income: Array = []
+var pending_room_open_reward_totals: Dictionary = {
+	"food": 0,
+	"industry": 0,
+	"science": 0,
+}
 var opening_room: Vector2i = INVALID_ROOM
 var opening_origin_room: Vector2i = INVALID_ROOM
 var opening_hero: Variant = null
@@ -283,6 +288,7 @@ var doors_opened: int = 0
 var floor_major_modules_built_count: int = 0
 var game_over: bool = false
 var status_message: String = "Drag to pan, open rooms, then use Build to place modules on room slots."
+var room_flow_status_message: String = status_message
 var build_menu_open: bool = false
 var pending_build_type: String = ""
 var camera_bounds: Rect2 = Rect2()
@@ -361,6 +367,7 @@ var pending_room_action_requests: Dictionary = {}
 var door_wave_auto_heal_pending: bool = false
 var door_wave_healing_active: bool = false
 var door_wave_major_payout_pending: bool = false
+var door_wave_spawns_incoming: bool = false
 var pending_room_constructions: Array = []
 var next_enemy_uid: int = 1
 var next_item_uid: int = 1
@@ -1648,6 +1655,9 @@ func open_room(room_coord: Vector2i) -> void:
 func calculate_door_rewards() -> Dictionary:
 	return GAME_FLOOR_FLOW.calculate_door_rewards(self)
 
+func calculate_major_module_wave_rewards() -> Dictionary:
+	return GAME_FLOOR_FLOW.calculate_major_module_wave_rewards(self)
+
 func spawn_door_reward_texts(room_coord: Vector2i, door_reward: Dictionary, dust_reward: int) -> void:
 	GAME_FLOOR_FLOW.spawn_door_reward_texts(self, room_coord, door_reward, dust_reward)
 
@@ -2600,7 +2610,7 @@ func minor_module_projectile_speed(module_type: String) -> float:
 	return GAME_MODULE_DEFS.minor_module_projectile_speed(module_type, PROJECTILE_SPEED)
 
 func wave_in_progress() -> bool:
-	return not pending_enemy_spawns.is_empty() or not enemies.is_empty()
+	return door_wave_spawns_incoming or not pending_enemy_spawns.is_empty() or not enemies.is_empty()
 
 func update_hero_combat_movement_mode() -> void:
 	var in_combat: bool = wave_in_progress() or (crystal_holder != null and is_instance_valid(crystal_holder))
