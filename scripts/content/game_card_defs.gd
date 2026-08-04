@@ -554,10 +554,10 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 		"ricochet_dagger_card":
 			return {
 				"id": "ricochet_dagger_card",
-				"name": "Ricochet Dagger",
+				"name": "Ricochet Chakram",
 				"target_scope": "opened_room",
 				"requires_line_of_effect": true,
-				"description_lines": ["High-damage dagger throw", "Bounces up to 4 times", "If it bounces 3 times before the first hit, it explodes like Fireball", "At Combo 3: all damaged enemies become Flatfooted"],
+				"description_lines": ["High-damage chakram throw", "Bounces up to 4 times", "If it bounces 3 times before the first hit, it explodes like Fireball", "At Combo 3: all damaged enemies become Flatfooted"],
 				"base_damage": 68.0,
 				"projectile_count": 1,
 				"spread": 0.0,
@@ -582,7 +582,7 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 		_:
 			return {
 				"id": "axe_card",
-				"name": "Whirling Axe",
+				"name": "Razor Boomerang",
 				"target_scope": "same_room",
 				"base_damage": 40.0,
 				"speed": 760.0,

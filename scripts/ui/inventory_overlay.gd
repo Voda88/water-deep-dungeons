@@ -54,9 +54,9 @@ const ITEM_LEVEL_COLORS: Array[Color] = [
 	Color("8e9bd6"),
 ]
 const ITEM_SYMBOLS: Dictionary = {
-	"axe": "A",
+	"axe": "R",
 	"daggers": "D",
-	"ricochet_dagger": "G",
+	"ricochet_dagger": "C",
 	"cloak_of_shadows": "S",
 	"rogue_bandolier": "R",
 	"fighter_emergency_snack": "F",
@@ -1152,15 +1152,27 @@ func draw_inventory_item(item_rect: Rect2, item: Dictionary, emphasize: bool, fu
 	var item_def: Dictionary = item_defs.get(String(item.get("item_id", "")), {})
 	var item_id: String = String(item.get("item_id", ""))
 	var item_level: int = maxi(0, int(item.get("item_level", item_def.get("item_level", 1))))
+	var size_cells: Vector2i = item_size_in_cells(item)
+	var footprint_cells: Array = item_footprint_offsets(item)
 	if fusion_glow:
 		var glow_pulse: float = 0.5 + 0.5 * sin(synergy_shine_time * 7.0 + float(int(item.get("uid", -1)) % 11))
 		draw_rect(item_rect.grow(5.0 + glow_pulse * 1.8), Color(0.98, 0.90, 0.52, 0.16 + glow_pulse * 0.14), true)
 	var fill: Color = item_level_color(item_level)
 	if emphasize:
 		fill = fill.lightened(0.12)
-	draw_rect(item_rect, fill, true)
+	if footprint_cells.is_empty():
+		draw_rect(item_rect, fill, true)
+	else:
+		for footprint_cell_variant in footprint_cells:
+			var footprint_cell: Vector2i = footprint_cell_variant
+			draw_rect(item_cell_rect(item_rect, size_cells, footprint_cell), fill, true)
 	var identity_tint: Color = item_def.get("color", Color("eff8ff"))
-	draw_rect(item_rect, identity_tint.lightened(0.34), false, 2.0)
+	if footprint_cells.is_empty():
+		draw_rect(item_rect, identity_tint.lightened(0.34), false, 2.0)
+	else:
+		for footprint_cell_variant in footprint_cells:
+			var footprint_cell: Vector2i = footprint_cell_variant
+			draw_rect(item_cell_rect(item_rect, size_cells, footprint_cell), identity_tint.lightened(0.34), false, 2.0)
 	if fusion_glow:
 		draw_rect(item_rect.grow(1.0), Color(1.0, 0.95, 0.72, 0.88), false, 2.0)
 	var font: Font = ThemeDB.fallback_font
@@ -1414,6 +1426,11 @@ func item_rect_for_anchor(item: Dictionary) -> Rect2:
 	var size_cells: Vector2i = item_size_in_cells(item)
 	return Rect2(grid.position + Vector2(item["anchor"]) * cell_size(), Vector2(size_cells) * cell_size())
 
+func item_cell_rect(item_rect: Rect2, size_cells: Vector2i, cell_offset: Vector2i) -> Rect2:
+	var cell_width: float = item_rect.size.x / maxf(float(size_cells.x), 1.0)
+	var cell_height: float = item_rect.size.y / maxf(float(size_cells.y), 1.0)
+	return Rect2(item_rect.position + Vector2(float(cell_offset.x) * cell_width, float(cell_offset.y) * cell_height), Vector2(cell_width, cell_height))
+
 func dragging_item_rect() -> Rect2:
 	var size_cells: Vector2i = item_size_in_cells(dragging_item)
 	var item_size_pixels: Vector2 = Vector2(size_cells) * cell_size()
@@ -1425,10 +1442,24 @@ func dragging_pack_rect() -> Rect2:
 	return Rect2(drag_pointer_local - pack_size_pixels * 0.5, pack_size_pixels)
 
 func inventory_item_index_at(local_position: Vector2) -> int:
+	var grid_cell: Vector2i = local_to_inventory_cell(local_position)
+	if grid_cell == INVALID_CELL:
+		return -1
 	for item_index in range(items.size() - 1, -1, -1):
-		if item_rect_for_anchor(items[item_index]).has_point(local_position):
+		if occupied_cells_for_item(items[item_index]).has(grid_cell):
 			return item_index
 	return -1
+
+func local_to_inventory_cell(local_position: Vector2) -> Vector2i:
+	var grid: Rect2 = grid_rect()
+	if not grid.has_point(local_position):
+		return INVALID_CELL
+	var grid_cell_size: float = cell_size()
+	var cell_x: int = int(floor((local_position.x - grid.position.x) / grid_cell_size))
+	var cell_y: int = int(floor((local_position.y - grid.position.y) / grid_cell_size))
+	if cell_x < 0 or cell_y < 0 or cell_x >= inventory_canvas_size.x or cell_y >= inventory_canvas_size.y:
+		return INVALID_CELL
+	return Vector2i(cell_x, cell_y)
 
 func ground_item_item_rects() -> Array:
 	var item_rects: Array = []
@@ -1497,6 +1528,41 @@ func item_size_in_cells(item: Dictionary) -> Vector2i:
 		return Vector2i(item_base_size.y, item_base_size.x)
 	return item_base_size
 
+func item_base_footprint_offsets(item: Dictionary) -> Array:
+	var item_id: String = String(item.get("item_id", ""))
+	var item_def: Dictionary = item_defs.get(item_id, {})
+	var footprint: Array = []
+	if item_def.has("footprint_cells"):
+		for cell_variant in Array(item_def.get("footprint_cells", [])):
+			if cell_variant is Vector2i:
+				footprint.append(cell_variant)
+			elif cell_variant is Vector2:
+				footprint.append(Vector2i(cell_variant))
+			elif cell_variant is Array:
+				var raw_cell: Array = cell_variant
+				if raw_cell.size() >= 2:
+					footprint.append(Vector2i(int(raw_cell[0]), int(raw_cell[1])))
+	if not footprint.is_empty():
+		return footprint
+	var item_base_size: Vector2i = item_def.get("size", Vector2i.ONE)
+	for offset_y in range(item_base_size.y):
+		for offset_x in range(item_base_size.x):
+			footprint.append(Vector2i(offset_x, offset_y))
+	return footprint
+
+func item_footprint_offsets(item: Dictionary) -> Array:
+	var item_id: String = String(item.get("item_id", ""))
+	var item_def: Dictionary = item_defs.get(item_id, {})
+	var base_size: Vector2i = item_def.get("size", Vector2i.ONE)
+	var base_footprint: Array = item_base_footprint_offsets(item)
+	if not bool(item.get("rotated", false)):
+		return base_footprint
+	var rotated_footprint: Array = []
+	for offset_variant in base_footprint:
+		var offset: Vector2i = offset_variant
+		rotated_footprint.append(Vector2i(base_size.y - 1 - offset.y, offset.x))
+	return rotated_footprint
+
 func preview_anchor_for_item(item: Dictionary, local_position: Vector2) -> Vector2i:
 	var grid: Rect2 = grid_rect()
 	var item_size_cells: Vector2i = item_size_in_cells(item)
@@ -1547,22 +1613,26 @@ func can_place_item(item: Dictionary, anchor: Vector2i) -> bool:
 		var existing_item: Dictionary = existing_item_variant
 		for cell in occupied_cells_for_item(existing_item):
 			occupied_cells[cell] = true
-	for offset_y in range(size_cells.y):
-		for offset_x in range(size_cells.x):
-			var cell: Vector2i = anchor + Vector2i(offset_x, offset_y)
-			if not active_cells.has(cell) or occupied_cells.has(cell):
-				return false
+	var placed_item: Dictionary = item.duplicate(true)
+	placed_item["anchor"] = anchor
+	for occupied_cell_variant in occupied_cells_for_item(placed_item):
+		var occupied_cell: Vector2i = occupied_cell_variant
+		if occupied_cell.x < 0 or occupied_cell.y < 0:
+			return false
+		if occupied_cell.x >= inventory_canvas_size.x or occupied_cell.y >= inventory_canvas_size.y:
+			return false
+		if not active_cells.has(occupied_cell) or occupied_cells.has(occupied_cell):
+			return false
 	return true
 
 func occupied_cells_for_item(item: Dictionary) -> Array:
 	var cells: Array = []
 	var anchor: Vector2i = item.get("anchor", INVALID_CELL)
-	var size_cells: Vector2i = item_size_in_cells(item)
 	if anchor == INVALID_CELL:
 		return cells
-	for offset_y in range(size_cells.y):
-		for offset_x in range(size_cells.x):
-			cells.append(anchor + Vector2i(offset_x, offset_y))
+	for offset_variant in item_footprint_offsets(item):
+		var offset: Vector2i = offset_variant
+		cells.append(anchor + offset)
 	return cells
 
 func inventory_item_has_tag(item: Dictionary, tag_name: String) -> bool:

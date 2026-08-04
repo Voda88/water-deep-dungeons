@@ -9,6 +9,38 @@ static func item_size_in_cells(game: Node, item: Dictionary) -> Vector2i:
 		return Vector2i(base_size.y, base_size.x)
 	return base_size
 
+static func item_base_footprint_offsets(item_def: Dictionary) -> Array:
+	var footprint: Array = []
+	if item_def.has("footprint_cells"):
+		for cell_variant in Array(item_def.get("footprint_cells", [])):
+			if cell_variant is Vector2i:
+				footprint.append(cell_variant)
+			elif cell_variant is Vector2:
+				footprint.append(Vector2i(cell_variant))
+			elif cell_variant is Array:
+				var raw_cell: Array = cell_variant
+				if raw_cell.size() >= 2:
+					footprint.append(Vector2i(int(raw_cell[0]), int(raw_cell[1])))
+	if not footprint.is_empty():
+		return footprint
+	var base_size: Vector2i = item_def.get("size", Vector2i.ONE)
+	for offset_y in range(base_size.y):
+		for offset_x in range(base_size.x):
+			footprint.append(Vector2i(offset_x, offset_y))
+	return footprint
+
+static func item_footprint_offsets(game: Node, item: Dictionary) -> Array:
+	var item_def: Dictionary = game.item_defs.get(String(item.get("item_id", "")), {})
+	var base_size: Vector2i = item_def.get("size", Vector2i.ONE)
+	var base_footprint: Array = item_base_footprint_offsets(item_def)
+	if not bool(item.get("rotated", false)):
+		return base_footprint
+	var rotated_footprint: Array = []
+	for offset_variant in base_footprint:
+		var offset: Vector2i = offset_variant
+		rotated_footprint.append(Vector2i(base_size.y - 1 - offset.y, offset.x))
+	return rotated_footprint
+
 static func infer_item_level_from_definition(game: Node, item_def: Dictionary) -> int:
 	var max_level: int = maxi(0, int(item_def.get("item_level", 1)))
 	var generator_defs: Array = []
@@ -275,10 +307,9 @@ static func item_occupied_cells(game: Node, item: Dictionary) -> Array:
 	var anchor: Vector2i = item.get("anchor", game.INVALID_ROOM)
 	if anchor == game.INVALID_ROOM:
 		return occupied_cells
-	var size_cells: Vector2i = item_size_in_cells(game, item)
-	for offset_y in range(size_cells.y):
-		for offset_x in range(size_cells.x):
-			occupied_cells.append(anchor + Vector2i(offset_x, offset_y))
+	for offset_variant in item_footprint_offsets(game, item):
+		var offset: Vector2i = offset_variant
+		occupied_cells.append(anchor + offset)
 	return occupied_cells
 
 static func can_place_inventory_item(game: Node, hero: Variant, item: Dictionary, anchor: Vector2i, ignore_uid: int = -1) -> bool:
@@ -297,11 +328,16 @@ static func can_place_inventory_item(game: Node, hero: Variant, item: Dictionary
 			continue
 		for occupied_cell_variant in item_occupied_cells(game, other_item):
 			occupied_cells[occupied_cell_variant] = true
-	for offset_y in range(size_cells.y):
-		for offset_x in range(size_cells.x):
-			var cell: Vector2i = anchor + Vector2i(offset_x, offset_y)
-			if not active_cells.has(cell) or occupied_cells.has(cell):
-				return false
+	var placed_item: Dictionary = item.duplicate(true)
+	placed_item["anchor"] = anchor
+	for occupied_cell_variant in item_occupied_cells(game, placed_item):
+		var occupied_cell: Vector2i = occupied_cell_variant
+		if occupied_cell.x < 0 or occupied_cell.y < 0:
+			return false
+		if occupied_cell.x >= hero.inventory_canvas_size.x or occupied_cell.y >= hero.inventory_canvas_size.y:
+			return false
+		if not active_cells.has(occupied_cell) or occupied_cells.has(occupied_cell):
+			return false
 	return true
 
 static func find_first_inventory_item_anchor(game: Node, hero: Variant, item: Dictionary) -> Vector2i:

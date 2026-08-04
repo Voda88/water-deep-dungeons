@@ -984,13 +984,13 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			if String(hand_card.get("card_id", "")) == "rogue_combo_dagger_card":
 				game.status_message = "%s cast Shadow Throw." % hero.hero_name
 			elif String(hand_card.get("card_id", "")) == "ricochet_dagger_card":
-				game.status_message = "%s hurled a ricochet dagger." % hero.hero_name
+				game.status_message = "%s hurled a ricochet chakram." % hero.hero_name
 			else:
 				game.status_message = "%s flung a dagger fan." % hero.hero_name
 			return true
 		_:
 			spawn_axe_card_projectile(game, hero, target_world_position, hand_card)
-			game.status_message = "%s hurled a whirling axe." % hero.hero_name
+			game.status_message = "%s threw a razor boomerang." % hero.hero_name
 			return true
 
 static func finalize_played_hand_card_source(game: Node, hand_card: Dictionary) -> void:

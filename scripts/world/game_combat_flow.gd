@@ -909,7 +909,7 @@ static func apply_card_projectile_hits(game: Node, projectile: Dictionary) -> vo
 						"color": projectile.get("color", Color("ffd7a6")),
 						"owner_hero_index": owner_index,
 						"apply_owner_on_hit_effects": true,
-						"source_label": "%s's Ricochet Dagger" % (owner_hero.hero_name if owner_hero != null and is_instance_valid(owner_hero) else "Rogue"),
+						"source_label": "%s's Ricochet Chakram" % (owner_hero.hero_name if owner_hero != null and is_instance_valid(owner_hero) else "Rogue"),
 					}
 					if combo_level >= 3:
 						bounce_explosion_payload["combo_flatfooted_on_damage"] = true

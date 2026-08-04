@@ -3,12 +3,13 @@ extends RefCounted
 static func build_item_defs() -> Dictionary:
 	return {
 		"axe": {
-			"name": "Axe Rack",
-			"short": "AXE",
+			"name": "Razor Boomerang",
+			"short": "RBM",
 			"size": Vector2i(2, 2),
+			"footprint_cells": [Vector2i(0, 0), Vector2i(0, 1), Vector2i(1, 1)],
 			"color": Color("ffb36b"),
-			"description_lines": ["Adds 1 Whirling Axe card", "Card cooldown scales with item level"],
-			"tags": ["weapon", "metal", "axe"],
+			"description_lines": ["Adds 1 Razor Boomerang card", "L-shaped footprint", "Card cooldown scales with item level"],
+			"tags": ["weapon", "metal", "boomerang", "blade"],
 			"synergy_sockets": [
 				{"offset": Vector2i(-1, 0), "tag": "support", "bonuses": {"attack": 2.0, "card_charge_mult": 0.9}},
 				{"offset": Vector2i(2, 1), "tag": "metal", "bonuses": {"card_damage": 5.0}},
@@ -40,13 +41,14 @@ static func build_item_defs() -> Dictionary:
 			"hand_card": {"card_id": "dagger_card", "door_interval": 2, "generation_mode": "door_interval", "cooldown_scales_with_item_level": true, "initial_queued_cards": 3, "max_stored_cards": 3},
 		},
 		"ricochet_dagger": {
-			"name": "Ricochet Dagger",
-			"short": "RCD",
+			"name": "Ricochet Chakram",
+			"short": "CHK",
 			"item_level": 2,
-			"size": Vector2i(1, 2),
+			"size": Vector2i(3, 3),
+			"footprint_cells": [Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1), Vector2i(2, 1), Vector2i(1, 2)],
 			"color": Color("ffd7a6"),
-			"description_lines": ["Level 2 dagger", "Adds 1 Ricochet Dagger card", "If it bounces 3 times before a hit, it explodes like Fireball", "At Combo 3: all enemies damaged by it become Flatfooted"],
-			"tags": ["weapon", "blade", "dagger", "rogue"],
+			"description_lines": ["Level 2 chakram", "Cross-shaped footprint", "Adds 1 Ricochet Chakram card", "If it bounces 3 times before a hit, it explodes like Fireball", "At Combo 3: all enemies damaged by it become Flatfooted"],
+			"tags": ["weapon", "blade", "chakram", "rogue"],
 			"synergy_sockets": [
 				{"offset": Vector2i(1, 0), "tag": "support", "bonuses": {"card_charge_mult": 0.92}},
 				{"offset": Vector2i(0, -1), "tag": "metal", "bonuses": {"card_damage": 8.0}},
@@ -148,7 +150,7 @@ static func build_item_defs() -> Dictionary:
 		"serpent_venom": {
 			"name": "Serpent Venom",
 			"short": "SVM",
-			"size": Vector2i(1, 1),
+			"size": Vector2i(1, 2),
 			"color": Color("8fe78f"),
 			"description_lines": ["Single-use coating", "Applies to all physical hits for 1 dungeon turn", "On hit: venom DoT"],
 			"tags": ["poison", "rogue", "support"],
@@ -158,7 +160,7 @@ static func build_item_defs() -> Dictionary:
 		"wyvern_toxin": {
 			"name": "Wyvern Toxin",
 			"short": "WTX",
-			"size": Vector2i(1, 1),
+			"size": Vector2i(1, 2),
 			"color": Color("7ad8ff"),
 			"description_lines": ["Single-use coating", "Applies to all physical hits for 1 dungeon turn", "On hit: bonus damage and strong slow"],
 			"tags": ["poison", "rogue", "support"],
@@ -168,7 +170,7 @@ static func build_item_defs() -> Dictionary:
 		"blacklotus_oil": {
 			"name": "Black Lotus Oil",
 			"short": "BLO",
-			"size": Vector2i(1, 1),
+			"size": Vector2i(1, 2),
 			"color": Color("cfb7ff"),
 			"description_lines": ["Single-use coating", "Applies to all physical hits for 1 dungeon turn", "On hit: burst flatfooted"],
 			"tags": ["poison", "rogue", "support"],
@@ -212,9 +214,10 @@ static func build_item_defs() -> Dictionary:
 		"sunpepper_jerky": {
 			"name": "Sunpepper Jerky",
 			"short": "SPJ",
-			"size": Vector2i(1, 1),
+			"size": Vector2i(2, 2),
+			"footprint_cells": [Vector2i(0, 1), Vector2i(1, 0), Vector2i(1, 1)],
 			"color": Color("ffb07a"),
-			"description_lines": ["Exotic combat ration", "Auto-triggers on fatal damage", "Restore health and boost attack speed"],
+			"description_lines": ["Exotic combat ration", "Banana-shaped footprint", "Auto-triggers on fatal damage", "Restore health and boost attack speed"],
 			"tags": ["food", "food_sun", "support"],
 			"hand_cards": [
 				{"card_id": "sunpepper_jerky_card", "generation_mode": "single", "consume_item_on_play": true, "max_stored_cards": 1},
@@ -225,7 +228,7 @@ static func build_item_defs() -> Dictionary:
 			"short": "MTR",
 			"size": Vector2i(1, 1),
 			"color": Color("d8c6ff"),
-			"description_lines": ["Silvery deep-cavern delicacy", "Auto-triggers on fatal damage", "Restore health and boost defence"],
+			"description_lines": ["Silvery deep-cavern delicacy", "1x1 ration", "Auto-triggers on fatal damage", "Restore health and boost defence"],
 			"tags": ["food", "food_moon", "support"],
 			"hand_cards": [
 				{"card_id": "moon_truffle_card", "generation_mode": "single", "consume_item_on_play": true, "max_stored_cards": 1},
@@ -234,9 +237,9 @@ static func build_item_defs() -> Dictionary:
 		"tidekelp_roll": {
 			"name": "Tidekelp Roll",
 			"short": "TKR",
-			"size": Vector2i(1, 1),
+			"size": Vector2i(1, 2),
 			"color": Color("84d9d1"),
-			"description_lines": ["Cold-brined abyssal seaweed", "Auto-triggers on fatal damage", "Restore health and boost movement speed"],
+			"description_lines": ["Cold-brined abyssal seaweed", "1x2 ration", "Auto-triggers on fatal damage", "Restore health and boost movement speed"],
 			"tags": ["food", "food_tide", "support"],
 			"hand_cards": [
 				{"card_id": "tidekelp_roll_card", "generation_mode": "single", "consume_item_on_play": true, "max_stored_cards": 1},
