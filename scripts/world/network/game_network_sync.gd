@@ -513,6 +513,7 @@ static func server_request_exit_floor(game: Node, hero_index: int) -> void:
 	if hero != game.crystal_holder or not game.all_heroes_in_exit_room():
 		return
 	game.floor_index += 1
+	game.dust = 24
 	game.status_message = "Escaped to floor %d." % game.floor_index
 	game.build_dungeon(false)
 	game.spawn_heroes()

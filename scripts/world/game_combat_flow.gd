@@ -41,8 +41,9 @@ static func launch_wave(game: Node, entered_room: Vector2i) -> void:
 		game.update_hud()
 		return
 	game.wave_index += 1
+	var crystal_is_carried: bool = game.crystal_holder != null and is_instance_valid(game.crystal_holder)
 	var dark_room_count: int = dark_rooms.size()
-	var wave_strength_bonus: int = maxi(dark_room_count - 1, 0)
+	var wave_strength_bonus: int = 0 if crystal_is_carried else maxi(dark_room_count - 1, 0)
 	var base_wave_points: int = game.DOOR_WAVE_POINTS
 	var chosen_rooms: Array[Vector2i] = []
 	var delayed_room_order: int = 0

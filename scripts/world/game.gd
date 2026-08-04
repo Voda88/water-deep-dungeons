@@ -143,7 +143,7 @@ const ROOM_OPEN_DUST_MAX: int = 7
 const PRELIT_ROOM_CHANCE: float = 0.24
 const WAVE_WARNING_DURATION: float = 1.0
 const WAVE_PRESPAWN_MARKER_LEAD: float = 2.0
-const WAVE_STAGGER_ROOM_INTERVAL: float = 5.0
+const WAVE_STAGGER_ROOM_INTERVAL: float = 4.0
 const WAVE_STAGGER_ENEMY_INTERVAL: float = 0.1
 const ENEMY_SPAWN_FRAME_BUDGET: int = 3
 const ENEMY_SPAWN_PREVIEW_FRAME_BUDGET: int = 5
@@ -157,7 +157,7 @@ const CRYSTAL_DUST_DAMAGE_BASE_HIT: float = 0.25
 const CRYSTAL_PRESSURE_PICKUP_DELAY: float = 2.0
 const CRYSTAL_PRESSURE_INTERVAL: float = 4.0
 const CRYSTAL_PRESSURE_WARNING_DURATION: float = 0.0
-const CRYSTAL_PRESSURE_ENEMIES_PER_ROOM: int = 2
+const CRYSTAL_PRESSURE_ENEMIES_PER_ROOM: int = 1
 const CRYSTAL_PRESSURE_MAX_MONSTERS: int = 36
 const ROOM_ACTION_HOLD_START_DELAY: float = 0.2
 const ROOM_ACTION_HOLD_LOADER_DURATION: float = 0.1
@@ -2850,6 +2850,7 @@ func _on_exit_button_pressed() -> void:
 		update_hud()
 		return
 	floor_index += 1
+	dust = 24
 	status_message = "Escaped to floor %d." % floor_index
 	build_dungeon(false)
 	spawn_heroes()
