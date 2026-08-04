@@ -99,7 +99,7 @@ static func build_hand_card_from_generator(game: Node, hero: Variant, generator:
 	var item_id: String = String(generator.get("item_id", ""))
 	var item_def: Dictionary = game.item_defs.get(item_id, {})
 	var spell_level: int = maxi(0, int(card_def.get("spell_level", 0)))
-	var item_level: int = 0 if item_id == "" else maxi(1, int(generator.get("item_level", item_def.get("item_level", 1))))
+	var item_level: int = 0 if item_id == "" else maxi(0, int(generator.get("item_level", item_def.get("item_level", 1))))
 	var cooldown_level: int = spell_level if spell_level > 0 else maxi(item_level, 1)
 	var effective_interval: int = generator_effective_door_interval(game, generator, card_def, item_bonus)
 	var hand_card: Dictionary = {
@@ -167,7 +167,7 @@ static func build_hand_card_from_generator(game: Node, hero: Variant, generator:
 		"expires_on_doors_opened": game.doors_opened + expires_after_turns if expires_after_turns > 0 else -1,
 		"hero_index": hero.hero_index,
 		"max_stored_cards": game.generator_max_stored_cards(generator, card_def),
-		"reusable": bool(card_def.get("reusable", false)),
+		"reusable": bool(card_def.get("reusable", false)) or item_level == 0,
 		"generator_key": generator_key,
 		"consume_item_on_play": bool(generator.get("consume_item_on_play", false)),
 		"consume_item_charges_on_play": int(generator.get("consume_item_charges_on_play", 0)),

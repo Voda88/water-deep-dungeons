@@ -10,7 +10,7 @@ static func item_size_in_cells(game: Node, item: Dictionary) -> Vector2i:
 	return base_size
 
 static func infer_item_level_from_definition(game: Node, item_def: Dictionary) -> int:
-	var max_level: int = maxi(1, int(item_def.get("item_level", 1)))
+	var max_level: int = maxi(0, int(item_def.get("item_level", 1)))
 	var generator_defs: Array = []
 	if item_def.has("hand_cards"):
 		generator_defs = Array(item_def.get("hand_cards", [])).duplicate(true)
@@ -24,12 +24,7 @@ static func infer_item_level_from_definition(game: Node, item_def: Dictionary) -
 		if card_id == "":
 			continue
 		max_level = maxi(max_level, int(game.card_definition(card_id).get("spell_level", 1)))
-	var passive_ability: Dictionary = Dictionary(item_def.get("passive_combat_ability", {}))
-	if not passive_ability.is_empty():
-		var passive_card_id: String = String(passive_ability.get("card_id", ""))
-		if passive_card_id != "":
-			max_level = maxi(max_level, int(game.card_definition(passive_card_id).get("spell_level", 1)))
-	return maxi(1, max_level)
+	return maxi(0, max_level)
 
 static func normalize_item_instance(game: Node, item_variant: Variant) -> Dictionary:
 	var item: Dictionary = (item_variant as Dictionary).duplicate(true)
@@ -42,7 +37,7 @@ static func normalize_item_instance(game: Node, item_variant: Variant) -> Dictio
 	if not item.has("item_level"):
 		item["item_level"] = infer_item_level_from_definition(game, item_def)
 	else:
-		item["item_level"] = maxi(1, int(item.get("item_level", item_def.get("item_level", 1))))
+		item["item_level"] = maxi(0, int(item.get("item_level", item_def.get("item_level", 1))))
 	return item
 
 static func make_ground_item(game: Node, item_id: String, world_position: Vector2) -> Dictionary:
@@ -440,13 +435,6 @@ static func inventory_effect_summary(game: Node, items: Array) -> Dictionary:
 			card_generator["item_level"] = int(item_with_card.get("item_level", item_def_card.get("item_level", 1)))
 			card_generator["item_bonus"] = Dictionary(summary.get("item_bonus_by_uid", {}).get(item_uid_card, empty_inventory_effect_summary(game))).duplicate(true)
 			summary["card_generators"].append(card_generator)
-		var combat_passive: Dictionary = Dictionary(item_def_card.get("passive_combat_ability", {}))
-		if not combat_passive.is_empty():
-			combat_passive["item_uid"] = item_uid_card
-			combat_passive["item_id"] = String(item_with_card.get("item_id", ""))
-			combat_passive["item_level"] = int(item_with_card.get("item_level", item_def_card.get("item_level", 1)))
-			combat_passive["item_bonus"] = Dictionary(summary.get("item_bonus_by_uid", {}).get(item_uid_card, empty_inventory_effect_summary(game))).duplicate(true)
-			summary["combat_passives"].append(combat_passive)
 	summary["speed"] = move_bonus + float(summary.get("speed", 0.0)) - move_bonus
 	summary["health"] = health_bonus + float(summary.get("health", 0.0)) - health_bonus
 	summary["attack"] = attack_bonus + float(summary.get("attack", 0.0)) - attack_bonus
@@ -751,13 +739,12 @@ static func merchant_item_full_price(game: Node, item_variant: Variant) -> int:
 		return 5
 	var size_cells: Vector2i = item_size_in_cells(game, item)
 	var area_value: float = float(maxi(1, size_cells.x * size_cells.y)) * 2.4
-	var level_value: float = float(maxi(1, int(item.get("item_level", 1))) - 1) * 2.2
+	var level_value: float = float(maxi(0, int(item.get("item_level", 1)))) * 2.2
 	var stats: Dictionary = Dictionary(item_def.get("stats", {}))
 	var stat_value: float = 0.0
 	for stat_value_variant in stats.values():
 		stat_value += absf(float(stat_value_variant)) * 0.34
 	var generator_count: int = item_generator_defs(item_def).size()
-	var passive_value: float = 5.0 if not Dictionary(item_def.get("passive_combat_ability", {})).is_empty() else 0.0
 	var tag_value: float = 0.0
 	for tag_variant in Array(item_def.get("tags", [])):
 		var tag_name: String = String(tag_variant)
@@ -768,7 +755,7 @@ static func merchant_item_full_price(game: Node, item_variant: Variant) -> int:
 	var charge_value: float = 0.0
 	if item_def.has("max_charges"):
 		charge_value = float(maxi(1, int(item_def.get("max_charges", 1)))) * 1.1
-	var raw_price: float = area_value + level_value + stat_value + float(generator_count) * 4.4 + passive_value + tag_value + charge_value
+	var raw_price: float = area_value + level_value + stat_value + float(generator_count) * 4.4 + tag_value + charge_value
 	var price_scale: float = 0.56 if merchant_item_is_consumable(item_def) else 0.82
 	raw_price *= price_scale
 	return clampi(int(round(raw_price)), 3, 80)

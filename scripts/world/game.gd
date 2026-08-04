@@ -2178,6 +2178,9 @@ func apply_poison_coating_to_hero(hero: Variant, coating: Dictionary) -> Diction
 func register_hero_enemy_hit(hero: Variant, enemy: Variant, impact_direction: Vector2 = Vector2.RIGHT) -> void:
 	GAME_COMBAT_FLOW.register_hero_enemy_hit(self, hero, enemy, impact_direction)
 
+func note_hero_combo_attack(hero: Variant) -> void:
+	GAME_COMBAT_FLOW.note_hero_combo_attack(self, hero)
+
 func process_combat(_delta: float) -> void:
 	GAME_COMBAT_FLOW.process_combat(self, _delta)
 

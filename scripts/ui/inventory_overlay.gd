@@ -953,19 +953,79 @@ func draw_item_description_panel() -> void:
 	var item_def: Dictionary = item_defs.get(String(last_touched_item.get("item_id", "")), {})
 	draw_string(font, description_rect.position + Vector2(14.0, 52.0), String(item_def.get("name", "Item")), HORIZONTAL_ALIGNMENT_LEFT, description_rect.size.x - 24.0, 18, Color("fff1b8"))
 	var item_lines: Array[String] = item_description_lines(last_touched_item)
+	var wrapped_lines: Array = []
+	var max_text_width: float = description_rect.size.x - 24.0
+	for raw_line in item_lines:
+		var line_text: String = String(raw_line)
+		var line_color: Color = PREVIEW_BONUS_COLOR if line_text.begins_with("[") and line_text.ends_with("]") else Color("d4eaf4")
+		for wrapped_line in wrap_text_for_width(font, line_text, max_text_width, 14):
+			wrapped_lines.append({
+				"text": wrapped_line,
+				"color": line_color,
+			})
 	var line_y: float = description_rect.position.y + 74.0
 	var line_height: float = 15.0
 	var max_description_bottom: float = description_rect.position.y + description_rect.size.y - 8.0
 	if spell_focus_selected_item():
 		max_description_bottom = spellbook_action_button_rect().position.y - 10.0
 	var max_lines: int = maxi(1, int(floor((max_description_bottom - line_y) / line_height)))
-	for line_index in range(mini(item_lines.size(), max_lines)):
-		var line_text: String = item_lines[line_index]
-		var line_color: Color = PREVIEW_BONUS_COLOR if line_text.begins_with("[") and line_text.ends_with("]") else Color("d4eaf4")
-		draw_string(font, Vector2(description_rect.position.x + 14.0, line_y), line_text, HORIZONTAL_ALIGNMENT_LEFT, description_rect.size.x - 24.0, 14, line_color)
+	var wrapped_count: int = wrapped_lines.size()
+	var visible_lines: int = mini(wrapped_count, max_lines)
+	var truncated: bool = wrapped_count > max_lines
+	if truncated:
+		visible_lines = maxi(0, max_lines - 1)
+	for line_index in range(visible_lines):
+		var draw_line: Dictionary = wrapped_lines[line_index]
+		draw_string(font, Vector2(description_rect.position.x + 14.0, line_y), String(draw_line.get("text", "")), HORIZONTAL_ALIGNMENT_LEFT, max_text_width, 14, draw_line.get("color", Color("d4eaf4")))
 		line_y += line_height
+	if truncated and max_lines > 0:
+		draw_string(font, Vector2(description_rect.position.x + 14.0, line_y), "...", HORIZONTAL_ALIGNMENT_LEFT, max_text_width, 14, Color("9fb8c2"))
 	if spell_focus_selected_item():
 		draw_spellbook_action_button(font)
+
+func wrap_text_for_width(font: Font, text: String, max_width: float, font_size: int) -> Array[String]:
+	var wrapped: Array[String] = []
+	var source_text: String = text.strip_edges()
+	if source_text == "":
+		wrapped.append("")
+		return wrapped
+	for source_line in source_text.split("\n"):
+		var words: PackedStringArray = source_line.split(" ", false)
+		if words.is_empty():
+			wrapped.append("")
+			continue
+		var current_line: String = ""
+		for word in words:
+			var candidate: String = word if current_line == "" else "%s %s" % [current_line, word]
+			if font.get_string_size(candidate, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size).x <= max_width:
+				current_line = candidate
+				continue
+			if current_line != "":
+				wrapped.append(current_line)
+			if font.get_string_size(word, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size).x <= max_width:
+				current_line = word
+				continue
+			var remainder: String = word
+			while remainder.length() > 0:
+				var chunk: String = ""
+				var char_index: int = 0
+				while char_index < remainder.length():
+					var next_chunk: String = chunk + remainder.substr(char_index, 1)
+					if chunk != "" and font.get_string_size(next_chunk, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size).x > max_width:
+						break
+					chunk = next_chunk
+					char_index += 1
+				if chunk == "":
+					chunk = remainder.substr(0, 1)
+					char_index = 1
+				wrapped.append(chunk)
+				remainder = remainder.substr(char_index)
+			current_line = ""
+		if current_line != "":
+			wrapped.append(current_line)
+	if wrapped.is_empty():
+		wrapped.append(source_text)
+	return wrapped
 		
 func draw_spellbook_action_button(font: Font) -> void:
 	var action_rect: Rect2 = spellbook_action_button_rect()
@@ -1084,7 +1144,7 @@ func draw_dragging_pack() -> void:
 func draw_inventory_item(item_rect: Rect2, item: Dictionary, emphasize: bool, fusion_glow: bool = false) -> void:
 	var item_def: Dictionary = item_defs.get(String(item.get("item_id", "")), {})
 	var item_id: String = String(item.get("item_id", ""))
-	var item_level: int = maxi(1, int(item.get("item_level", item_def.get("item_level", 1))))
+	var item_level: int = maxi(0, int(item.get("item_level", item_def.get("item_level", 1))))
 	if fusion_glow:
 		var glow_pulse: float = 0.5 + 0.5 * sin(synergy_shine_time * 7.0 + float(int(item.get("uid", -1)) % 11))
 		draw_rect(item_rect.grow(5.0 + glow_pulse * 1.8), Color(0.98, 0.90, 0.52, 0.16 + glow_pulse * 0.14), true)
@@ -1203,7 +1263,7 @@ func _on_spellbook_overlay_slots_changed(slotted_spells: Array) -> void:
 func item_description_lines(item: Dictionary) -> Array[String]:
 	var lines: Array[String] = []
 	var item_def: Dictionary = item_defs.get(String(item.get("item_id", "")), {})
-	var item_level: int = maxi(1, int(item.get("item_level", item_def.get("item_level", 1))))
+	var item_level: int = maxi(0, int(item.get("item_level", item_def.get("item_level", 1))))
 	lines.append("Item Level %d" % item_level)
 	var unique_star_lines: Dictionary = {}
 	for line_variant in Array(item_def.get("description_lines", [])):
@@ -1249,9 +1309,6 @@ func item_description_lines(item: Dictionary) -> Array[String]:
 			lines.append("Exhausts after %d generated cards" % exhaust_cards)
 	if item_def.has("max_charges"):
 		lines.append("Charges %d/%d" % [int(item.get("charges_left", item_def.get("max_charges", 0))), int(item_def.get("max_charges", 0))])
-	var passive_ability: Dictionary = Dictionary(item_def.get("passive_combat_ability", {}))
-	if not passive_ability.is_empty():
-		lines.append("Passive combat proc every %.1fs" % float(passive_ability.get("cooldown", 1.0)))
 	var tags: Array = Array(item_def.get("tags", []))
 	if not tags.is_empty():
 		var tag_text: String = ""

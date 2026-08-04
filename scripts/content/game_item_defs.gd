@@ -23,6 +23,7 @@ static func build_item_defs() -> Dictionary:
 		"daggers": {
 			"name": "Daggers",
 			"short": "DAG",
+			"item_level": 1,
 			"size": Vector2i(1, 2),
 			"color": Color("d8e4ff"),
 			"description_lines": ["Adds 3 Dagger Fan cards", "Card cooldown scales with item level"],
@@ -41,17 +42,19 @@ static func build_item_defs() -> Dictionary:
 		"rogue_bandolier": {
 			"name": "Rogue Bandolier",
 			"short": "RBL",
+			"item_level": 0,
 			"size": Vector2i(2, 1),
 			"color": Color("a8cfff"),
-			"description_lines": ["Starter rogue signature", "Throws one shadow dagger each fight", "Damage scales with rogue combo level", "At combo 2 and 3, dagger also applies Flatfooted"],
+			"description_lines": ["Starter rogue signature", "Level 0: unlimited uses", "Adds 1 combo dagger card", "Only works at Combo Level 3+"],
 			"tags": ["rogue", "combo", "dagger", "support"],
 			"synergy_sockets": [
 				{"offset": Vector2i(0, 1), "tag": "poison", "bonuses": {"card_charge_mult": 0.85}},
 			],
-			"passive_combat_ability": {
+			"hand_card": {
 				"card_id": "rogue_combo_dagger_card",
-				"cooldown": 0.35,
-				"once_per_wave": true,
+				"generation_mode": "single",
+				"initial_queued_cards": 1,
+				"max_stored_cards": 1,
 			},
 		},
 		"serpent_venom": {

@@ -420,6 +420,34 @@ static func build_inventory_ability_sections(game: Node, hero: Variant) -> Array
 			"title": "Gear Passives",
 			"entries": gear_entries,
 		})
+	var gear_card_entries: Array = []
+	for generator_variant in Array(effect_summary.get("card_generators", [])):
+		var generator: Dictionary = Dictionary(generator_variant)
+		var item_id: String = String(generator.get("item_id", ""))
+		var item_def: Dictionary = game.item_defs.get(item_id, {})
+		var card_id: String = String(generator.get("card_id", ""))
+		var card_def: Dictionary = game.card_definition(card_id)
+		var item_bonus: Dictionary = Dictionary(generator.get("item_bonus", {}))
+		var generation_mode: String = game.resolve_card_generator_mode(generator, card_def)
+		var cadence_text: String = "Single ready"
+		if generation_mode == "door_interval":
+			var door_interval: int = maxi(1, int(card_def.get("door_interval", int(generator.get("door_interval", 1)))))
+			cadence_text = "Every %d doors" % door_interval
+		elif generation_mode == "floor_once":
+			cadence_text = "1 per floor"
+		var card_payload: Dictionary = {
+			"damage": float(card_def.get("base_damage", 0.0)) + float(item_bonus.get("card_damage", 0.0)),
+			"projectile_count": int(card_def.get("projectile_count", 1)) + int(item_bonus.get("projectile_count", 0)),
+		}
+		gear_card_entries.append({
+			"name": "%s: %s" % [String(item_def.get("name", item_id.capitalize())), String(card_def.get("name", card_id.replace("_card", "").replace("_", " ").capitalize()))],
+			"detail": "%s  Pow %s" % [cadence_text, ability_power_text(game, card_id, card_payload)],
+		})
+	if not gear_card_entries.is_empty():
+		sections.append({
+			"title": "Gear Cards",
+			"entries": gear_card_entries,
+		})
 	var level_entries: Array = []
 	for passive_unlock_variant in Array(class_def.get("level_passives", [])):
 		var passive_unlock: Dictionary = passive_unlock_variant

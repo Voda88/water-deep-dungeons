@@ -2027,6 +2027,7 @@ static func spawn_axe_card_projectile(game: Node, hero: Variant, target_world_po
 	var axe_pierce: int = maxi(0, int(hand_card.get("pierce", maxi(0, int(hand_card.get("max_pierce", 3)) - 1))))
 	var axe_max_pierce: int = axe_pierce + 1
 	hero.trigger_attack(target_world_position, "melee")
+	game.note_hero_combo_attack(hero)
 	game.projectiles.append({
 		"kind": "axe",
 		"position": hero.global_position,
@@ -2068,12 +2069,14 @@ static func spawn_dagger_card_projectiles(game: Node, hero: Variant, target_worl
 	var dagger_pierce: int = maxi(0, int(hand_card.get("pierce", maxi(0, int(hand_card.get("max_pierce", 99)) - 1))))
 	var dagger_max_pierce: int = dagger_pierce + 1
 	hero.trigger_attack(target_world_position, "laser")
+	game.note_hero_combo_attack(hero)
 	var spread: float = float(hand_card.get("spread", 0.16))
 	for projectile_index in range(count):
 		var offset_ratio: float = 0.0 if count == 1 else (float(projectile_index) / float(count - 1) - 0.5) * 2.0
 		var direction: Vector2 = center_direction.rotated(offset_ratio * spread)
 		game.projectiles.append({
 			"kind": "dagger",
+			"card_id": String(hand_card.get("card_id", "dagger_card")),
 			"position": hero.global_position,
 			"previous": hero.global_position,
 			"velocity": direction * float(hand_card.get("speed", 1020.0)),

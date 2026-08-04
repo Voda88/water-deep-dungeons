@@ -104,6 +104,7 @@ var combat_movement_mode: bool = false
 var max_hand_size: int = 4
 var combo_points: int = 0
 var combo_attack_progress: int = 0
+var combo_decay_time_left: float = 0.0
 var applied_poisons: Array = []
 var hand_cards: Array = []
 var card_generation_timers: Dictionary = {}
@@ -585,6 +586,7 @@ func apply_inventory_stats(move_bonus: float, health_bonus: float, attack_bonus:
 		stamina = clampf(stamina + (max_stamina - previous_max_stamina), -maxf(max_stamina, 1.0), max_stamina)
 	combo_points = maxi(combo_points, 0)
 	combo_attack_progress = maxi(combo_attack_progress, 0)
+	combo_decay_time_left = maxf(combo_decay_time_left, 0.0)
 	queue_redraw()
 
 func trigger_attack(target_position: Vector2, style: String = "laser") -> void:
