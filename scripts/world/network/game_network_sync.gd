@@ -52,6 +52,9 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 			"combo_points": hero.combo_points,
 			"combo_attack_progress": hero.combo_attack_progress,
 			"combo_decay_time_left": hero.combo_decay_time_left,
+			"operate_room": hero.operate_room,
+			"operate_started_at_door": hero.operate_started_at_door,
+			"operate_attuned": hero.operate_attuned,
 			"applied_poisons": hero.applied_poisons.duplicate(true),
 			"hand_cards": hero.hand_cards.duplicate(true),
 			"attack_damage": hero.attack_damage,
@@ -310,6 +313,9 @@ static func apply_hero_snapshots(game: Node, hero_states: Array) -> void:
 		hero.combo_points = int(hero_state.get("combo_points", hero.combo_points))
 		hero.combo_attack_progress = int(hero_state.get("combo_attack_progress", hero.combo_attack_progress))
 		hero.combo_decay_time_left = float(hero_state.get("combo_decay_time_left", hero.combo_decay_time_left))
+		hero.operate_room = hero_state.get("operate_room", hero.operate_room)
+		hero.operate_started_at_door = int(hero_state.get("operate_started_at_door", hero.operate_started_at_door))
+		hero.operate_attuned = bool(hero_state.get("operate_attuned", hero.operate_attuned))
 		hero.applied_poisons = Array(hero_state.get("applied_poisons", hero.applied_poisons)).duplicate(true)
 		hero.hand_cards = Array(hero_state.get("hand_cards", hero.hand_cards)).duplicate(true)
 		hero.move_speed = float(hero_state.get("move_speed", hero.move_speed))

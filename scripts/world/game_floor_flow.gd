@@ -413,6 +413,131 @@ static func advance_temporary_room_lights(game: Node, turn_count: int = 1) -> vo
 		room["temporary_light_turns"] = remaining_turns
 	refresh_room_lighting_states(game)
 
+static func room_has_active_operate_major_module(game: Node, room_coord: Vector2i) -> bool:
+	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
+		return false
+	var room: Dictionary = game.rooms[room_coord]
+	if not bool(room.get("opened", false)) or not bool(room.get("lit", false)):
+		return false
+	if String(room.get("major_module_type", "")) == "":
+		return false
+	if float(room.get("major_health", 0.0)) <= 0.0:
+		return false
+	if bool(room.get("major_under_construction", false)):
+		return false
+	return true
+
+static func hero_operate_candidate_room(game: Node, hero: Variant) -> Vector2i:
+	if hero == null or not is_instance_valid(hero):
+		return game.INVALID_ROOM
+	if not game.hero_is_active(hero) or not game.hero_can_operate_major_modules(hero):
+		return game.INVALID_ROOM
+	if hero.pending_room != game.HERO_INVALID_ROOM:
+		return game.INVALID_ROOM
+	var room_coord: Vector2i = Vector2i(hero.current_room)
+	if not room_has_active_operate_major_module(game, room_coord):
+		return game.INVALID_ROOM
+	if not game.room_rect(room_coord).has_point(hero.global_position):
+		return game.INVALID_ROOM
+	return room_coord
+
+static func clear_hero_operate_attunement(game: Node, hero: Variant) -> void:
+	if hero == null or not is_instance_valid(hero):
+		return
+	if Vector2i(hero.operate_room) == game.INVALID_ROOM and not bool(hero.operate_attuned) and int(hero.operate_started_at_door) < 0:
+		return
+	hero.operate_room = game.INVALID_ROOM
+	hero.operate_started_at_door = -1
+	hero.operate_attuned = false
+	hero.queue_redraw()
+
+static func sync_hero_operate_attunement_states(game: Node) -> void:
+	for hero_variant in game.heroes:
+		var hero: Variant = hero_variant
+		if hero == null or not is_instance_valid(hero):
+			continue
+		if not game.hero_can_operate_major_modules(hero):
+			clear_hero_operate_attunement(game, hero)
+			continue
+		var candidate_room: Vector2i = hero_operate_candidate_room(game, hero)
+		if candidate_room == game.INVALID_ROOM:
+			clear_hero_operate_attunement(game, hero)
+			continue
+		var changed: bool = false
+		if Vector2i(hero.operate_room) != candidate_room:
+			hero.operate_room = candidate_room
+			hero.operate_started_at_door = game.doors_opened
+			hero.operate_attuned = false
+			changed = true
+		elif int(hero.operate_started_at_door) < 0:
+			hero.operate_started_at_door = game.doors_opened
+			changed = true
+		if changed:
+			hero.queue_redraw()
+
+static func resolve_hero_operate_attunement_on_door_open(game: Node) -> void:
+	sync_hero_operate_attunement_states(game)
+	for hero_variant in game.heroes:
+		var hero: Variant = hero_variant
+		if hero == null or not is_instance_valid(hero):
+			continue
+		if not game.hero_can_operate_major_modules(hero):
+			continue
+		if Vector2i(hero.operate_room) == game.INVALID_ROOM:
+			continue
+		if bool(hero.operate_attuned):
+			continue
+		if game.doors_opened <= int(hero.operate_started_at_door):
+			continue
+		hero.operate_attuned = true
+		hero.queue_redraw()
+
+static func calculate_operate_major_module_wave_bonus(game: Node) -> Dictionary:
+	var rewards: Dictionary = {
+		"food": 0,
+		"industry": 0,
+		"science": 0,
+		"entries": [],
+	}
+	var entries: Array = []
+	for hero_variant in game.heroes:
+		var hero: Variant = hero_variant
+		if hero == null or not is_instance_valid(hero):
+			continue
+		if not bool(hero.operate_attuned):
+			continue
+		if not game.hero_can_operate_major_modules(hero):
+			continue
+		var attuned_room: Vector2i = Vector2i(hero.operate_room)
+		if attuned_room == game.INVALID_ROOM:
+			continue
+		if Vector2i(hero.current_room) != attuned_room or hero.pending_room != game.HERO_INVALID_ROOM:
+			continue
+		if not room_has_active_operate_major_module(game, attuned_room):
+			continue
+		var wit_bonus: int = maxi(game.hero_operate_wit(hero), 0)
+		if wit_bonus <= 0:
+			continue
+		var room: Dictionary = game.rooms[attuned_room]
+		var major_type: String = String(room.get("major_module_type", ""))
+		match major_type:
+			game.MAJOR_MODULE_FOOD:
+				rewards["food"] = int(rewards.get("food", 0)) + wit_bonus
+			game.MAJOR_MODULE_INDUSTRY:
+				rewards["industry"] = int(rewards.get("industry", 0)) + wit_bonus
+			game.MAJOR_MODULE_SCIENCE:
+				rewards["science"] = int(rewards.get("science", 0)) + wit_bonus
+			_:
+				continue
+		entries.append({
+			"hero_name": String(hero.hero_name),
+			"room": attuned_room,
+			"major_module_type": major_type,
+			"wit": wit_bonus,
+		})
+	rewards["entries"] = entries
+	return rewards
+
 static func open_room(game: Node, room_coord: Vector2i) -> void:
 	if game.rooms[room_coord]["opened"]:
 		return
@@ -422,6 +547,7 @@ static func open_room(game: Node, room_coord: Vector2i) -> void:
 	room["scry_revealed"] = false
 	game.opened_rooms += 1
 	game.doors_opened += 1
+	resolve_hero_operate_attunement_on_door_open(game)
 	GAME_INVENTORY_ITEM_FLOW.clear_all_merchant_buybacks(game)
 	var completed_research_title: String = game.advance_active_research_on_door_open()
 	game.resolve_spell_scroll_studies()
@@ -495,10 +621,15 @@ static func calculate_major_module_wave_rewards(game: Node) -> Dictionary:
 			game.MAJOR_MODULE_INDUSTRY:
 				if float(room["major_health"]) > 0.0 and not bool(room.get("major_under_construction", false)):
 					industry_reward += game.major_module_door_yield(game.major_module_level(game.MAJOR_MODULE_INDUSTRY))
+	var operate_bonus: Dictionary = calculate_operate_major_module_wave_bonus(game)
+	food_reward += int(operate_bonus.get("food", 0))
+	industry_reward += int(operate_bonus.get("industry", 0))
+	science_reward += int(operate_bonus.get("science", 0))
 	return {
 		"food": food_reward,
 		"industry": industry_reward,
 		"science": science_reward,
+		"operate_bonus": operate_bonus,
 	}
 
 static func apply_major_module_wave_rewards(game: Node) -> Dictionary:

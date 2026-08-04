@@ -392,6 +392,7 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 			return {
 				"id": "emergency_snack_card",
 				"name": "Emergency Snack",
+				"spell_level": 0,
 				"target_scope": "same_hero",
 				"phase": "combat",
 				"description_lines": ["Spend party food to restore 40% max HP", "Auto-triggers at 0 HP", "Combat only, expires on the next door"],

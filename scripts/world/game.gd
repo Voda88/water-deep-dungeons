@@ -449,6 +449,7 @@ func _physics_process(delta: float) -> void:
 	update_hero_combat_movement_mode()
 	advance_room_opening(delta)
 	advance_hero_movement()
+	sync_hero_operate_attunement_states()
 	advance_spell_scroll_studies()
 	advance_pending_enemy_spawns(delta)
 	advance_crystal_pressure(delta)
@@ -540,6 +541,15 @@ func hero_max_spell_level_for_class_level(class_id: String, level_value: int) ->
 
 func spell_slot_capacity_for_class_level(class_id: String, level_value: int) -> int:
 	return GAME_HERO_DEFS.spell_slot_capacity_for_class_level(class_id, level_value)
+
+func hero_can_operate_major_modules(hero: Variant) -> bool:
+	return GAME_HERO_DEFS.hero_can_operate_major_modules(hero)
+
+func hero_operate_wit(hero: Variant) -> int:
+	return GAME_HERO_DEFS.hero_operate_wit(hero)
+
+func hero_has_skulker(hero: Variant) -> bool:
+	return GAME_HERO_DEFS.hero_has_skulker(hero)
 
 func default_hero_class_for_slot(hero_index: int) -> String:
 	return GAME_HERO_DEFS.default_hero_class_for_slot(hero_index, HERO_CLASS_ORDER)
@@ -1662,6 +1672,12 @@ func advance_temporary_room_lights(turn_count: int = 1) -> void:
 
 func open_room(room_coord: Vector2i) -> void:
 	GAME_FLOOR_FLOW.open_room(self, room_coord)
+
+func sync_hero_operate_attunement_states() -> void:
+	GAME_FLOOR_FLOW.sync_hero_operate_attunement_states(self)
+
+func resolve_hero_operate_attunement_on_door_open() -> void:
+	GAME_FLOOR_FLOW.resolve_hero_operate_attunement_on_door_open(self)
 
 func calculate_door_rewards() -> Dictionary:
 	return GAME_FLOOR_FLOW.calculate_door_rewards(self)

@@ -105,6 +105,9 @@ var max_hand_size: int = 4
 var combo_points: int = 0
 var combo_attack_progress: int = 0
 var combo_decay_time_left: float = 0.0
+var operate_room: Vector2i = INVALID_ROOM
+var operate_started_at_door: int = -1
+var operate_attuned: bool = false
 var applied_poisons: Array = []
 var hand_cards: Array = []
 var card_generation_timers: Dictionary = {}
@@ -587,6 +590,9 @@ func apply_inventory_stats(move_bonus: float, health_bonus: float, attack_bonus:
 	combo_points = maxi(combo_points, 0)
 	combo_attack_progress = maxi(combo_attack_progress, 0)
 	combo_decay_time_left = maxf(combo_decay_time_left, 0.0)
+	if operate_attuned and operate_room == INVALID_ROOM:
+		operate_attuned = false
+	operate_started_at_door = maxi(operate_started_at_door, -1)
 	queue_redraw()
 
 func trigger_attack(target_position: Vector2, style: String = "laser") -> void:
@@ -749,6 +755,18 @@ func _draw() -> void:
 		var shimmer: float = 0.55 + 0.45 * sin(Time.get_ticks_msec() * 0.018)
 		draw_arc(Vector2.ZERO, 27.0, 0.0, TAU, 44, Color(0.96, 0.98, 1.0, 0.56 + shimmer * 0.30), 3.2, true)
 		draw_circle(Vector2.ZERO, 22.0, Color(0.75, 0.9, 1.0, 0.12 + shimmer * 0.08))
+	if operate_room != INVALID_ROOM:
+		var head_center: Vector2 = Vector2(0.0, -52.0)
+		var pulse: float = 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.016)
+		if operate_attuned:
+			var attuned_outer: float = 10.5 + 1.8 * pulse
+			draw_circle(head_center, attuned_outer + 4.0, Color(0.56, 0.93, 1.0, 0.22 + 0.10 * pulse))
+			draw_circle(head_center, attuned_outer, Color(0.84, 0.98, 1.0, 0.24 + 0.12 * pulse))
+			draw_arc(head_center, attuned_outer + 0.5, 0.0, TAU, 28, Color(0.94, 0.99, 1.0, 0.88), 1.9, true)
+		else:
+			var charge_outer: float = 8.0 + 1.4 * pulse
+			draw_circle(head_center, charge_outer + 3.0, Color(0.92, 0.83, 0.56, 0.16 + 0.08 * pulse))
+			draw_arc(head_center, charge_outer, 0.0, TAU, 24, Color(1.0, 0.92, 0.66, 0.74), 1.6, true)
 	if carrying_crystal:
 		draw_colored_polygon(PackedVector2Array([
 			Vector2(0.0, -52.0),

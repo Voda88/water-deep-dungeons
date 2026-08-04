@@ -40,6 +40,18 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 				"melee_windup": 0.16,
 				"body_color": Color("c2d8ff"),
 				"core_color": Color("f6fbff"),
+				"level_passives": [
+					{
+						"level": 2,
+						"name": "Skulker",
+						"detail": "Enemies ignore you while you are in a dark room.",
+					},
+					{
+						"level": 3,
+						"name": "Operate (Wit 10)",
+						"detail": "Stay in a lit major-module room for 1 door turn to attune. While attuned, add +10 to that room's major income. Leaving the room breaks attunement.",
+					},
+				],
 			}
 		HERO_CLASS_WIZARD:
 			return {
@@ -57,6 +69,13 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 				"melee_windup": 0.18,
 				"body_color": Color("c7a7ff"),
 				"core_color": Color("fff6ff"),
+				"level_passives": [
+					{
+						"level": 4,
+						"name": "Operate (Wit 9)",
+						"detail": "Stay in a lit major-module room for 1 door turn to attune. While attuned, add +9 to that room's major income. Leaving the room breaks attunement.",
+					},
+				],
 			}
 		_:
 			return {
@@ -75,6 +94,47 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 				"body_color": Color("ff9a7a"),
 				"core_color": Color("fff2dd"),
 			}
+
+static func operate_unlock_level_for_class(class_id: String) -> int:
+	match class_id:
+		HERO_CLASS_ROGUE:
+			return 3
+		HERO_CLASS_WIZARD:
+			return 4
+		_:
+			return -1
+
+static func operate_wit_for_class(class_id: String) -> int:
+	match class_id:
+		HERO_CLASS_ROGUE:
+			return 10
+		HERO_CLASS_WIZARD:
+			return 9
+		_:
+			return 0
+
+static func skulker_unlock_level_for_class(class_id: String) -> int:
+	match class_id:
+		HERO_CLASS_ROGUE:
+			return 2
+		_:
+			return -1
+
+static func hero_has_skulker(hero: Variant) -> bool:
+	if hero == null or not is_instance_valid(hero):
+		return false
+	return String(hero.hero_class_id) == HERO_CLASS_ROGUE and int(hero.level) >= skulker_unlock_level_for_class(HERO_CLASS_ROGUE)
+
+static func hero_can_operate_major_modules(hero: Variant) -> bool:
+	if hero == null or not is_instance_valid(hero):
+		return false
+	var unlock_level: int = operate_unlock_level_for_class(String(hero.hero_class_id))
+	return unlock_level > 0 and int(hero.level) >= unlock_level
+
+static func hero_operate_wit(hero: Variant) -> int:
+	if not hero_can_operate_major_modules(hero):
+		return 0
+	return operate_wit_for_class(String(hero.hero_class_id))
 
 static func default_learned_spells_for_class(class_id: String, card_lookup: Callable) -> Array[String]:
 	return starting_known_spells_for_class(class_id, card_lookup)
@@ -244,25 +304,7 @@ static func card_definition(spell_id: String, card_lookup: Callable) -> Dictiona
 static func hero_builtin_card_generators(game: Node, hero: Variant) -> Array:
 	if hero == null or not is_instance_valid(hero):
 		return []
-	var generators: Array = [{
-		"card_id": "emergency_snack_card",
-		"generation_mode": "single",
-		"initial_queued_cards": 1,
-		"max_stored_cards": 1,
-		"persistent_card": true,
-		"source_type": "hero_builtin",
-		"hero_index": hero.hero_index,
-		"generator_key": "hero:%d:emergency_snack_card" % hero.hero_index,
-	}, {
-		"card_id": "arcane_reset_card",
-		"generation_mode": "single",
-		"initial_queued_cards": 1,
-		"max_stored_cards": 1,
-		"persistent_card": true,
-		"source_type": "hero_builtin",
-		"hero_index": hero.hero_index,
-		"generator_key": "hero:%d:arcane_reset_card" % hero.hero_index,
-	}]
+	var generators: Array = []
 	if hero.hero_class_id == game.HERO_CLASS_WIZARD:
 		generators.append({
 			"card_id": "light_cantrip_card",

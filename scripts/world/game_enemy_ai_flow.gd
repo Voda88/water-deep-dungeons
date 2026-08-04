@@ -443,6 +443,11 @@ static func hero_is_enemy_targetable(game: Node, hero: Variant) -> bool:
 		return false
 	if game.is_enemy_actor(hero):
 		return enemy_summon_is_enemy_targetable(game, hero)
+	if game.hero_has_skulker(hero):
+		var hero_room: Vector2i = hero_room_for_enemy_targeting(game, hero)
+		if hero_room != game.INVALID_ROOM and game.rooms.has(hero_room):
+			if not bool(Dictionary(game.rooms[hero_room]).get("lit", false)):
+				return false
 	return float(hero.invulnerability_time_left) <= 0.0
 
 static func actor_carrying_crystal(game: Node, actor: Variant) -> bool:

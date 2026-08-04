@@ -137,6 +137,10 @@ static func update_hud(game: Node) -> void:
 		game.refresh_research_overlay()
 	var door_income: Dictionary = game.calculate_door_rewards()
 	var major_income: Dictionary = game.calculate_major_module_wave_rewards()
+	var operate_bonus: Dictionary = Dictionary(major_income.get("operate_bonus", {}))
+	var operate_food_bonus: int = int(operate_bonus.get("food", 0))
+	var operate_industry_bonus: int = int(operate_bonus.get("industry", 0))
+	var operate_science_bonus: int = int(operate_bonus.get("science", 0))
 	var projected_food_income: int = int(door_income.get("food", 0)) + int(major_income.get("food", 0))
 	var projected_industry_income: int = int(door_income.get("industry", 0)) + int(major_income.get("industry", 0))
 	var projected_science_income: int = int(door_income.get("science", 0)) + int(major_income.get("science", 0))
@@ -144,9 +148,9 @@ static func update_hud(game: Node) -> void:
 	var calm_phase: bool = not game.wave_in_progress() and not crystal_carried
 	var inventory_allowed: bool = game.inventory_actions_allowed_for_local_peer()
 	game.dust_label.text = "Dust %d" % game.dust
-	game.food_label.text = "Food %d +%d" % [game.food, projected_food_income]
-	game.industry_label.text = "Mat %d +%d" % [game.industry, projected_industry_income]
-	game.science_label.text = "Arc %d +%d" % [game.science, projected_science_income]
+	game.food_label.text = "Food %d +%d%s" % [game.food, projected_food_income, " (Op+%d)" % operate_food_bonus if operate_food_bonus > 0 else ""]
+	game.industry_label.text = "Mat %d +%d%s" % [game.industry, projected_industry_income, " (Op+%d)" % operate_industry_bonus if operate_industry_bonus > 0 else ""]
+	game.science_label.text = "Arc %d +%d%s" % [game.science, projected_science_income, " (Op+%d)" % operate_science_bonus if operate_science_bonus > 0 else ""]
 	if game.crystal_holder != null and is_instance_valid(game.crystal_holder):
 		game.crystal_label.text = "Crystal  %s Carrying" % game.crystal_holder.hero_name
 	else:
