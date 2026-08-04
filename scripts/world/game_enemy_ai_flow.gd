@@ -168,7 +168,7 @@ static func target_room_for_enemy(game: Node, enemy: Variant) -> Vector2i:
 				return game.crystal_room
 			var shaman_target: Variant = orc_shaman_target_hero(game, enemy)
 			if shaman_target != null:
-				return Vector2i(shaman_target.current_room)
+				return hero_room_for_enemy_targeting(game, shaman_target)
 			return game.crystal_room
 		game.ENEMY_TYPE_GOLEM:
 			return golem_objective_room(game, enemy)
@@ -228,6 +228,8 @@ static func enemy_target_position(game: Node, enemy: Variant) -> Vector2:
 				return game.crystal_world_position()
 			var shaman_target: Variant = orc_shaman_target_hero(game, enemy)
 			if shaman_target != null:
+				if hero_is_in_room(game, shaman_target, enemy.current_room):
+					return game.clamp_point_to_room(enemy.global_position, enemy.current_room)
 				return shaman_target.global_position
 			return game.crystal_world_position()
 		game.ENEMY_TYPE_GOLEM:
@@ -245,8 +247,6 @@ static func enemy_attack_start_distance(game: Node, enemy: Variant) -> float:
 	match String(enemy.enemy_role):
 		game.ENEMY_TYPE_ORC_RIDER, game.ENEMY_TYPE_ORC, game.ENEMY_TYPE_GOLEM, game.ENEMY_TYPE_BAT, game.ENEMY_TYPE_DEMON_D:
 			return maxf(float(enemy.get("attack_range")), 18.0)
-		game.ENEMY_TYPE_ORC_SHAMAN:
-			return 212.0
 		_:
 			return 18.0
 

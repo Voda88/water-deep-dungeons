@@ -15,11 +15,14 @@ const SPAWN_DISTANCE_WEIGHT_STEP: float = 0.22
 const SPAWN_EXIT_WEIGHT_MULTIPLIER: float = 1.15
 const BONUS_RESOURCE_DISTANCE_WEIGHT_STEP: float = 0.14
 const BONUS_RESOURCE_EXIT_WEIGHT_MULTIPLIER: float = 0.86
+const PERMANENT_LIGHT_DISTANCE_WEIGHT_STEP: float = 0.16
+const PERMANENT_LIGHT_EXIT_WEIGHT_MULTIPLIER: float = 0.84
 const SPECIAL_FEATURE_RESEARCH: String = "research"
 const SPECIAL_FEATURE_MERCHANT: String = "merchant"
 const SPECIAL_FEATURE_LOOT: String = "loot"
 const SPECIAL_FEATURE_SPAWN: String = "spawn"
 const SPECIAL_FEATURE_BONUS_RESOURCE: String = "bonus_resource"
+const SPECIAL_FEATURE_PERMANENT_LIGHT: String = "permanent_light"
 
 static func is_in_bounds(game: Node, room_coord: Vector2i) -> bool:
 	return room_coord.x >= 0 and room_coord.y >= 0 and room_coord.x < game.GRID_SIZE.x and room_coord.y < game.GRID_SIZE.y
@@ -351,7 +354,7 @@ static func create_room(game: Node, room_coord: Vector2i, template_id: String, d
 	var minor_slots: int = 2
 	var major_slots: int = 0
 	var template_name: String = "Nook"
-	var seeded_permanent_light: bool = room_coord != game.crystal_room and game.rng.randf() < game.PRELIT_ROOM_CHANCE
+	var seeded_permanent_light: bool = false
 	room_size = Vector2(template_metadata.get("room_size", room_size))
 	minor_slots = int(template_metadata.get("minor_slots", minor_slots))
 	major_slots = int(template_metadata.get("major_slots", major_slots))
@@ -737,6 +740,11 @@ static func assign_special_room_features(game: Node) -> void:
 		game.rooms[room_coord]["feature_force_loot"] = false
 		game.rooms[room_coord]["feature_spawn_priority"] = false
 		game.rooms[room_coord]["feature_bonus_resource_event"] = ""
+		if room_coord != game.crystal_room:
+			game.rooms[room_coord]["lit"] = false
+			game.rooms[room_coord]["permanent_light"] = false
+			game.rooms[room_coord]["permanent_light_seeded"] = false
+			game.rooms[room_coord]["temporary_light_turns"] = 0
 	var first_discovered_room: Vector2i = game.INVALID_ROOM
 	if game.floor_index == 1 and game.rooms.has(game.crystal_room):
 		var crystal_neighbors: Array = Array(game.rooms[game.crystal_room].get("neighbors", []))
@@ -748,6 +756,7 @@ static func assign_special_room_features(game: Node) -> void:
 	var weighted_loot_candidates: Array[Dictionary] = []
 	var weighted_spawn_candidates: Array[Dictionary] = []
 	var weighted_bonus_resource_candidates: Array[Dictionary] = []
+	var weighted_permanent_light_candidates: Array[Dictionary] = []
 	for room_coord_variant in game.rooms.keys():
 		var room_coord: Vector2i = room_coord_variant
 		if room_coord == game.crystal_room:
@@ -775,6 +784,10 @@ static func assign_special_room_features(game: Node) -> void:
 		weighted_bonus_resource_candidates.append({
 			"room": room_coord,
 			"weight": bonus_resource_room_feature_weight(game, room_coord),
+		})
+		weighted_permanent_light_candidates.append({
+			"room": room_coord,
+			"weight": permanent_light_room_feature_weight(game, room_coord),
 		})
 	if weighted_research_candidates.is_empty() and not eligible_rooms.is_empty():
 		var weighted_eligible_rooms: Array[Dictionary] = []
@@ -817,6 +830,10 @@ static func assign_special_room_features(game: Node) -> void:
 		var entry: Dictionary = Dictionary(entry_variant).duplicate(true)
 		entry["feature"] = SPECIAL_FEATURE_BONUS_RESOURCE
 		combined_entries.append(entry)
+	for entry_variant in weighted_permanent_light_candidates:
+		var entry: Dictionary = Dictionary(entry_variant).duplicate(true)
+		entry["feature"] = SPECIAL_FEATURE_PERMANENT_LIGHT
+		combined_entries.append(entry)
 
 	var assigned_rooms: Dictionary = {}
 	var required_features: Array[String] = [
@@ -825,6 +842,7 @@ static func assign_special_room_features(game: Node) -> void:
 		SPECIAL_FEATURE_LOOT,
 		SPECIAL_FEATURE_SPAWN,
 		SPECIAL_FEATURE_BONUS_RESOURCE,
+		SPECIAL_FEATURE_PERMANENT_LIGHT,
 	]
 	while not combined_entries.is_empty() and assigned_rooms.size() < required_features.size():
 		var picked_entry: Dictionary = weighted_pick_entry(game, combined_entries)
@@ -895,6 +913,17 @@ static func assign_special_room_features(game: Node) -> void:
 		var fallback_bonus_resource: Vector2i = weighted_pick_room(game, weighted_bonus_resource_fallback)
 		if fallback_bonus_resource != game.INVALID_ROOM:
 			assigned_rooms[SPECIAL_FEATURE_BONUS_RESOURCE] = fallback_bonus_resource
+	if not assigned_rooms.has(SPECIAL_FEATURE_PERMANENT_LIGHT):
+		var weighted_permanent_light_fallback: Array[Dictionary] = []
+		for entry_variant in weighted_permanent_light_candidates:
+			var entry: Dictionary = entry_variant
+			var entry_room: Vector2i = Vector2i(entry.get("room", game.INVALID_ROOM))
+			if assigned_rooms.values().has(entry_room):
+				continue
+			weighted_permanent_light_fallback.append(entry)
+		var fallback_permanent_light: Vector2i = weighted_pick_room(game, weighted_permanent_light_fallback)
+		if fallback_permanent_light != game.INVALID_ROOM:
+			assigned_rooms[SPECIAL_FEATURE_PERMANENT_LIGHT] = fallback_permanent_light
 
 	if assigned_rooms.has(SPECIAL_FEATURE_RESEARCH):
 		var research_room: Vector2i = Vector2i(assigned_rooms.get(SPECIAL_FEATURE_RESEARCH, game.INVALID_ROOM))
@@ -916,6 +945,12 @@ static func assign_special_room_features(game: Node) -> void:
 		var bonus_resource_room: Vector2i = Vector2i(assigned_rooms.get(SPECIAL_FEATURE_BONUS_RESOURCE, game.INVALID_ROOM))
 		if bonus_resource_room != game.INVALID_ROOM and game.rooms.has(bonus_resource_room):
 			game.rooms[bonus_resource_room]["feature_bonus_resource_event"] = roll_bonus_resource_event_id(game)
+	if assigned_rooms.has(SPECIAL_FEATURE_PERMANENT_LIGHT):
+		var permanent_light_room: Vector2i = Vector2i(assigned_rooms.get(SPECIAL_FEATURE_PERMANENT_LIGHT, game.INVALID_ROOM))
+		if permanent_light_room != game.INVALID_ROOM and game.rooms.has(permanent_light_room):
+			game.rooms[permanent_light_room]["permanent_light"] = true
+			game.rooms[permanent_light_room]["permanent_light_seeded"] = true
+			game.rooms[permanent_light_room]["lit"] = true
 
 static func apply_merchant_to_room(game: Node, merchant_room: Vector2i) -> void:
 	if merchant_room == game.INVALID_ROOM or not game.rooms.has(merchant_room):
@@ -1028,6 +1063,17 @@ static func bonus_resource_room_feature_weight(game: Node, room_coord: Vector2i)
 		weight += float(path_length) * BONUS_RESOURCE_DISTANCE_WEIGHT_STEP
 	if room_coord == game.exit_room:
 		weight *= BONUS_RESOURCE_EXIT_WEIGHT_MULTIPLIER
+	return maxf(weight, 0.01)
+
+static func permanent_light_room_feature_weight(game: Node, room_coord: Vector2i) -> float:
+	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
+		return 0.0
+	var weight: float = SPECIAL_ROOM_WEIGHT_BASE
+	var path_length: int = game.room_path_distance(game.crystal_room, room_coord)
+	if path_length < 99999:
+		weight += float(path_length) * PERMANENT_LIGHT_DISTANCE_WEIGHT_STEP
+	if room_coord == game.exit_room:
+		weight *= PERMANENT_LIGHT_EXIT_WEIGHT_MULTIPLIER
 	return maxf(weight, 0.01)
 
 static func roll_bonus_resource_event_id(game: Node) -> String:
