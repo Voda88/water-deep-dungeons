@@ -963,9 +963,17 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			effect_tokens.append_array(detail_tokens)
 			game.status_message = "%s used %s (%s)." % [ration_target.hero_name, String(hand_card.get("name", "an exotic food")).to_lower(), ", ".join(effect_tokens)]
 			return true
-		"dagger_card":
+		"dagger_card", "rogue_combo_dagger_card", "ricochet_dagger_card":
+			if String(hand_card.get("card_id", "")) == "rogue_combo_dagger_card" and game.combo_level_for_hero(hero) < 3:
+				game.status_message = "Shadow Throw requires 3 combo points."
+				return false
 			spawn_dagger_card_projectiles(game, hero, target_world_position, hand_card)
-			game.status_message = "%s flung a dagger fan." % hero.hero_name
+			if String(hand_card.get("card_id", "")) == "rogue_combo_dagger_card":
+				game.status_message = "%s cast Shadow Throw." % hero.hero_name
+			elif String(hand_card.get("card_id", "")) == "ricochet_dagger_card":
+				game.status_message = "%s hurled a ricochet dagger." % hero.hero_name
+			else:
+				game.status_message = "%s flung a dagger fan." % hero.hero_name
 			return true
 		_:
 			spawn_axe_card_projectile(game, hero, target_world_position, hand_card)
@@ -997,6 +1005,10 @@ static func play_card_for_hero(game: Node, hero_index: int, card_uid: int, targe
 	if hand_index < 0:
 		return false
 	var hand_card: Dictionary = (hero.hand_cards[hand_index] as Dictionary).duplicate(true)
+	if String(hand_card.get("card_id", "")) == "rogue_combo_dagger_card" and game.combo_level_for_hero(hero) < 3:
+		game.status_message = "Shadow Throw requires 3 combo points."
+		game.update_hud()
+		return false
 	if not hand_card_phase_allows_play(game, hand_card):
 		return false
 	var target_data: Dictionary = resolve_card_target(game, hero, hand_card, target_world_position)
@@ -1928,6 +1940,11 @@ static func explode_fireball_projectile(game: Node, projectile: Dictionary) -> v
 	var impact_radius: float = maxf(float(projectile.get("impact_radius", 92.0)), 12.0)
 	var damage: float = float(projectile.get("damage", 42.0))
 	var push_distance: float = float(projectile.get("push_distance", 56.0))
+	var apply_combo_flatfooted: bool = bool(projectile.get("combo_flatfooted_on_damage", false))
+	var combo_flatfooted_duration: float = maxf(float(projectile.get("combo_flatfooted_duration", 0.0)), 0.0)
+	var combo_flatfooted_move_multiplier: float = clampf(float(projectile.get("combo_flatfooted_move_multiplier", 1.0)), 0.0, 1.0)
+	var combo_flatfooted_attack_speed_multiplier: float = clampf(float(projectile.get("combo_flatfooted_attack_speed_multiplier", 1.0)), 0.0, 1.0)
+	var combo_flatfooted_damage_taken_multiplier: float = maxf(float(projectile.get("combo_flatfooted_damage_taken_multiplier", 1.5)), 1.0)
 	var hit_any: bool = false
 	var source_label: String = String(projectile.get("source_label", "Fireball"))
 	for enemy in game.enemies:
@@ -1941,6 +1958,13 @@ static func explode_fireball_projectile(game: Node, projectile: Dictionary) -> v
 		if push_direction == Vector2.ZERO:
 			push_direction = Vector2.RIGHT
 		enemy.take_damage(damage, push_direction)
+		if apply_combo_flatfooted and combo_flatfooted_duration > 0.0 and enemy.has_method("apply_flatfooted_debuff"):
+			enemy.apply_flatfooted_debuff(
+				combo_flatfooted_duration,
+				combo_flatfooted_move_multiplier,
+				combo_flatfooted_attack_speed_multiplier,
+				combo_flatfooted_damage_taken_multiplier
+			)
 		var distance_ratio: float = 1.0 - clampf(enemy_distance / impact_radius, 0.0, 1.0)
 		var pushed_position: Vector2 = game.clamp_point_to_room(enemy.global_position + push_direction * push_distance * (0.35 + distance_ratio * 0.65), room_coord)
 		enemy.global_position = pushed_position
@@ -2096,8 +2120,11 @@ static func spawn_dagger_card_projectiles(game: Node, hero: Variant, target_worl
 			"spin_speed": 0.0,
 			"hit_enemy_uids": [],
 			"owner_hero_index": hero.hero_index,
-			"backstab_multiplier": float(hand_card.get("backstab_multiplier", 1.75)),
+			"backstab_multiplier": float(hand_card.get("backstab_multiplier", 2.0)),
 			"combo_damage_scale": float(hand_card.get("combo_damage_scale", 1.5)),
+			"bounce_explosion_min_bounces": int(hand_card.get("bounce_explosion_min_bounces", 0)),
+			"bounce_explosion_impact_radius": float(hand_card.get("bounce_explosion_impact_radius", hand_card.get("impact_radius", 0.0))),
+			"bounce_explosion_damage_multiplier": float(hand_card.get("bounce_explosion_damage_multiplier", 1.0)),
 			"combo_flatfooted_level_2_threshold": int(hand_card.get("combo_flatfooted_level_2_threshold", 2)),
 			"combo_flatfooted_level_3_threshold": int(hand_card.get("combo_flatfooted_level_3_threshold", 3)),
 			"combo_flatfooted_duration_level_2": float(hand_card.get("combo_flatfooted_duration_level_2", 2.2)),

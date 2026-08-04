@@ -123,6 +123,10 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 			"owner_hero_index": int(projectile.get("owner_hero_index", -1)),
 			"backstab_multiplier": float(projectile.get("backstab_multiplier", 1.0)),
 			"combo_damage_scale": float(projectile.get("combo_damage_scale", 1.5)),
+			"bounce_explosion_min_bounces": int(projectile.get("bounce_explosion_min_bounces", 0)),
+			"bounce_explosion_impact_radius": float(projectile.get("bounce_explosion_impact_radius", 0.0)),
+			"bounce_explosion_damage_multiplier": float(projectile.get("bounce_explosion_damage_multiplier", 1.0)),
+			"bounce_explosion_triggered": bool(projectile.get("bounce_explosion_triggered", false)),
 			"combo_flatfooted_level_2_threshold": int(projectile.get("combo_flatfooted_level_2_threshold", 2)),
 			"combo_flatfooted_level_3_threshold": int(projectile.get("combo_flatfooted_level_3_threshold", 3)),
 			"combo_flatfooted_duration_level_2": float(projectile.get("combo_flatfooted_duration_level_2", 2.2)),
@@ -307,7 +311,7 @@ static func apply_hero_snapshots(game: Node, hero_states: Array) -> void:
 		hero.barrier_time_left = float(hero_state.get("barrier_time_left", hero.barrier_time_left))
 		hero.invulnerability_time_left = float(hero_state.get("invulnerability_time_left", hero.invulnerability_time_left))
 		hero.max_hand_size = int(hero_state.get("max_hand_size", hero.max_hand_size))
-		hero.combo_points = int(hero_state.get("combo_points", hero.combo_points))
+		hero.combo_points = clampi(int(hero_state.get("combo_points", hero.combo_points)), 0, 3)
 		hero.combo_attack_progress = int(hero_state.get("combo_attack_progress", hero.combo_attack_progress))
 		hero.combo_decay_time_left = float(hero_state.get("combo_decay_time_left", hero.combo_decay_time_left))
 		hero.food_attack_cooldown_multiplier = float(hero_state.get("food_attack_cooldown_multiplier", hero.food_attack_cooldown_multiplier))

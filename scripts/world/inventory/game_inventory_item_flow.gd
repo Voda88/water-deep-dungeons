@@ -23,21 +23,25 @@ static func infer_item_level_from_definition(game: Node, item_def: Dictionary) -
 		var card_id: String = String(generator.get("card_id", ""))
 		if card_id == "":
 			continue
-		max_level = maxi(max_level, int(game.card_definition(card_id).get("spell_level", 1)))
+		max_level = maxi(max_level, int(game.card_definition(card_id).get("spell_level", 0)))
 	return maxi(0, max_level)
 
 static func normalize_item_instance(game: Node, item_variant: Variant) -> Dictionary:
 	var item: Dictionary = (item_variant as Dictionary).duplicate(true)
 	var item_def: Dictionary = game.item_defs.get(String(item.get("item_id", "")), {})
+	var inferred_level: int = infer_item_level_from_definition(game, item_def)
 	if not item.has("uid"):
 		item["uid"] = game.next_item_uid
 		game.next_item_uid += 1
 	if item_def.has("max_charges") and not item.has("charges_left"):
 		item["charges_left"] = int(item_def.get("max_charges", 0))
 	if not item.has("item_level"):
-		item["item_level"] = infer_item_level_from_definition(game, item_def)
+		item["item_level"] = inferred_level
 	else:
-		item["item_level"] = maxi(0, int(item.get("item_level", item_def.get("item_level", 1))))
+		var normalized_level: int = maxi(0, int(item.get("item_level", item_def.get("item_level", inferred_level))))
+		if int(item_def.get("item_level", 1)) == 0 and inferred_level == 0 and normalized_level == 1:
+			normalized_level = 0
+		item["item_level"] = normalized_level
 	return item
 
 static func make_ground_item(game: Node, item_id: String, world_position: Vector2) -> Dictionary:
@@ -94,6 +98,7 @@ static func roll_ground_item_id(game: Node) -> String:
 		"rogue_bandolier",
 		"axe",
 		"daggers",
+		"ricochet_dagger",
 		"scroll_fireball",
 		"scroll_magic_missile",
 		"scroll_misty_step",

@@ -21,6 +21,7 @@ const SPAWN_CLUSTER_MAX_CELL_RETRIES: int = 2
 const SPAWN_CENTER_SAFE_MARGIN: float = 72.0
 const SPAWN_CENTER_ANCHOR_JITTER: float = 14.0
 const ROGUE_COMBO_HITS_PER_LEVEL: int = 2
+const ROGUE_COMBO_MAX_POINTS: int = 3
 const ROGUE_COMBO_DECAY_INTERVAL: float = 2.0
 const ROGUE_COMBO_POPUP_COLOR: Color = Color("ffd27a")
 const ROGUE_COMBO_POPUP_Y_OFFSET: float = 42.0
@@ -31,7 +32,7 @@ static func hero_is_combo_class(game: Node, hero: Variant) -> bool:
 static func combo_level_for_hero(game: Node, hero: Variant) -> int:
 	if not hero_is_combo_class(game, hero):
 		return 0
-	return maxi(0, int(hero.combo_points))
+	return clampi(int(hero.combo_points), 0, ROGUE_COMBO_MAX_POINTS)
 
 static func reset_hero_combo(_game: Node, hero: Variant) -> void:
 	if hero == null or not is_instance_valid(hero):
@@ -51,7 +52,7 @@ static func advance_hero_combo_decay(game: Node, delta: float) -> void:
 	for hero in game.heroes:
 		if not hero_is_combo_class(game, hero):
 			continue
-		var combo_points: int = maxi(0, int(hero.combo_points))
+		var combo_points: int = clampi(int(hero.combo_points), 0, ROGUE_COMBO_MAX_POINTS)
 		var combo_progress: int = maxi(0, int(hero.combo_attack_progress))
 		if combo_points <= 0 and combo_progress <= 0:
 			hero.combo_decay_time_left = 0.0
@@ -180,7 +181,7 @@ static func register_hero_enemy_hit(game: Node, hero: Variant, enemy: Variant, i
 	hero.combo_decay_time_left = ROGUE_COMBO_DECAY_INTERVAL
 	if gained_levels <= 0:
 		return
-	hero.combo_points = maxi(0, int(hero.combo_points)) + gained_levels
+	hero.combo_points = clampi(int(hero.combo_points) + gained_levels, 0, ROGUE_COMBO_MAX_POINTS)
 	game.add_resource_floating_text(
 		hero.global_position + Vector2(0.0, -ROGUE_COMBO_POPUP_Y_OFFSET),
 		"Combo %d" % int(hero.combo_points),
@@ -858,6 +859,8 @@ static func apply_card_projectile_hits(game: Node, projectile: Dictionary) -> vo
 		if owner_index >= 0 and owner_index < game.heroes.size():
 			owner_hero = game.heroes[owner_index]
 		var damage: float = float(projectile.get("damage", 0.0))
+		var trigger_bounce_explosion: bool = false
+		var bounce_explosion_payload: Dictionary = {}
 		if projectile_kind == "dagger":
 			var combo_level: int = 0
 			if owner_hero != null and is_instance_valid(owner_hero):
@@ -865,24 +868,41 @@ static func apply_card_projectile_hits(game: Node, projectile: Dictionary) -> vo
 			var is_shadow_dagger: bool = String(projectile.get("card_id", "")) == "rogue_combo_dagger_card"
 			if is_shadow_dagger and combo_level != 3:
 				continue
-			if owner_hero != null and is_instance_valid(owner_hero):
-				damage += float(combo_level) * float(projectile.get("combo_damage_scale", 1.5))
 			var projectile_forward: Vector2 = Vector2(projectile.get("velocity", Vector2.RIGHT)).normalized()
 			if projectile_forward.dot(game.enemy_forward_direction(enemy)) > 0.45:
-				damage *= float(projectile.get("backstab_multiplier", 1.75))
+				damage *= float(projectile.get("backstab_multiplier", 2.0))
 			if owner_hero != null and is_instance_valid(owner_hero) and hero_is_combo_class(game, owner_hero):
 				if is_shadow_dagger and combo_level != 3:
 					continue
-				var level_two_threshold: int = maxi(1, int(projectile.get("combo_flatfooted_level_2_threshold", 2)))
-				if combo_level >= level_two_threshold and enemy.has_method("apply_flatfooted_debuff"):
-					var level_three_threshold: int = maxi(3, int(projectile.get("combo_flatfooted_level_3_threshold", 3)))
-					var use_level_three: bool = combo_level >= level_three_threshold
+				if combo_level >= 3 and enemy.has_method("apply_flatfooted_debuff"):
 					enemy.apply_flatfooted_debuff(
-						maxf(float(projectile.get("combo_flatfooted_duration_level_3", 3.8 if use_level_three else projectile.get("combo_flatfooted_duration_level_2", 2.2))), 0.0),
+						maxf(float(projectile.get("combo_flatfooted_duration_level_3", projectile.get("combo_flatfooted_duration_level_2", 3.8))), 0.0),
 						clampf(float(projectile.get("combo_flatfooted_move_multiplier", 1.0)), 0.0, 1.0),
 						clampf(float(projectile.get("combo_flatfooted_attack_speed_multiplier", 1.0)), 0.0, 1.0),
-						maxf(float(projectile.get("combo_flatfooted_damage_taken_multiplier_level_3", 1.5 if use_level_three else projectile.get("combo_flatfooted_damage_taken_multiplier_level_2", 1.28))), 1.0)
+						maxf(float(projectile.get("combo_flatfooted_damage_taken_multiplier_level_3", projectile.get("combo_flatfooted_damage_taken_multiplier_level_2", 1.5))), 1.0)
 					)
+			var explosion_threshold: int = maxi(0, int(projectile.get("bounce_explosion_min_bounces", 0)))
+			if explosion_threshold > 0 and not bool(projectile.get("bounce_explosion_triggered", false)):
+				var total_bounces: int = maxi(0, int(projectile.get("bounces", 0)))
+				var remaining_bounces: int = maxi(0, int(projectile.get("remaining_bounces", total_bounces)))
+				var bounced_count: int = maxi(0, total_bounces - remaining_bounces)
+				if bounced_count >= explosion_threshold:
+					trigger_bounce_explosion = true
+					bounce_explosion_payload = {
+						"room": room_coord,
+						"position": enemy.global_position,
+						"target_position": enemy.global_position,
+						"impact_radius": maxf(float(projectile.get("bounce_explosion_impact_radius", projectile.get("impact_radius", 92.0))), 12.0),
+						"damage": damage * maxf(float(projectile.get("bounce_explosion_damage_multiplier", 1.0)), 0.0),
+						"color": projectile.get("color", Color("ffd7a6")),
+						"source_label": "%s's Ricochet Dagger" % (owner_hero.hero_name if owner_hero != null and is_instance_valid(owner_hero) else "Rogue"),
+					}
+					if combo_level >= 3:
+						bounce_explosion_payload["combo_flatfooted_on_damage"] = true
+						bounce_explosion_payload["combo_flatfooted_duration"] = maxf(float(projectile.get("combo_flatfooted_duration_level_3", projectile.get("combo_flatfooted_duration_level_2", 3.8))), 0.0)
+						bounce_explosion_payload["combo_flatfooted_move_multiplier"] = clampf(float(projectile.get("combo_flatfooted_move_multiplier", 1.0)), 0.0, 1.0)
+						bounce_explosion_payload["combo_flatfooted_attack_speed_multiplier"] = clampf(float(projectile.get("combo_flatfooted_attack_speed_multiplier", 1.0)), 0.0, 1.0)
+						bounce_explosion_payload["combo_flatfooted_damage_taken_multiplier"] = maxf(float(projectile.get("combo_flatfooted_damage_taken_multiplier_level_3", projectile.get("combo_flatfooted_damage_taken_multiplier_level_2", 1.5))), 1.0)
 		var impact_direction: Vector2 = projectile_direction
 		if impact_direction == Vector2.ZERO:
 			impact_direction = (enemy.global_position - previous).normalized()
@@ -893,6 +913,12 @@ static func apply_card_projectile_hits(game: Node, projectile: Dictionary) -> vo
 		enemy.take_damage(damage, impact_direction)
 		if owner_hero != null and is_instance_valid(owner_hero):
 			register_hero_enemy_hit(game, owner_hero, enemy, impact_direction)
+		if trigger_bounce_explosion and not bounce_explosion_payload.is_empty():
+			projectile["bounce_explosion_triggered"] = true
+			game.explode_fireball_projectile(bounce_explosion_payload)
+			projectile["expire_after_hit"] = true
+			already_hit.append(int(enemy.enemy_uid))
+			break
 		already_hit.append(int(enemy.enemy_uid))
 		pierced_count += 1
 		var base_knockback_force: float = maxf(float(projectile.get("knockback_force", 0.0)), 0.0)

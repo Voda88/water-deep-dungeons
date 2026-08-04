@@ -56,6 +56,7 @@ const ITEM_LEVEL_COLORS: Array[Color] = [
 const ITEM_SYMBOLS: Dictionary = {
 	"axe": "A",
 	"daggers": "D",
+	"ricochet_dagger": "G",
 	"rogue_bandolier": "R",
 	"fighter_emergency_snack": "F",
 	"cleric_emergency_snack": "C",

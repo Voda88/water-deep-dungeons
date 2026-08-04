@@ -379,7 +379,7 @@ static func ability_detail_text(game: Node, cooldown: float, power_text: String,
 
 static func ability_power_text(game: Node, card_id: String, payload: Dictionary) -> String:
 	match card_id:
-		"dagger_card", "rogue_combo_dagger_card":
+		"dagger_card", "rogue_combo_dagger_card", "ricochet_dagger_card":
 			return "%sx%d" % [format_ability_metric(game, float(payload.get("damage", 0.0))), maxi(1, int(payload.get("projectile_count", 1)))]
 		"axe_card":
 			return format_ability_metric(game, float(payload.get("damage", 0.0)))

@@ -14,6 +14,8 @@ const PROJECTILE_AIM_PREVIEW_CARD_IDS: Dictionary = {
 	"magic_missile_card": true,
 	"scorching_ray_card": true,
 	"dagger_card": true,
+	"rogue_combo_dagger_card": true,
+	"ricochet_dagger_card": true,
 	"axe_card": true,
 }
 
@@ -109,7 +111,7 @@ static func draw_projectile_target_indicator(game: Node, preview: Dictionary, ta
 	game.draw_line(origin, target_position, guide_glow, 9.0, true)
 	game.draw_line(origin, target_position, guide_core, 3.2, true)
 
-	if card_id == "dagger_card":
+	if card_id == "dagger_card" or card_id == "rogue_combo_dagger_card" or card_id == "ricochet_dagger_card":
 		var dagger_count: int = maxi(1, int(card_preview.get("projectile_count", 3)))
 		var dagger_spread: float = float(card_preview.get("spread", 0.16))
 		var guide_length: float = minf(maxf(origin.distance_to(target_position), 56.0), 220.0)

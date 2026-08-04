@@ -39,6 +39,20 @@ static func build_item_defs() -> Dictionary:
 			],
 			"hand_card": {"card_id": "dagger_card", "door_interval": 2, "generation_mode": "door_interval", "cooldown_scales_with_item_level": true, "initial_queued_cards": 3, "max_stored_cards": 3},
 		},
+		"ricochet_dagger": {
+			"name": "Ricochet Dagger",
+			"short": "RCD",
+			"item_level": 2,
+			"size": Vector2i(1, 2),
+			"color": Color("ffd7a6"),
+			"description_lines": ["Level 2 dagger", "Adds 1 Ricochet Dagger card", "If it bounces 3 times before a hit, it explodes like Fireball", "At Combo 3: all enemies damaged by it become Flatfooted"],
+			"tags": ["weapon", "blade", "dagger", "rogue"],
+			"synergy_sockets": [
+				{"offset": Vector2i(1, 0), "tag": "support", "bonuses": {"card_charge_mult": 0.92}},
+				{"offset": Vector2i(0, -1), "tag": "metal", "bonuses": {"card_damage": 8.0}},
+			],
+			"hand_card": {"card_id": "ricochet_dagger_card", "door_interval": 3, "generation_mode": "door_interval", "cooldown_scales_with_item_level": true, "initial_queued_cards": 1, "max_stored_cards": 1},
+		},
 		"rogue_bandolier": {
 			"name": "Rogue Bandolier",
 			"short": "RBL",
