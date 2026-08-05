@@ -1586,13 +1586,68 @@ func hero_idle_position(room_coord: Vector2i, hero_index: int, total_heroes: int
 	var start_x: float = -spread * 0.5 * float(max(total_heroes - 1, 1))
 	return clamp_point_to_room(room_rect_local.get_center() + Vector2(start_x + float(hero_index) * spread, 24.0), room_coord)
 
+func room_entry_wall_delta(room_coord: Vector2i, from_room: Vector2i) -> Vector2i:
+	var delta: Vector2i = from_room - room_coord
+	if abs(delta.x) > abs(delta.y):
+		delta = Vector2i(-1 if delta.x < 0 else 1, 0)
+	elif abs(delta.y) > 0:
+		delta = Vector2i(0, -1 if delta.y < 0 else 1)
+	else:
+		delta = Vector2i.ZERO
+	return delta if abs(delta.x) + abs(delta.y) == 1 else Vector2i.ZERO
+
+func wall_aligned_idle_position(room_coord: Vector2i, wall_delta: Vector2i, slot_index: int, slot_count: int) -> Vector2:
+	var walkable_regions: Array = room_walkable_regions(room_coord, 0.0)
+	var walkable_bounds: Rect2 = bounding_rect_for_regions(walkable_regions) if not walkable_regions.is_empty() else room_rect(room_coord).grow(-26.0)
+	var edge_padding: float = 14.0
+	var spacing: float = 50.0
+	var count: int = maxi(slot_count, 1)
+	var clamped_slot: int = clampi(slot_index, 0, count - 1)
+	var center: Vector2 = walkable_bounds.get_center()
+	var start_offset: float = -spacing * 0.5 * float(count - 1)
+	var along_offset: float = start_offset + float(clamped_slot) * spacing
+	var target_position: Vector2 = center
+	if wall_delta.x < 0:
+		target_position.x = walkable_bounds.position.x + edge_padding
+		target_position.y = center.y + along_offset
+	elif wall_delta.x > 0:
+		target_position.x = walkable_bounds.end.x - edge_padding
+		target_position.y = center.y + along_offset
+	elif wall_delta.y < 0:
+		target_position.x = center.x + along_offset
+		target_position.y = walkable_bounds.position.y + edge_padding
+	elif wall_delta.y > 0:
+		target_position.x = center.x + along_offset
+		target_position.y = walkable_bounds.end.y - edge_padding
+	target_position.x = clampf(target_position.x, walkable_bounds.position.x + edge_padding, walkable_bounds.end.x - edge_padding)
+	target_position.y = clampf(target_position.y, walkable_bounds.position.y + edge_padding, walkable_bounds.end.y - edge_padding)
+	return clamp_point_to_room(target_position, room_coord)
+
 func room_local_idle_position_for_hero(room_coord: Vector2i, hero: Variant) -> Vector2:
 	if hero == null or not is_instance_valid(hero):
 		return room_walkable_center(room_coord)
+	var entry_wall_delta: Vector2i = room_entry_wall_delta(room_coord, Vector2i(hero.entered_room_from))
 	var room_heroes: Array = heroes_in_room(room_coord)
 	room_heroes.sort_custom(func(a: Variant, b: Variant) -> bool:
 		return int(a.hero_index) < int(b.hero_index)
 	)
+	if entry_wall_delta != Vector2i.ZERO:
+		var wall_group: Array = []
+		for room_hero_variant in room_heroes:
+			var room_hero: Variant = room_hero_variant
+			if room_entry_wall_delta(room_coord, Vector2i(room_hero.entered_room_from)) == entry_wall_delta:
+				wall_group.append(room_hero)
+		if wall_group.is_empty():
+			wall_group.append(hero)
+		wall_group.sort_custom(func(a: Variant, b: Variant) -> bool:
+			return int(a.hero_index) < int(b.hero_index)
+		)
+		var wall_slot_index: int = 0
+		for index in range(wall_group.size()):
+			if wall_group[index] == hero:
+				wall_slot_index = index
+				break
+		return wall_aligned_idle_position(room_coord, entry_wall_delta, wall_slot_index, wall_group.size())
 	var slot_index: int = 0
 	for index in range(room_heroes.size()):
 		if room_heroes[index] == hero:
@@ -1607,7 +1662,7 @@ func room_local_idle_position_for_hero(room_coord: Vector2i, hero: Variant) -> V
 func hero_room_command_target_position(hero: Variant, room_coord: Vector2i) -> Vector2:
 	if hero == null or not is_instance_valid(hero):
 		return room_action_staging_position(room_coord)
-	return hero_idle_position(room_coord, int(hero.hero_index), max(alive_hero_count(), 1))
+	return room_local_idle_position_for_hero(room_coord, hero)
 
 func hero_room_entry_target_position(path: Array[Vector2i], hero: Variant, room_coord: Vector2i) -> Vector2:
 	if hero != null and is_instance_valid(hero) and bool(hero.carrying_crystal) and room_coord == exit_room:

@@ -90,6 +90,7 @@ var current_health: float = 0.0
 var cooldown_left: float = 0.0
 var current_room: Vector2i = Vector2i.ZERO
 var pending_room: Vector2i = INVALID_ROOM
+var entered_room_from: Vector2i = INVALID_ROOM
 var destination: Vector2 = Vector2.ZERO
 var move_steps: Array = []
 var pending_open_room: Vector2i = INVALID_ROOM
@@ -397,6 +398,8 @@ func set_permanently_dead_hidden() -> void:
 	queue_redraw()
 
 func set_room(room: Vector2i, world_position: Vector2) -> void:
+	if room != current_room and current_room != INVALID_ROOM:
+		entered_room_from = current_room
 	current_room = room
 	pending_room = INVALID_ROOM
 	global_position = world_position
