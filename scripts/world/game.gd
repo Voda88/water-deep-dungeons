@@ -156,13 +156,17 @@ const WAVE_SPAWN_BUILD_POSITION_BUDGET: int = 3
 const ENEMY_SPAWN_FRAME_BUDGET: int = 3
 const ENEMY_SPAWN_PREVIEW_FRAME_BUDGET: int = 5
 const ENEMY_SPAWN_FRAME_GAP: int = 5
-const ENEMY_ACTIVE_CAP: int = 15
-const ENEMY_AI_THINK_INTERVAL: float = 0.2
+const ENEMY_ACTIVE_CAP: int = 20
+const ENEMY_AI_THINK_INTERVAL: float = 0.3
+const FULL_WAVE_SPAWN_WHEN_QUEUED: bool = true
+const FULL_WAVE_SPAWN_BACKLOG_THRESHOLD: int = 1
 const LOW_FPS_ANIMATION_DISABLE_THRESHOLD: float = 30.0
 const LOW_FPS_ANIMATION_RESTORE_THRESHOLD: float = 33.0
 const LOW_FPS_ANIMATION_DISABLE_HOLD: float = 0.2
 const LOW_FPS_ANIMATION_RESTORE_HOLD: float = 1.1
 const PERFORMANCE_UI_REFRESH_INTERVAL: float = 0.2
+const PERF_TRACE_LOG_ENABLED: bool = true
+const PERF_TRACE_LOG_INTERVAL: float = 1.0
 const CRYSTAL_DUST_DAMAGE_BASE_HIT: float = 0.25
 const CRYSTAL_PRESSURE_PICKUP_DELAY: float = 2.0
 const CRYSTAL_PRESSURE_INTERVAL: float = 4.0
@@ -378,6 +382,10 @@ var pending_room_loot_requests: Dictionary = {}
 var pending_room_action_requests: Dictionary = {}
 var performance_label: Label = null
 var performance_ui_refresh_time_left: float = 0.0
+var perf_trace_samples: int = 0
+var perf_trace_draw_samples: int = 0
+var perf_trace_accum_us: Dictionary = {}
+var perf_trace_time_left: float = PERF_TRACE_LOG_INTERVAL
 var door_wave_auto_heal_pending: bool = false
 var door_wave_healing_active: bool = false
 var door_wave_major_payout_pending: bool = false
@@ -475,36 +483,84 @@ func _physics_process(delta: float) -> void:
 	sync_hero_skulking_visual_states()
 	if not authoritative_simulation_active():
 		return
+	var trace_enabled: bool = PERF_TRACE_LOG_ENABLED
+	var trace_t0: int = 0
+	if trace_enabled:
+		trace_t0 = Time.get_ticks_usec()
 	update_hero_combat_movement_mode()
+	if trace_enabled:
+		perf_trace_add_us("hero_mode", Time.get_ticks_usec() - trace_t0)
+		trace_t0 = Time.get_ticks_usec()
 	advance_room_opening(delta)
+	if trace_enabled:
+		perf_trace_add_us("room_open", Time.get_ticks_usec() - trace_t0)
+		trace_t0 = Time.get_ticks_usec()
 	advance_hero_movement()
+	if trace_enabled:
+		perf_trace_add_us("hero_move", Time.get_ticks_usec() - trace_t0)
+		trace_t0 = Time.get_ticks_usec()
 	sync_hero_skulking_visual_states()
 	sync_hero_operate_attunement_states()
 	advance_spell_scroll_studies()
+	if trace_enabled:
+		perf_trace_add_us("hero_state", Time.get_ticks_usec() - trace_t0)
+		trace_t0 = Time.get_ticks_usec()
 	advance_pending_wave_spawn_builds()
+	if trace_enabled:
+		perf_trace_add_us("wave_build", Time.get_ticks_usec() - trace_t0)
+		trace_t0 = Time.get_ticks_usec()
 	advance_pending_enemy_spawns(delta)
+	if trace_enabled:
+		perf_trace_add_us("enemy_spawn", Time.get_ticks_usec() - trace_t0)
+		trace_t0 = Time.get_ticks_usec()
 	advance_crystal_pressure(delta)
+	if trace_enabled:
+		perf_trace_add_us("crystal", Time.get_ticks_usec() - trace_t0)
+		trace_t0 = Time.get_ticks_usec()
 	advance_enemy_routes(delta)
+	if trace_enabled:
+		perf_trace_add_us("enemy_ai", Time.get_ticks_usec() - trace_t0)
+		trace_t0 = Time.get_ticks_usec()
 	advance_projectiles(delta)
+	if trace_enabled:
+		perf_trace_add_us("projectiles", Time.get_ticks_usec() - trace_t0)
+		trace_t0 = Time.get_ticks_usec()
 	advance_floating_resource_texts(delta)
 	advance_room_constructions(delta)
+	if trace_enabled:
+		perf_trace_add_us("construction", Time.get_ticks_usec() - trace_t0)
+		trace_t0 = Time.get_ticks_usec()
 	process_combat(delta)
+	if trace_enabled:
+		perf_trace_add_us("combat", Time.get_ticks_usec() - trace_t0)
+		trace_t0 = Time.get_ticks_usec()
 	advance_hero_defensive_effects(delta)
 	advance_passive_item_combat_procs(delta)
 	process_modules(delta)
+	if trace_enabled:
+		perf_trace_add_us("modules", Time.get_ticks_usec() - trace_t0)
+		trace_t0 = Time.get_ticks_usec()
 	cleanup_enemies()
+	if trace_enabled:
+		perf_trace_add_us("cleanup", Time.get_ticks_usec() - trace_t0)
+		trace_t0 = Time.get_ticks_usec()
 	advance_wave_recovery(delta)
+	if trace_enabled:
+		perf_trace_add_us("recovery", Time.get_ticks_usec() - trace_t0)
 	if total_crystal_dust_support() <= 0:
 		game_over = true
 		status_message = "Crystal destroyed as dust support was depleted. Restart to try again."
 		update_hud()
 	maybe_broadcast_network_snapshot(delta)
+	if trace_enabled:
+		perf_trace_samples += 1
 
 func _process(delta: float) -> void:
 	if game_over:
 		advance_ui_button_hold(delta)
 		update_performance_ui(delta)
 		queue_redraw()
+		advance_perf_trace_logging(delta)
 		return
 	advance_ui_button_hold(delta)
 	advance_hand_card_return_animations(delta)
@@ -512,6 +568,44 @@ func _process(delta: float) -> void:
 	update_low_fps_animation_mode(delta)
 	update_performance_ui(delta)
 	queue_redraw()
+	advance_perf_trace_logging(delta)
+
+func perf_trace_add_us(label: String, elapsed_us: int) -> void:
+	if not PERF_TRACE_LOG_ENABLED or elapsed_us <= 0:
+		return
+	perf_trace_accum_us[label] = int(perf_trace_accum_us.get(label, 0)) + elapsed_us
+
+func perf_trace_avg_ms(label: String, sample_count: int) -> float:
+	if sample_count <= 0:
+		return 0.0
+	return float(int(perf_trace_accum_us.get(label, 0))) / float(sample_count) / 1000.0
+
+func advance_perf_trace_logging(delta: float) -> void:
+	if not PERF_TRACE_LOG_ENABLED:
+		return
+	perf_trace_time_left = maxf(perf_trace_time_left - maxf(delta, 0.0), 0.0)
+	if perf_trace_time_left > 0.0:
+		return
+	perf_trace_time_left = PERF_TRACE_LOG_INTERVAL
+	var physics_samples: int = maxi(1, perf_trace_samples)
+	var draw_samples: int = maxi(1, perf_trace_draw_samples)
+	print(
+		"[PERF] en=%d/%d pend=%d rooms=%d | ai %.2fms modules %.2fms spawn %.2fms proj %.2fms combat %.2fms draw %.2fms" % [
+			active_enemy_runtime_count(),
+			ENEMY_ACTIVE_CAP,
+			pending_enemy_spawn_count(),
+			opened_rooms,
+			perf_trace_avg_ms("enemy_ai", physics_samples),
+			perf_trace_avg_ms("modules", physics_samples),
+			perf_trace_avg_ms("enemy_spawn", physics_samples),
+			perf_trace_avg_ms("projectiles", physics_samples),
+			perf_trace_avg_ms("combat", physics_samples),
+			perf_trace_avg_ms("draw_total", draw_samples),
+		]
+	)
+	perf_trace_samples = 0
+	perf_trace_draw_samples = 0
+	perf_trace_accum_us.clear()
 
 func update_low_fps_animation_mode(delta: float) -> void:
 	if delta <= 0.0:
@@ -548,6 +642,12 @@ func active_enemy_runtime_count() -> int:
 			count += 1
 	return count
 
+func pending_enemy_spawn_count() -> int:
+	var pending_count: int = 0
+	for pending_spawn_variant in pending_enemy_spawns:
+		pending_count += maxi(0, int(Dictionary(pending_spawn_variant).get("remaining", 0)))
+	return pending_count
+
 func performance_overlay_text() -> String:
 	var fps: int = int(round(Engine.get_frames_per_second()))
 	var animation_mode_label: String = "FX:REDUCED" if animations_reduced_mode_active() else "FX:FULL"
@@ -570,6 +670,12 @@ func update_performance_ui(delta: float) -> void:
 	performance_label.add_theme_color_override("font_color", reduced_color if animations_reduced_mode_active() else normal_color)
 
 func _draw() -> void:
+	if PERF_TRACE_LOG_ENABLED:
+		var draw_start_us: int = Time.get_ticks_usec()
+		GAME_WORLD_RENDER_FLOW._draw(self)
+		perf_trace_add_us("draw_total", Time.get_ticks_usec() - draw_start_us)
+		perf_trace_draw_samples += 1
+		return
 	GAME_WORLD_RENDER_FLOW._draw(self)
 
 func build_item_defs() -> Dictionary:

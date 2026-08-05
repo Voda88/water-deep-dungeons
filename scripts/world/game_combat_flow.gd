@@ -506,6 +506,8 @@ static func advance_pending_enemy_spawns(game: Node, delta: float) -> void:
 	var spawn_budget: int = maxi(1, spawn_budget_base)
 	var preview_budget: int = maxi(1, int(game.ENEMY_SPAWN_PREVIEW_FRAME_BUDGET))
 	var max_active_enemies: int = maxi(1, int(game.ENEMY_ACTIVE_CAP))
+	var full_wave_mode: bool = bool(game.FULL_WAVE_SPAWN_WHEN_QUEUED)
+	var full_wave_backlog_threshold: int = maxi(1, int(game.FULL_WAVE_SPAWN_BACKLOG_THRESHOLD))
 	var active_enemy_total: int = active_enemy_count(game)
 	var current_frame: int = Engine.get_physics_frames()
 	var spawn_frame_gap: int = maxi(1, int(game.ENEMY_SPAWN_FRAME_GAP))
@@ -559,21 +561,37 @@ static func advance_pending_enemy_spawns(game: Node, delta: float) -> void:
 			var plan: Array = Array(pending_spawn.get("plan", []))
 			var positions: Array = Array(pending_spawn.get("positions", []))
 			var spawn_source: String = String(pending_spawn.get("spawn_source", "door_wave"))
-			var spawn_index: int = int(pending_spawn.get("spawned", 0))
-			if spawn_index >= 0 and spawn_index < plan.size():
+			var backlog_active: bool = pending_spawns.size() >= full_wave_backlog_threshold
+			var spawn_as_full_wave: bool = full_wave_mode and backlog_active
+			var burst_budget: int = max_active_enemies - active_enemy_total
+			if not spawn_as_full_wave:
+				burst_budget = mini(burst_budget, spawn_budget)
+			var spawned_this_step: int = 0
+			while burst_budget > 0 and int(pending_spawn.get("remaining", 0)) > 0:
+				var spawn_index: int = int(pending_spawn.get("spawned", 0))
+				if spawn_index < 0 or spawn_index >= plan.size():
+					pending_spawn["remaining"] = 0
+					break
 				var spawn_position: Vector2 = Vector2.INF
 				if spawn_index < positions.size():
 					spawn_position = Vector2(positions[spawn_index])
 				spawn_wave_enemy_at(game, Vector2i(pending_spawn["room"]), String(plan[spawn_index]), spawn_position, spawn_source)
-				pending_spawn["spawned"] = int(pending_spawn["spawned"]) + 1
-				pending_spawn["remaining"] = int(pending_spawn["remaining"]) - 1
-				pending_spawn["delay_left"] = float(pending_spawn["delay_left"]) + float(pending_spawn["interval"])
-				game.enemy_spawn_next_allowed_frame = current_frame + spawn_frame_gap
-				spawn_frame_ready = false
-				spawn_budget -= 1
+				pending_spawn["spawned"] = spawn_index + 1
+				pending_spawn["remaining"] = int(pending_spawn.get("remaining", 0)) - 1
+				spawned_this_step += 1
 				active_enemy_total += 1
-			else:
-				pending_spawn["remaining"] = 0
+				burst_budget -= 1
+				if not spawn_as_full_wave:
+					pending_spawn["delay_left"] = float(pending_spawn.get("delay_left", 0.0)) + float(pending_spawn.get("interval", 0.0))
+					break
+			if spawned_this_step > 0:
+				if spawn_as_full_wave:
+					pending_spawn["delay_left"] = 0.0 if int(pending_spawn.get("remaining", 0)) > 0 else float(pending_spawn.get("delay_left", 0.0))
+					game.enemy_spawn_next_allowed_frame = current_frame + 1
+				else:
+					game.enemy_spawn_next_allowed_frame = current_frame + spawn_frame_gap
+				spawn_frame_ready = false
+				spawn_budget = maxi(spawn_budget - spawned_this_step, 0)
 		pending_spawns[pending_index] = pending_spawn
 	var active_spawns: Array = []
 	for pending_spawn_variant in pending_spawns:
