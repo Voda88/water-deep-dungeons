@@ -81,20 +81,16 @@ static func adaptive_enemy_ai_think_interval(game: Node, active_enemy_count: int
 	return float(game.ENEMY_AI_THINK_INTERVAL_HEAVY) if heavy_load else float(game.ENEMY_AI_THINK_INTERVAL)
 
 static func enemy_role_is_melee_pressure_role(game: Node, role: String) -> bool:
-	match role:
-		game.ENEMY_TYPE_ORC,
-		game.ENEMY_TYPE_ORC_RIDER,
-		game.ENEMY_TYPE_GOLEM,
-		game.ENEMY_TYPE_BAT,
-		game.ENEMY_TYPE_DEMON_A,
-		game.ENEMY_TYPE_DEMON_D,
-		game.ENEMY_TYPE_SKELETON,
-		game.ENEMY_TYPE_SKELETON_ARMORED,
-		game.ENEMY_TYPE_SKELETON_GREATSWORD,
-		game.ENEMY_TYPE_SPIRITUAL_WEAPON:
-			return true
-		_:
-			return false
+	return role == game.ENEMY_TYPE_ORC \
+		or role == game.ENEMY_TYPE_ORC_RIDER \
+		or role == game.ENEMY_TYPE_GOLEM \
+		or role == game.ENEMY_TYPE_BAT \
+		or role == game.ENEMY_TYPE_DEMON_A \
+		or role == game.ENEMY_TYPE_DEMON_D \
+		or role == game.ENEMY_TYPE_SKELETON \
+		or role == game.ENEMY_TYPE_SKELETON_ARMORED \
+		or role == game.ENEMY_TYPE_SKELETON_GREATSWORD \
+		or role == game.ENEMY_TYPE_SPIRITUAL_WEAPON
 
 static func enemy_think_interval_for_role(game: Node, enemy: Variant, base_interval: float) -> float:
 	var resolved_interval: float = base_interval
