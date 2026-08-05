@@ -25,6 +25,12 @@ const ROGUE_COMBO_MAX_POINTS: int = 3
 const ROGUE_COMBO_DECAY_INTERVAL: float = 2.0
 const ROGUE_COMBO_POPUP_COLOR: Color = Color("ffd27a")
 const ROGUE_COMBO_POPUP_Y_OFFSET: float = 42.0
+const FIGHTER_RAGE_POPUP_COLOR: Color = Color("ff9a7a")
+const PHYSICAL_CARD_RAGE_DAMAGE_PER_LEVEL: float = 5.0
+const PHYSICAL_CARD_COMBO_FLATFOOTED_DURATION: float = 4.0
+const PHYSICAL_CARD_COMBO_FLATFOOTED_MOVE_MULTIPLIER: float = 0.82
+const PHYSICAL_CARD_COMBO_FLATFOOTED_ATTACK_SPEED_MULTIPLIER: float = 0.82
+const PHYSICAL_CARD_COMBO_FLATFOOTED_DAMAGE_TAKEN_MULTIPLIER: float = 1.5
 const CLERIC_MEND_REPAIR_PER_SECOND: float = 5.0
 
 static func hero_is_combo_class(game: Node, hero: Variant) -> bool:
@@ -46,6 +52,68 @@ static func note_hero_combo_attack(game: Node, hero: Variant) -> void:
 	if not hero_is_combo_class(game, hero):
 		return
 	hero.combo_decay_time_left = ROGUE_COMBO_DECAY_INTERVAL
+
+static func maybe_show_fighter_rage_popup(game: Node, hero: Variant, previous_rage: int = -1) -> void:
+	if hero == null or not is_instance_valid(hero):
+		return
+	if String(hero.hero_class_id) != game.HERO_CLASS_FIGHTER:
+		return
+	var current_rage: int = clampi(int(hero.fighter_rage), 0, maxi(int(hero.fighter_rage_max), 0))
+	if current_rage <= 0:
+		return
+	if previous_rage >= 0 and current_rage <= previous_rage:
+		return
+	game.add_resource_floating_text(
+		hero.global_position + Vector2(0.0, -ROGUE_COMBO_POPUP_Y_OFFSET),
+		"Rage %d" % current_rage,
+		FIGHTER_RAGE_POPUP_COLOR
+	)
+
+static func consume_next_physical_card_modifiers(game: Node, hero: Variant, card_id: String) -> Dictionary:
+	if hero == null or not is_instance_valid(hero):
+		return {}
+	var modifiers: Dictionary = {}
+	if hero_is_combo_class(game, hero) and card_id != "rogue_combo_dagger_card" and combo_level_for_hero(game, hero) >= ROGUE_COMBO_MAX_POINTS:
+		modifiers["combo_flatfooted_on_damage"] = true
+		modifiers["combo_flatfooted_duration"] = PHYSICAL_CARD_COMBO_FLATFOOTED_DURATION
+		modifiers["combo_flatfooted_move_multiplier"] = PHYSICAL_CARD_COMBO_FLATFOOTED_MOVE_MULTIPLIER
+		modifiers["combo_flatfooted_attack_speed_multiplier"] = PHYSICAL_CARD_COMBO_FLATFOOTED_ATTACK_SPEED_MULTIPLIER
+		modifiers["combo_flatfooted_damage_taken_multiplier"] = PHYSICAL_CARD_COMBO_FLATFOOTED_DAMAGE_TAKEN_MULTIPLIER
+		reset_hero_combo(game, hero)
+		game.add_resource_floating_text(
+			hero.global_position + Vector2(0.0, -ROGUE_COMBO_POPUP_Y_OFFSET),
+			"Combo Finisher",
+			ROGUE_COMBO_POPUP_COLOR
+		)
+	if String(hero.hero_class_id) == game.HERO_CLASS_FIGHTER and card_id != "silver_gauntlet_toss_card":
+		var rage_value: int = clampi(int(hero.fighter_rage), 0, maxi(int(hero.fighter_rage_max), 0))
+		if rage_value > 0:
+			var rage_bonus: float = float(rage_value) * PHYSICAL_CARD_RAGE_DAMAGE_PER_LEVEL
+			hero.fighter_rage = 0
+			modifiers["rage_bonus_damage"] = rage_bonus
+			game.add_resource_floating_text(
+				hero.global_position + Vector2(0.0, -ROGUE_COMBO_POPUP_Y_OFFSET),
+				"Rage +%d" % int(rage_bonus),
+				FIGHTER_RAGE_POPUP_COLOR
+			)
+	return modifiers
+
+static func apply_combo_flatfooted_from_modifiers(_game: Node, enemy: Variant, modifiers: Dictionary) -> void:
+	if enemy == null or not is_instance_valid(enemy):
+		return
+	if not bool(modifiers.get("combo_flatfooted_on_damage", false)):
+		return
+	if not enemy.has_method("apply_flatfooted_debuff"):
+		return
+	var duration: float = maxf(float(modifiers.get("combo_flatfooted_duration", PHYSICAL_CARD_COMBO_FLATFOOTED_DURATION)), 0.0)
+	if duration <= 0.0:
+		return
+	enemy.apply_flatfooted_debuff(
+		duration,
+		clampf(float(modifiers.get("combo_flatfooted_move_multiplier", PHYSICAL_CARD_COMBO_FLATFOOTED_MOVE_MULTIPLIER)), 0.0, 1.0),
+		clampf(float(modifiers.get("combo_flatfooted_attack_speed_multiplier", PHYSICAL_CARD_COMBO_FLATFOOTED_ATTACK_SPEED_MULTIPLIER)), 0.0, 1.0),
+		maxf(float(modifiers.get("combo_flatfooted_damage_taken_multiplier", PHYSICAL_CARD_COMBO_FLATFOOTED_DAMAGE_TAKEN_MULTIPLIER)), 1.0)
+	)
 
 static func advance_hero_combo_decay(game: Node, delta: float) -> void:
 	if delta <= 0.0:
@@ -1079,6 +1147,13 @@ static func apply_card_projectile_hits(game: Node, projectile: Dictionary) -> vo
 		var combo_level: int = 0
 		if owner_hero != null and is_instance_valid(owner_hero) and hero_is_combo_class(game, owner_hero):
 			combo_level = combo_level_for_hero(game, owner_hero)
+		var combo_modifiers: Dictionary = {
+			"combo_flatfooted_on_damage": bool(projectile.get("combo_flatfooted_on_damage", false)),
+			"combo_flatfooted_duration": float(projectile.get("combo_flatfooted_duration", PHYSICAL_CARD_COMBO_FLATFOOTED_DURATION)),
+			"combo_flatfooted_move_multiplier": float(projectile.get("combo_flatfooted_move_multiplier", PHYSICAL_CARD_COMBO_FLATFOOTED_MOVE_MULTIPLIER)),
+			"combo_flatfooted_attack_speed_multiplier": float(projectile.get("combo_flatfooted_attack_speed_multiplier", PHYSICAL_CARD_COMBO_FLATFOOTED_ATTACK_SPEED_MULTIPLIER)),
+			"combo_flatfooted_damage_taken_multiplier": float(projectile.get("combo_flatfooted_damage_taken_multiplier", PHYSICAL_CARD_COMBO_FLATFOOTED_DAMAGE_TAKEN_MULTIPLIER)),
+		}
 		var damage: float = float(projectile.get("damage", 0.0))
 		var trigger_bounce_explosion: bool = false
 		var bounce_explosion_payload: Dictionary = {}
@@ -1089,16 +1164,12 @@ static func apply_card_projectile_hits(game: Node, projectile: Dictionary) -> vo
 			var projectile_forward: Vector2 = Vector2(projectile.get("velocity", Vector2.RIGHT)).normalized()
 			if projectile_forward.dot(game.enemy_forward_direction(enemy)) > 0.45:
 				damage *= float(projectile.get("backstab_multiplier", 2.0))
-			if owner_hero != null and is_instance_valid(owner_hero) and hero_is_combo_class(game, owner_hero):
-				if is_shadow_dagger and combo_level != 3:
-					continue
-				if combo_level >= maxi(1, int(projectile.get("combo_flatfooted_level_3_threshold", 3))) and enemy.has_method("apply_flatfooted_debuff"):
-					enemy.apply_flatfooted_debuff(
-						maxf(float(projectile.get("combo_flatfooted_duration_level_3", projectile.get("combo_flatfooted_duration_level_2", 3.8))), 0.0),
-						clampf(float(projectile.get("combo_flatfooted_move_multiplier", 1.0)), 0.0, 1.0),
-						clampf(float(projectile.get("combo_flatfooted_attack_speed_multiplier", 1.0)), 0.0, 1.0),
-						maxf(float(projectile.get("combo_flatfooted_damage_taken_multiplier_level_3", projectile.get("combo_flatfooted_damage_taken_multiplier_level_2", 1.5))), 1.0)
-					)
+			if is_shadow_dagger and owner_hero != null and is_instance_valid(owner_hero) and hero_is_combo_class(game, owner_hero) and combo_level >= maxi(1, int(projectile.get("combo_flatfooted_level_3_threshold", 3))):
+				combo_modifiers["combo_flatfooted_on_damage"] = true
+				combo_modifiers["combo_flatfooted_duration"] = maxf(float(projectile.get("combo_flatfooted_duration_level_3", projectile.get("combo_flatfooted_duration_level_2", 3.8))), 0.0)
+				combo_modifiers["combo_flatfooted_move_multiplier"] = clampf(float(projectile.get("combo_flatfooted_move_multiplier", 1.0)), 0.0, 1.0)
+				combo_modifiers["combo_flatfooted_attack_speed_multiplier"] = clampf(float(projectile.get("combo_flatfooted_attack_speed_multiplier", 1.0)), 0.0, 1.0)
+				combo_modifiers["combo_flatfooted_damage_taken_multiplier"] = maxf(float(projectile.get("combo_flatfooted_damage_taken_multiplier_level_3", projectile.get("combo_flatfooted_damage_taken_multiplier_level_2", 1.5))), 1.0)
 			var explosion_threshold: int = maxi(0, int(projectile.get("bounce_explosion_min_bounces", 0)))
 			if explosion_threshold > 0 and not bool(projectile.get("bounce_explosion_triggered", false)):
 				var total_bounces: int = maxi(0, int(projectile.get("bounces", 0)))
@@ -1117,19 +1188,12 @@ static func apply_card_projectile_hits(game: Node, projectile: Dictionary) -> vo
 						"apply_owner_on_hit_effects": true,
 						"source_label": "%s's Ricochet Chakram" % (owner_hero.hero_name if owner_hero != null and is_instance_valid(owner_hero) else "Rogue"),
 					}
-					if combo_level >= 3:
+					if bool(combo_modifiers.get("combo_flatfooted_on_damage", false)):
 						bounce_explosion_payload["combo_flatfooted_on_damage"] = true
-						bounce_explosion_payload["combo_flatfooted_duration"] = maxf(float(projectile.get("combo_flatfooted_duration_level_3", projectile.get("combo_flatfooted_duration_level_2", 3.8))), 0.0)
-						bounce_explosion_payload["combo_flatfooted_move_multiplier"] = clampf(float(projectile.get("combo_flatfooted_move_multiplier", 1.0)), 0.0, 1.0)
-						bounce_explosion_payload["combo_flatfooted_attack_speed_multiplier"] = clampf(float(projectile.get("combo_flatfooted_attack_speed_multiplier", 1.0)), 0.0, 1.0)
-						bounce_explosion_payload["combo_flatfooted_damage_taken_multiplier"] = maxf(float(projectile.get("combo_flatfooted_damage_taken_multiplier_level_3", projectile.get("combo_flatfooted_damage_taken_multiplier_level_2", 1.5))), 1.0)
-		if projectile_kind == "axe" and combo_level >= maxi(1, int(projectile.get("combo_flatfooted_level_3_threshold", 3))) and enemy.has_method("apply_flatfooted_debuff"):
-			enemy.apply_flatfooted_debuff(
-				maxf(float(projectile.get("combo_flatfooted_duration_level_3", 3.8)), 0.0),
-				clampf(float(projectile.get("combo_flatfooted_move_multiplier", 0.82)), 0.0, 1.0),
-				clampf(float(projectile.get("combo_flatfooted_attack_speed_multiplier", 0.82)), 0.0, 1.0),
-				maxf(float(projectile.get("combo_flatfooted_damage_taken_multiplier_level_3", 1.5)), 1.0)
-			)
+						bounce_explosion_payload["combo_flatfooted_duration"] = maxf(float(combo_modifiers.get("combo_flatfooted_duration", PHYSICAL_CARD_COMBO_FLATFOOTED_DURATION)), 0.0)
+						bounce_explosion_payload["combo_flatfooted_move_multiplier"] = clampf(float(combo_modifiers.get("combo_flatfooted_move_multiplier", PHYSICAL_CARD_COMBO_FLATFOOTED_MOVE_MULTIPLIER)), 0.0, 1.0)
+						bounce_explosion_payload["combo_flatfooted_attack_speed_multiplier"] = clampf(float(combo_modifiers.get("combo_flatfooted_attack_speed_multiplier", PHYSICAL_CARD_COMBO_FLATFOOTED_ATTACK_SPEED_MULTIPLIER)), 0.0, 1.0)
+						bounce_explosion_payload["combo_flatfooted_damage_taken_multiplier"] = maxf(float(combo_modifiers.get("combo_flatfooted_damage_taken_multiplier", PHYSICAL_CARD_COMBO_FLATFOOTED_DAMAGE_TAKEN_MULTIPLIER)), 1.0)
 		var impact_direction: Vector2 = projectile_direction
 		if impact_direction == Vector2.ZERO:
 			impact_direction = (enemy.global_position - previous).normalized()
@@ -1137,6 +1201,7 @@ static func apply_card_projectile_hits(game: Node, projectile: Dictionary) -> vo
 			impact_direction = Vector2(projectile.get("velocity", Vector2.RIGHT)).normalized()
 		if impact_direction == Vector2.ZERO:
 			impact_direction = Vector2.RIGHT
+		apply_combo_flatfooted_from_modifiers(game, enemy, combo_modifiers)
 		enemy.take_damage(damage, impact_direction)
 		if owner_hero != null and is_instance_valid(owner_hero):
 			register_hero_enemy_hit(game, owner_hero, enemy, impact_direction)
@@ -1598,7 +1663,9 @@ static func apply_enemy_ranged_damage_to_hero(game: Node, hero: Variant, damage:
 	if hero == null or not is_instance_valid(hero) or not game.hero_is_active(hero):
 		return
 	var adjusted_damage: float = game.adjusted_incoming_damage_for_hero(hero, damage)
+	var previous_rage: int = int(hero.fighter_rage)
 	var defeated: bool = hero.take_damage(adjusted_damage, false)
+	maybe_show_fighter_rage_popup(game, hero, previous_rage)
 	if defeated and game.try_auto_cast_fatal_shield(hero, adjusted_damage):
 		return
 	if defeated:

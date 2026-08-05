@@ -131,6 +131,12 @@ static func can_activate_card_with_reactions(_game: Node, hero: Variant, _activa
 		return false
 	return true
 
+static func consume_physical_card_modifiers(game: Node, hero: Variant, hand_card: Dictionary) -> Dictionary:
+	var card_id: String = String(hand_card.get("card_id", ""))
+	if card_id == "":
+		return {}
+	return game.consume_next_physical_card_modifiers(hero, card_id)
+
 static func cooldown_level_for_generator(game: Node, generator: Dictionary, card_def: Dictionary) -> int:
 	var spell_level: int = maxi(0, int(card_def.get("spell_level", 0)))
 	if spell_level > 0:
@@ -706,7 +712,8 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			if not adjacent_target_valid_for_card(game, hero, hand_card, blade_room):
 				game.status_message = "Whirling Blade needs an adjacent opened room."
 				return false
-			if not cast_whirling_blade(game, hero, target_world_position, blade_room, hand_card):
+			var whirling_modifiers: Dictionary = consume_physical_card_modifiers(game, hero, hand_card)
+			if not cast_whirling_blade(game, hero, target_world_position, blade_room, hand_card, whirling_modifiers):
 				return false
 			game.status_message = "%s carved through to %s." % [hero.hero_name, game.room_title(blade_room)]
 			return true
@@ -727,7 +734,8 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			var bash_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
 			if bash_room == game.INVALID_ROOM or not game.rooms.has(bash_room):
 				return false
-			if not cast_shield_bash(game, hero, target_world_position, bash_room, hand_card):
+			var bash_modifiers: Dictionary = consume_physical_card_modifiers(game, hero, hand_card)
+			if not cast_shield_bash(game, hero, target_world_position, bash_room, hand_card, bash_modifiers):
 				return false
 			return true
 		"hold_person_card":
@@ -1015,7 +1023,8 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			if String(hand_card.get("card_id", "")) == "rogue_combo_dagger_card" and game.combo_level_for_hero(hero) < 3:
 				game.status_message = "Shadow Throw requires 3 combo points."
 				return false
-			spawn_dagger_card_projectiles(game, hero, target_world_position, hand_card)
+			var dagger_modifiers: Dictionary = consume_physical_card_modifiers(game, hero, hand_card)
+			spawn_dagger_card_projectiles(game, hero, target_world_position, hand_card, dagger_modifiers)
 			if String(hand_card.get("card_id", "")) == "rogue_combo_dagger_card":
 				game.status_message = "%s cast Shadow Throw." % hero.hero_name
 			elif String(hand_card.get("card_id", "")) == "ricochet_dagger_card":
@@ -1024,7 +1033,8 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 				game.status_message = "%s flung a dagger fan." % hero.hero_name
 			return true
 		_:
-			spawn_axe_card_projectile(game, hero, target_world_position, hand_card)
+			var axe_modifiers: Dictionary = consume_physical_card_modifiers(game, hero, hand_card)
+			spawn_axe_card_projectile(game, hero, target_world_position, hand_card, axe_modifiers)
 			game.status_message = "%s threw a razor boomerang." % hero.hero_name
 			return true
 
@@ -1470,14 +1480,15 @@ static func cast_speed_dash(game: Node, hero: Variant, target_world_position: Ve
 	append_timed_effect_projectile(game, "shield_flash", hero.global_position, Color(hand_card.get("color", Color("8ff6df"))), 0.18, 0.18)
 	return true
 
-static func apply_whirling_blade_sweep_damage(game: Node, hero: Variant, from_room: Vector2i, target_room: Vector2i, landing_position: Vector2, roll_steps: Array, hand_card: Dictionary) -> int:
+static func apply_whirling_blade_sweep_damage(game: Node, hero: Variant, from_room: Vector2i, target_room: Vector2i, landing_position: Vector2, roll_steps: Array, hand_card: Dictionary, card_modifiers: Dictionary = {}) -> int:
 	var sweep_points: Array = [hero.global_position]
 	for step_variant in roll_steps:
 		sweep_points.append(Vector2((step_variant as Dictionary).get("position", landing_position)))
 	if sweep_points.size() < 2:
 		sweep_points.append(landing_position)
 	var impact_radius: float = maxf(float(hand_card.get("impact_radius", 54.0)), 20.0)
-	var damage: float = float(hand_card.get("damage", hand_card.get("base_damage", 24.0)))
+	var rage_bonus_damage: float = maxf(float(card_modifiers.get("rage_bonus_damage", 0.0)), 0.0)
+	var damage: float = float(hand_card.get("damage", hand_card.get("base_damage", 24.0))) + rage_bonus_damage
 	var knockback_force: float = maxf(float(hand_card.get("knockback_force", 360.0)), 0.0)
 	var knockback_duration: float = clampf(float(hand_card.get("knockback_duration", 0.22)), 0.08, 0.5)
 	var hit_count: int = 0
@@ -1495,13 +1506,14 @@ static func apply_whirling_blade_sweep_damage(game: Node, hero: Variant, from_ro
 			impact_direction = Vector2.RIGHT
 		enemy.take_damage(damage, impact_direction)
 		game.register_hero_enemy_hit(hero, enemy, impact_direction)
+		game.apply_combo_flatfooted_from_modifiers(enemy, card_modifiers)
 		game.knockback_actor(enemy, impact_direction, knockback_force, knockback_duration, enemy.current_room)
 		hit_count += 1
 	if hit_count > 0:
 		game.add_resource_floating_text(landing_position, "Whirl x%d" % hit_count, Color(hand_card.get("color", Color("ffe08b"))))
 	return hit_count
 
-static func cast_whirling_blade(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> bool:
+static func cast_whirling_blade(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary, card_modifiers: Dictionary = {}) -> bool:
 	var from_room: Vector2i = evasive_roll_origin_room(game, hero)
 	if from_room == game.INVALID_ROOM or not game.rooms.has(from_room):
 		game.status_message = "Whirling Blade failed: no valid origin room."
@@ -1520,7 +1532,7 @@ static func cast_whirling_blade(game: Node, hero: Variant, target_world_position
 	if roll_steps.is_empty():
 		hero.set_room(target_room, landing_position)
 		hero.begin_evasive_roll(0.35, 2.6, float(hand_card.get("spin_speed", 24.0)))
-		apply_whirling_blade_sweep_damage(game, hero, from_room, target_room, landing_position, roll_steps, hand_card)
+		apply_whirling_blade_sweep_damage(game, hero, from_room, target_room, landing_position, roll_steps, hand_card, card_modifiers)
 		return true
 	var travel_distance: float = travel_distance_for_steps(hero.global_position, roll_steps)
 	var travel_multiplier: float = maxf(float(hand_card.get("travel_speed_multiplier", 2.6)), 1.0)
@@ -1529,7 +1541,7 @@ static func cast_whirling_blade(game: Node, hero: Variant, target_world_position
 	hero.begin_evasive_roll(spin_duration, travel_multiplier, float(hand_card.get("spin_speed", 24.0)))
 	game.issue_hero_steps(hero, roll_steps)
 	hero.trigger_attack(landing_position, "melee")
-	apply_whirling_blade_sweep_damage(game, hero, from_room, target_room, landing_position, roll_steps, hand_card)
+	apply_whirling_blade_sweep_damage(game, hero, from_room, target_room, landing_position, roll_steps, hand_card, card_modifiers)
 	append_timed_effect_projectile(game, "shield_flash", hero.global_position, Color(hand_card.get("color", Color("ffe08b"))), 0.2, 0.2)
 	return true
 
@@ -1596,7 +1608,7 @@ static func cast_silver_gauntlet_toss(game: Node, hero: Variant, target_world_po
 	game.status_message = "%s hurled %s with Rage %d." % [hero.hero_name, String(throw_target.enemy_role).capitalize(), rage_value]
 	return true
 
-static func cast_shield_bash(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> bool:
+static func cast_shield_bash(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary, card_modifiers: Dictionary = {}) -> bool:
 	if hero == null or not is_instance_valid(hero):
 		return false
 	if target_room != hero.current_room:
@@ -1609,7 +1621,8 @@ static func cast_shield_bash(game: Node, hero: Variant, target_world_position: V
 	var impact_radius: float = maxf(float(hand_card.get("impact_radius", 138.0)), 18.0)
 	var arc_angle_degrees: float = clampf(float(hand_card.get("arc_angle_deg", 110.0)), 10.0, 180.0)
 	var half_arc_radians: float = deg_to_rad(arc_angle_degrees * 0.5)
-	var damage: float = float(hand_card.get("damage", hand_card.get("base_damage", 12.0)))
+	var rage_bonus_damage: float = maxf(float(card_modifiers.get("rage_bonus_damage", 0.0)), 0.0)
+	var damage: float = float(hand_card.get("damage", hand_card.get("base_damage", 12.0))) + rage_bonus_damage
 	var knockback_force: float = maxf(float(hand_card.get("knockback_force", 420.0)), 0.0)
 	var knockback_duration: float = clampf(float(hand_card.get("knockback_duration", 0.24)), 0.04, 0.65)
 	var slow_duration: float = maxf(float(hand_card.get("slow_duration", 6.0)), 0.0)
@@ -1634,6 +1647,7 @@ static func cast_shield_bash(game: Node, hero: Variant, target_world_position: V
 				continue
 		enemy.take_damage(damage, impact_direction)
 		game.register_hero_enemy_hit(hero, enemy, impact_direction)
+		game.apply_combo_flatfooted_from_modifiers(enemy, card_modifiers)
 		game.knockback_actor(enemy, impact_direction, knockback_force, knockback_duration, target_room)
 		if slow_duration > 0.0:
 			if enemy.has_method("apply_flatfooted_debuff"):
@@ -2487,20 +2501,22 @@ static func explode_enemy_fireball(game: Node, room_coord: Vector2i, target_posi
 		game.add_resource_floating_text(target_position, "Blast" if hit_any else "Miss", Color("ff8558"))
 	return defeated_heroes
 
-static func spawn_axe_card_projectile(game: Node, hero: Variant, target_world_position: Vector2, hand_card: Dictionary) -> void:
+static func spawn_axe_card_projectile(game: Node, hero: Variant, target_world_position: Vector2, hand_card: Dictionary, card_modifiers: Dictionary = {}) -> void:
 	var direction: Vector2 = (target_world_position - hero.global_position).normalized()
 	if direction == Vector2.ZERO:
 		direction = Vector2.RIGHT
 	var axe_pierce: int = maxi(0, int(hand_card.get("pierce", maxi(0, int(hand_card.get("max_pierce", 3)) - 1))))
 	var axe_max_pierce: int = axe_pierce + 1
+	var rage_bonus_damage: float = maxf(float(card_modifiers.get("rage_bonus_damage", 0.0)), 0.0)
 	hero.trigger_attack(target_world_position, "melee")
 	game.note_hero_combo_attack(hero)
 	game.projectiles.append({
 		"kind": "axe",
+		"card_id": String(hand_card.get("card_id", "axe_card")),
 		"position": hero.global_position,
 		"previous": hero.global_position,
 		"velocity": direction * float(hand_card.get("speed", 760.0)),
-		"damage": float(hand_card.get("damage", 40.0)),
+		"damage": float(hand_card.get("damage", 40.0)) + rage_bonus_damage,
 		"color": hand_card.get("color", Color("ffd27a")),
 		"width": 7.0,
 		"radius": float(hand_card.get("radius", 17.0)),
@@ -2526,15 +2542,21 @@ static func spawn_axe_card_projectile(game: Node, hero: Variant, target_world_po
 		"spin_speed": 18.0,
 		"hit_enemy_uids": [],
 		"owner_hero_index": hero.hero_index,
+		"combo_flatfooted_on_damage": bool(card_modifiers.get("combo_flatfooted_on_damage", false)),
+		"combo_flatfooted_duration": float(card_modifiers.get("combo_flatfooted_duration", 4.0)),
+		"combo_flatfooted_move_multiplier": float(card_modifiers.get("combo_flatfooted_move_multiplier", 0.82)),
+		"combo_flatfooted_attack_speed_multiplier": float(card_modifiers.get("combo_flatfooted_attack_speed_multiplier", 0.82)),
+		"combo_flatfooted_damage_taken_multiplier": float(card_modifiers.get("combo_flatfooted_damage_taken_multiplier", 1.5)),
 	})
 
-static func spawn_dagger_card_projectiles(game: Node, hero: Variant, target_world_position: Vector2, hand_card: Dictionary) -> void:
+static func spawn_dagger_card_projectiles(game: Node, hero: Variant, target_world_position: Vector2, hand_card: Dictionary, card_modifiers: Dictionary = {}) -> void:
 	var count: int = maxi(1, int(hand_card.get("projectile_count", 3)))
 	var center_direction: Vector2 = (target_world_position - hero.global_position).normalized()
 	if center_direction == Vector2.ZERO:
 		center_direction = Vector2.RIGHT
 	var dagger_pierce: int = maxi(0, int(hand_card.get("pierce", maxi(0, int(hand_card.get("max_pierce", 99)) - 1))))
 	var dagger_max_pierce: int = dagger_pierce + 1
+	var rage_bonus_damage: float = maxf(float(card_modifiers.get("rage_bonus_damage", 0.0)), 0.0)
 	hero.trigger_attack(target_world_position, "laser")
 	game.note_hero_combo_attack(hero)
 	var spread: float = float(hand_card.get("spread", 0.16))
@@ -2547,7 +2569,7 @@ static func spawn_dagger_card_projectiles(game: Node, hero: Variant, target_worl
 			"position": hero.global_position,
 			"previous": hero.global_position,
 			"velocity": direction * float(hand_card.get("speed", 1020.0)),
-			"damage": float(hand_card.get("damage", 40.0)),
+			"damage": float(hand_card.get("damage", 40.0)) + rage_bonus_damage,
 			"color": hand_card.get("color", Color("d7f0ff")),
 			"width": 4.0,
 			"radius": 9.0,
@@ -2575,5 +2597,10 @@ static func spawn_dagger_card_projectiles(game: Node, hero: Variant, target_worl
 			"combo_flatfooted_damage_taken_multiplier_level_3": float(hand_card.get("combo_flatfooted_damage_taken_multiplier_level_3", 1.5)),
 			"combo_flatfooted_move_multiplier": float(hand_card.get("combo_flatfooted_move_multiplier", 1.0)),
 			"combo_flatfooted_attack_speed_multiplier": float(hand_card.get("combo_flatfooted_attack_speed_multiplier", 1.0)),
+			"combo_flatfooted_on_damage": bool(card_modifiers.get("combo_flatfooted_on_damage", false)),
+			"combo_flatfooted_duration": float(card_modifiers.get("combo_flatfooted_duration", 4.0)),
+			"combo_flatfooted_move_multiplier": float(card_modifiers.get("combo_flatfooted_move_multiplier", 0.82)),
+			"combo_flatfooted_attack_speed_multiplier": float(card_modifiers.get("combo_flatfooted_attack_speed_multiplier", 0.82)),
+			"combo_flatfooted_damage_taken_multiplier": float(card_modifiers.get("combo_flatfooted_damage_taken_multiplier", 1.5)),
 			"combo_gain": int(hand_card.get("combo_gain", 1)),
 		})

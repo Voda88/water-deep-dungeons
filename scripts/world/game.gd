@@ -2437,6 +2437,15 @@ func combo_level_for_hero(hero: Variant) -> int:
 func reset_hero_combo(hero: Variant) -> void:
 	GAME_COMBAT_FLOW.reset_hero_combo(self, hero)
 
+func consume_next_physical_card_modifiers(hero: Variant, card_id: String) -> Dictionary:
+	return GAME_COMBAT_FLOW.consume_next_physical_card_modifiers(self, hero, card_id)
+
+func apply_combo_flatfooted_from_modifiers(enemy: Variant, modifiers: Dictionary) -> void:
+	GAME_COMBAT_FLOW.apply_combo_flatfooted_from_modifiers(self, enemy, modifiers)
+
+func maybe_show_fighter_rage_popup(hero: Variant, previous_rage: int = -1) -> void:
+	GAME_COMBAT_FLOW.maybe_show_fighter_rage_popup(self, hero, previous_rage)
+
 func apply_poison_coating_to_hero(hero: Variant, coating: Dictionary) -> Dictionary:
 	return GAME_COMBAT_FLOW.apply_poison_coating_to_hero(self, hero, coating)
 
