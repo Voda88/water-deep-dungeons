@@ -299,7 +299,7 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"target_scope": "opened_room",
 				"requires_line_of_effect": true,
 				"phase": "combat",
-				"description_lines": ["Target one opened room", "Enemies there become neutral for 12s", "Neutral enemies do not move or attack", "Effect ends immediately when they take damage"],
+				"description_lines": ["Target one opened room", "Living enemies there become neutral for 12s", "Undead are unaffected", "Neutral enemies do not move or attack", "Effect ends immediately when they take damage"],
 				"cast_adjacent_hops": 1,
 				"calm_duration": 12.0,
 				"door_interval": 2,

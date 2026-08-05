@@ -1608,6 +1608,9 @@ static func cast_calm_emotions_spell(game: Node, hero: Variant, target_room: Vec
 			continue
 		if enemy.has_method("is_converted") and bool(enemy.is_converted()):
 			continue
+		var enemy_role: String = String(enemy.enemy_role)
+		if GAME_ENEMY_DEFS.enemy_is_undead(enemy_role):
+			continue
 		if enemy.has_method("apply_calm_emotions"):
 			enemy.apply_calm_emotions(calm_duration)
 		append_timed_effect_projectile(game, "calm_emotions_wave", enemy.global_position, Color(hand_card.get("color", Color("b7e8ff"))), 0.56, 0.56)
