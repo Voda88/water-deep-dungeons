@@ -237,6 +237,21 @@ static func build_item_defs() -> Dictionary:
 			],
 			"hand_card": {"card_id": "shield_bash_card", "door_interval": 2, "generation_mode": "door_interval", "initial_queued_cards": 2, "max_stored_cards": 2},
 		},
+		"silver_gauntlets": {
+			"name": "Silver Gauntlets",
+			"short": "SG",
+			"item_level": 0,
+			"size": Vector2i(1, 2),
+			"color": Color("c5d4df"),
+			"description_lines": ["Fighter starter relic", "Adds Rage Throw", "Tosses the strongest nearby enemy", "Wall bounces deal damage and apply Flatfooted", "Throw force scales hard with Rage"],
+			"tags": ["weapon", "physical"],
+			"hand_card": {
+				"card_id": "silver_gauntlet_toss_card",
+				"generation_mode": "single",
+				"initial_queued_cards": 1,
+				"max_stored_cards": 1,
+			},
+		},
 		"lantern": {
 			"name": "Lantern",
 			"short": "LNT",

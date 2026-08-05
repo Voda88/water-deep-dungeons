@@ -69,6 +69,7 @@ const ITEM_SYMBOLS: Dictionary = {
 	"blacklotus_oil": "O",
 	"boots": "B",
 	"whirling_blade": "W",
+	"silver_gauntlets": "G",
 	"sunpepper_jerky": "J",
 	"moon_truffle": "U",
 	"tidekelp_roll": "T",
@@ -476,7 +477,7 @@ func pointer_press(screen_position: Vector2) -> void:
 		return
 	if rotate_button_rect().has_point(local_position):
 		if not dragging_item.is_empty():
-			dragging_item["rotated"] = not bool(dragging_item.get("rotated", false))
+			rotate_item_clockwise(dragging_item)
 			rotate_hover_latched = true
 			queue_redraw()
 		else:
@@ -553,7 +554,7 @@ func pointer_move(screen_position: Vector2) -> void:
 		var drag_item_rect: Rect2 = dragging_item_rect()
 		var item_on_rotate: bool = drag_item_rect.intersects(rotate_button_rect())
 		if item_on_rotate and not rotate_hover_latched:
-			dragging_item["rotated"] = not bool(dragging_item.get("rotated", false))
+			rotate_item_clockwise(dragging_item)
 			rotate_hover_latched = true
 		elif not item_on_rotate:
 			rotate_hover_latched = false
@@ -607,7 +608,7 @@ func pointer_release(screen_position: Vector2) -> void:
 	var placement_anchor: Vector2i = preview_anchor_for_item(restored_item, drag_pointer_local)
 	if released_on_rotate:
 		if not rotate_hover_latched:
-			restored_item["rotated"] = not bool(restored_item.get("rotated", false))
+			rotate_item_clockwise(restored_item)
 		restore_dragged_item(restored_item)
 	elif released_outside_grid:
 		if dragging_from_ground:
@@ -1129,7 +1130,7 @@ func rotate_touched_inventory_item() -> void:
 	var item_anchor: Vector2i = rotated_item.get("anchor", INVALID_CELL)
 	if item_anchor == INVALID_CELL:
 		return
-	rotated_item["rotated"] = not bool(rotated_item.get("rotated", false))
+	rotate_item_clockwise(rotated_item)
 	if not can_place_item_with_ignore(rotated_item, item_anchor, int(rotated_item.get("uid", -1))):
 		return
 	items[touched_index] = rotated_item
@@ -1552,9 +1553,23 @@ func item_size_in_cells(item: Dictionary) -> Vector2i:
 	var item_id: String = String(item.get("item_id", ""))
 	var item_def: Dictionary = item_defs.get(item_id, {})
 	var item_base_size: Vector2i = item_def.get("size", Vector2i.ONE)
-	if bool(item.get("rotated", false)):
+	if item_rotation_steps(item) % 2 == 1:
 		return Vector2i(item_base_size.y, item_base_size.x)
 	return item_base_size
+
+func item_rotation_steps(item: Dictionary) -> int:
+	if item.has("rotation_steps"):
+		var explicit_steps: int = int(item.get("rotation_steps", 0))
+		return ((explicit_steps % 4) + 4) % 4
+	return 1 if bool(item.get("rotated", false)) else 0
+
+func set_item_rotation_steps(item: Dictionary, steps: int) -> void:
+	var normalized_steps: int = ((steps % 4) + 4) % 4
+	item["rotation_steps"] = normalized_steps
+	item["rotated"] = normalized_steps % 2 == 1
+
+func rotate_item_clockwise(item: Dictionary) -> void:
+	set_item_rotation_steps(item, item_rotation_steps(item) + 1)
 
 func item_base_footprint_offsets(item: Dictionary) -> Array:
 	var item_id: String = String(item.get("item_id", ""))
@@ -1583,12 +1598,21 @@ func item_footprint_offsets(item: Dictionary) -> Array:
 	var item_def: Dictionary = item_defs.get(item_id, {})
 	var base_size: Vector2i = item_def.get("size", Vector2i.ONE)
 	var base_footprint: Array = item_base_footprint_offsets(item)
-	if not bool(item.get("rotated", false)):
+	var rotation_steps: int = item_rotation_steps(item)
+	if rotation_steps == 0:
 		return base_footprint
 	var rotated_footprint: Array = []
 	for offset_variant in base_footprint:
 		var offset: Vector2i = offset_variant
-		rotated_footprint.append(Vector2i(base_size.y - 1 - offset.y, offset.x))
+		match rotation_steps:
+			1:
+				rotated_footprint.append(Vector2i(base_size.y - 1 - offset.y, offset.x))
+			2:
+				rotated_footprint.append(Vector2i(base_size.x - 1 - offset.x, base_size.y - 1 - offset.y))
+			3:
+				rotated_footprint.append(Vector2i(offset.y, base_size.x - 1 - offset.x))
+			_:
+				rotated_footprint.append(offset)
 	return rotated_footprint
 
 func preview_anchor_for_item(item: Dictionary, local_position: Vector2) -> Vector2i:
@@ -1675,9 +1699,17 @@ func inventory_item_has_tag(item: Dictionary, tag_name: String) -> bool:
 func rotated_socket_offset(item: Dictionary, socket_offset: Vector2i) -> Vector2i:
 	var item_def: Dictionary = item_defs.get(String(item.get("item_id", "")), {})
 	var base_size: Vector2i = item_def.get("size", Vector2i.ONE)
-	if not bool(item.get("rotated", false)):
-		return socket_offset
-	return Vector2i(base_size.y - 1 - socket_offset.y, socket_offset.x)
+	match item_rotation_steps(item):
+		0:
+			return socket_offset
+		1:
+			return Vector2i(base_size.y - 1 - socket_offset.y, socket_offset.x)
+		2:
+			return Vector2i(base_size.x - 1 - socket_offset.x, base_size.y - 1 - socket_offset.y)
+		3:
+			return Vector2i(socket_offset.y, base_size.x - 1 - socket_offset.x)
+		_:
+			return socket_offset
 
 func draw_inventory_star(socket_center: Vector2, socket_cell: Vector2i, socket_matched: bool, socket_cell_size: float) -> void:
 	var star_radius: float = clampf(socket_cell_size * 0.16, 5.0, 8.5)

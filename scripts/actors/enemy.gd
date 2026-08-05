@@ -30,6 +30,8 @@ const OVERKILL_KNOCKBACK_MAX_FORCE: float = 620.0
 const OVERKILL_KNOCKBACK_DURATION_PER_DAMAGE: float = 0.008
 const OVERKILL_KNOCKBACK_MAX_DURATION: float = 0.34
 const OVERLAY_REDRAW_INTERVAL: float = 1.0 / 30.0
+const THROW_KNOCKBACK_MIN_SPEED: float = 26.0
+const THROW_KNOCKBACK_DAMPING: float = 2.25
 
 static var enemy_sprite_frames_cache: Dictionary = {}
 
@@ -89,6 +91,18 @@ var knockback_duration: float = 0.0
 var knockback_bounds_enabled: bool = false
 var knockback_bounds: Rect2 = Rect2()
 var knockback_regions: Array = []
+var throw_active: bool = false
+var throw_velocity: Vector2 = Vector2.ZERO
+var throw_time_left: float = 0.0
+var throw_bounces_left: int = 0
+var throw_bounce_damage: float = 0.0
+var throw_flatfooted_duration: float = 0.0
+var throw_flatfooted_move_multiplier: float = 1.0
+var throw_flatfooted_attack_speed_multiplier: float = 1.0
+var throw_flatfooted_damage_taken_multiplier: float = 1.0
+var throw_restitution: float = 0.9
+var throw_source_hero_index: int = -1
+var throw_bounce_fx_color: Color = Color("c5d4df")
 var familiar_swoop_time_left: float = 0.0
 var familiar_swoop_direction: Vector2 = Vector2.RIGHT
 var familiar_swoop_bank_sign: float = 1.0
@@ -433,6 +447,8 @@ func overlay_redraw_interval() -> float:
 	return OVERLAY_REDRAW_INTERVAL
 
 func has_dynamic_overlay_visuals() -> bool:
+	if throw_active:
+		return true
 	if enemy_role == TYPE_SPIRITUAL_WEAPON or bool(get_meta("temporary_summon", false)):
 		return true
 	if hold_person_time_left > 0.0:
@@ -491,6 +507,136 @@ func apply_knockback_impulse(next_velocity: Vector2, duration: float, bounds: Re
 		knockback_bounds = bounds
 		knockback_bounds_enabled = true
 	queue_redraw()
+
+func resolve_game_host() -> Node:
+	var host: Node = get_parent()
+	while host != null:
+		if host.has_method("find_hero_by_index") and host.has_method("register_hero_enemy_hit"):
+			return host
+		host = host.get_parent()
+	return null
+
+func clear_throw_state() -> void:
+	throw_active = false
+	throw_velocity = Vector2.ZERO
+	throw_time_left = 0.0
+	throw_bounces_left = 0
+	throw_bounce_damage = 0.0
+	throw_flatfooted_duration = 0.0
+	throw_flatfooted_move_multiplier = 1.0
+	throw_flatfooted_attack_speed_multiplier = 1.0
+	throw_flatfooted_damage_taken_multiplier = 1.0
+	throw_restitution = 0.9
+	throw_source_hero_index = -1
+	throw_bounce_fx_color = Color("c5d4df")
+
+func begin_physics_throw(launch_velocity: Vector2, duration: float, bounds: Rect2, walkable_regions: Array = [], max_wall_bounces: int = 0, wall_hit_damage: float = 0.0, flatfooted_duration_seconds: float = 0.0, flatfooted_move_multiplier_value: float = 1.0, flatfooted_attack_speed_multiplier_value: float = 1.0, flatfooted_damage_taken_multiplier_value: float = 1.5, source_hero_index: int = -1, bounce_effect_color: Color = Color("c5d4df")) -> void:
+	if death_started or duration <= 0.0 or launch_velocity.length() <= 0.001:
+		return
+	move_steps.clear()
+	moving_between_rooms = false
+	pending_room = INVALID_ROOM
+	destination = global_position
+	velocity = Vector2.ZERO
+	knockback_velocity = Vector2.ZERO
+	knockback_time_left = 0.0
+	knockback_duration = 0.0
+	knockback_bounds = bounds
+	knockback_bounds_enabled = bounds.size.x > 0.0 and bounds.size.y > 0.0
+	knockback_regions = walkable_regions.duplicate(true) if not walkable_regions.is_empty() else []
+	throw_active = true
+	throw_velocity = launch_velocity
+	throw_time_left = duration
+	throw_bounces_left = maxi(max_wall_bounces, 0)
+	throw_bounce_damage = maxf(wall_hit_damage, 0.0)
+	throw_flatfooted_duration = maxf(flatfooted_duration_seconds, 0.0)
+	throw_flatfooted_move_multiplier = clampf(flatfooted_move_multiplier_value, 0.0, 1.0)
+	throw_flatfooted_attack_speed_multiplier = clampf(flatfooted_attack_speed_multiplier_value, 0.0, 1.0)
+	throw_flatfooted_damage_taken_multiplier = maxf(flatfooted_damage_taken_multiplier_value, 1.0)
+	throw_restitution = clampf(0.86 + minf(float(throw_bounces_left), 2.0) * 0.05, 0.86, 0.96)
+	throw_source_hero_index = source_hero_index
+	throw_bounce_fx_color = bounce_effect_color
+	queue_redraw()
+
+func apply_throw_wall_hit(wall_normal: Vector2) -> void:
+	var hit_direction: Vector2 = -wall_normal if wall_normal != Vector2.ZERO else throw_velocity.normalized()
+	if hit_direction == Vector2.ZERO:
+		hit_direction = Vector2.RIGHT
+	if throw_bounce_damage > 0.0:
+		take_damage(throw_bounce_damage, hit_direction)
+	if throw_flatfooted_duration > 0.0:
+		apply_flatfooted_debuff(throw_flatfooted_duration, throw_flatfooted_move_multiplier, throw_flatfooted_attack_speed_multiplier, throw_flatfooted_damage_taken_multiplier)
+	var host: Node = resolve_game_host()
+	if host != null and throw_source_hero_index >= 0:
+		var source_hero: Variant = host.call("find_hero_by_index", throw_source_hero_index)
+		if source_hero != null and is_instance_valid(source_hero):
+			host.call("register_hero_enemy_hit", source_hero, self, hit_direction)
+			if host.has_method("add_resource_floating_text"):
+				host.call("add_resource_floating_text", global_position, "Wall", throw_bounce_fx_color)
+
+func advance_thrown_motion(delta: float, had_dynamic_overlay_before: bool) -> bool:
+	if not throw_active:
+		return false
+	if throw_time_left <= 0.0 or throw_velocity.length() <= THROW_KNOCKBACK_MIN_SPEED:
+		clear_throw_state()
+		return false
+	velocity = throw_velocity
+	move_and_slide()
+	var bounced: bool = false
+	var wall_normal: Vector2 = Vector2.ZERO
+	if knockback_bounds_enabled:
+		var next_position: Vector2 = global_position
+		if next_position.x <= knockback_bounds.position.x and throw_velocity.x < 0.0:
+			next_position.x = knockback_bounds.position.x
+			throw_velocity.x = absf(throw_velocity.x) * throw_restitution
+			wall_normal.x = 1.0
+			bounced = true
+		elif next_position.x >= knockback_bounds.end.x and throw_velocity.x > 0.0:
+			next_position.x = knockback_bounds.end.x
+			throw_velocity.x = -absf(throw_velocity.x) * throw_restitution
+			wall_normal.x = -1.0
+			bounced = true
+		if next_position.y <= knockback_bounds.position.y and throw_velocity.y < 0.0:
+			next_position.y = knockback_bounds.position.y
+			throw_velocity.y = absf(throw_velocity.y) * throw_restitution
+			wall_normal.y = 1.0
+			bounced = true
+		elif next_position.y >= knockback_bounds.end.y and throw_velocity.y > 0.0:
+			next_position.y = knockback_bounds.end.y
+			throw_velocity.y = -absf(throw_velocity.y) * throw_restitution
+			wall_normal.y = -1.0
+			bounced = true
+		global_position = next_position
+	if bounced:
+		if throw_bounces_left <= 0:
+			clear_throw_state()
+			velocity = Vector2.ZERO
+			advance_overlay_redraw(delta, had_dynamic_overlay_before)
+			return true
+		apply_throw_wall_hit(wall_normal.normalized())
+		throw_bounces_left -= 1
+		if throw_bounces_left <= 0:
+			clear_throw_state()
+			velocity = Vector2.ZERO
+			advance_overlay_redraw(delta, had_dynamic_overlay_before)
+			return true
+		var nudge_direction: Vector2 = throw_velocity.normalized()
+		if nudge_direction != Vector2.ZERO:
+			global_position += nudge_direction * 0.6
+		clamp_to_knockback_bounds()
+	var drag_factor: float = clampf(delta * THROW_KNOCKBACK_DAMPING, 0.0, 1.0)
+	throw_velocity = throw_velocity.lerp(Vector2.ZERO, drag_factor)
+	throw_time_left = maxf(throw_time_left - delta, 0.0)
+	if throw_time_left <= 0.0 or throw_velocity.length() <= THROW_KNOCKBACK_MIN_SPEED:
+		clear_throw_state()
+	velocity = throw_velocity if throw_active else Vector2.ZERO
+	destination = global_position
+	move_steps.clear()
+	if animated_sprite != null:
+		animated_sprite.position = Vector2.ZERO
+	update_sprite_state(velocity)
+	advance_overlay_redraw(delta, had_dynamic_overlay_before)
+	return true
 
 func advance_knockback(delta: float) -> Vector2:
 	var current_impulse: Vector2 = knockback_velocity
@@ -568,6 +714,7 @@ func deactivate_for_pool() -> void:
 	knockback_duration = 0.0
 	knockback_bounds_enabled = false
 	knockback_regions.clear()
+	clear_throw_state()
 	familiar_swoop_time_left = 0.0
 	familiar_swoop_direction = Vector2.RIGHT
 	familiar_swoop_bank_sign = 1.0
@@ -657,6 +804,7 @@ func begin_death() -> void:
 	pending_room = INVALID_ROOM
 	destination = global_position
 	velocity = Vector2.ZERO
+	clear_throw_state()
 	if collision_shape != null:
 		collision_shape.disabled = true
 	collision_layer = 0
@@ -708,6 +856,7 @@ func set_role(role_name: String) -> void:
 	calm_emotions_time_left = 0.0
 	calm_emotions_duration = 0.0
 	converted_time_left = 0.0
+	clear_throw_state()
 	current_health = max_health
 	if collision_shape != null:
 		collision_shape.disabled = enemy_role == TYPE_SPIRITUAL_WEAPON
@@ -789,6 +938,8 @@ func _physics_process(delta: float) -> void:
 	fear_time_left = maxf(fear_time_left - delta, 0.0)
 	calm_emotions_time_left = maxf(calm_emotions_time_left - delta, 0.0)
 	familiar_swoop_time_left = maxf(familiar_swoop_time_left - delta, 0.0)
+	if advance_thrown_motion(delta, had_dynamic_overlay_before):
+		return
 	if is_find_familiar_summon() and knockback_time_left <= 0.0:
 		var familiar_anchor: Vector2 = Vector2(get_meta("summon_anchor_position", global_position))
 		destination = familiar_anchor

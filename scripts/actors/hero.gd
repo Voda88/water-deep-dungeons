@@ -7,6 +7,8 @@ const MELEE_IMPACT_FRAME: float = 2.0
 const MELEE_ATTACK_FPS: float = 13.0
 const MELEE_ATTACK_SPEED_SCALE: float = 0.72
 const UNLIMITED_HAND_SIZE: int = 9999
+const FIGHTER_CLASS_ID: String = "fighter"
+const FIGHTER_RAGE_MAX_START: int = 6
 const HERO_SPRITE_PROFILES := {
 	"fighter": {
 		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Knight/Knight/Knight_Idle.png",
@@ -103,6 +105,8 @@ var max_hand_size: int = 4
 var combo_points: int = 0
 var combo_attack_progress: int = 0
 var combo_decay_time_left: float = 0.0
+var fighter_rage: int = 0
+var fighter_rage_max: int = 0
 var food_attack_cooldown_multiplier: float = 1.0
 var food_attack_speed_time_left: float = 0.0
 var food_defence_bonus: float = 0.0
@@ -555,6 +559,8 @@ func take_damage(amount: float, allow_lethal_death: bool = true) -> bool:
 		return true
 	if invulnerability_time_left > 0.0:
 		return false
+	if amount > 0.0 and hero_class_id == FIGHTER_CLASS_ID and fighter_rage_max > 0:
+		gain_fighter_rage(1)
 	var remaining_damage: float = mitigated_damage_by_defence(amount)
 	if barrier_amount > 0.0 and remaining_damage > 0.0:
 		var absorbed: float = minf(barrier_amount, remaining_damage)
@@ -678,6 +684,17 @@ func heal(amount: float) -> bool:
 		queue_redraw()
 	return current_health >= max_health
 
+func gain_fighter_rage(amount: int = 1) -> int:
+	if hero_class_id != FIGHTER_CLASS_ID or fighter_rage_max <= 0 or amount <= 0:
+		return fighter_rage
+	fighter_rage = clampi(fighter_rage + amount, 0, fighter_rage_max)
+	return fighter_rage
+
+func fighter_rage_ratio() -> float:
+	if fighter_rage_max <= 0:
+		return 0.0
+	return clampf(float(fighter_rage) / float(fighter_rage_max), 0.0, 1.0)
+
 func apply_inventory_stats(move_bonus: float, health_bonus: float, attack_bonus: float, defence_bonus: float, _hand_bonus: int, next_synergy_count: int, basic_attack_knockback_bonus: float = 0.0) -> void:
 	move_speed = base_move_speed + move_bonus
 	var previous_max_health: float = max_health
@@ -692,6 +709,7 @@ func apply_inventory_stats(move_bonus: float, health_bonus: float, attack_bonus:
 	else:
 		current_health = clampf(current_health + (max_health - previous_max_health), 1.0, max_health)
 	combo_points = maxi(combo_points, 0)
+	fighter_rage = clampi(fighter_rage, 0, fighter_rage_max)
 	combo_attack_progress = maxi(combo_attack_progress, 0)
 	combo_decay_time_left = maxf(combo_decay_time_left, 0.0)
 	food_attack_speed_time_left = maxf(food_attack_speed_time_left, 0.0)
@@ -748,6 +766,12 @@ func configure_archetype(class_id: String, display_name: String, next_move_speed
 	base_attack_cooldown = next_attack_cooldown
 	base_max_hand_size = max_hand_size
 	basic_attack_knockback = 0.0
+	if class_id == FIGHTER_CLASS_ID:
+		fighter_rage_max = FIGHTER_RAGE_MAX_START
+		fighter_rage = 0
+	else:
+		fighter_rage_max = 0
+		fighter_rage = 0
 	clear_haste_buff()
 	end_scorcher_channel()
 	current_health = clampf(current_health if current_health > 0.0 else max_health, 1.0, max_health)

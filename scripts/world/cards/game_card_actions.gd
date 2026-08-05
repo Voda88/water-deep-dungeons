@@ -710,6 +710,16 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 				return false
 			game.status_message = "%s carved through to %s." % [hero.hero_name, game.room_title(blade_room)]
 			return true
+		"silver_gauntlet_toss_card":
+			if not game.wave_in_progress():
+				game.status_message = "Rage Throw can only be used in combat."
+				return false
+			var toss_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
+			if toss_room == game.INVALID_ROOM or not game.rooms.has(toss_room):
+				return false
+			if not cast_silver_gauntlet_toss(game, hero, target_world_position, toss_room, hand_card):
+				return false
+			return true
 		"shield_bash_card":
 			if not game.wave_in_progress():
 				game.status_message = "Shield Bash can only be played in combat."
@@ -1111,6 +1121,95 @@ static func nearest_enemies_in_room(game: Node, room_coord: Vector2i, origin: Ve
 		resolved.append(enemy_entry_variant.get("enemy", null))
 	return resolved
 
+static func strongest_enemy_in_range(game: Node, room_coord: Vector2i, origin: Vector2, max_distance: float) -> Variant:
+	var best_enemy: Variant = null
+	var best_strength_score: float = -INF
+	var best_distance_squared: float = INF
+	var max_distance_squared: float = maxf(max_distance, 0.0) * maxf(max_distance, 0.0)
+	for enemy in game.enemies:
+		if not game.enemy_is_active(enemy) or enemy.current_room != room_coord:
+			continue
+		if enemy.has_method("is_converted") and bool(enemy.is_converted()):
+			continue
+		var distance_squared: float = origin.distance_squared_to(enemy.global_position)
+		if distance_squared > max_distance_squared:
+			continue
+		var strength_score: float = float(enemy.current_health) * 2.4 + float(enemy.attack_damage) * 5.5 + float(enemy.max_health)
+		if best_enemy == null or strength_score > best_strength_score + 0.001 or (absf(strength_score - best_strength_score) <= 0.001 and distance_squared < best_distance_squared):
+			best_enemy = enemy
+			best_strength_score = strength_score
+			best_distance_squared = distance_squared
+	return best_enemy
+
+static func simulate_elastic_throw_path(start_position: Vector2, launch_direction: Vector2, travel_distance: float, bounds: Rect2, max_bounces: int) -> Dictionary:
+	var remaining_distance: float = maxf(travel_distance, 0.0)
+	var direction: Vector2 = launch_direction.normalized()
+	if direction == Vector2.ZERO:
+		direction = Vector2.RIGHT
+	var current_position: Vector2 = start_position
+	current_position.x = clampf(current_position.x, bounds.position.x, bounds.end.x)
+	current_position.y = clampf(current_position.y, bounds.position.y, bounds.end.y)
+	var bounce_points: Array = []
+	var bounce_normals: Array = []
+	var safety_counter: int = 0
+	while remaining_distance > 0.001 and safety_counter < 12:
+		safety_counter += 1
+		var to_x_wall: float = INF
+		var to_y_wall: float = INF
+		if direction.x > 0.0001:
+			to_x_wall = (bounds.end.x - current_position.x) / direction.x
+		elif direction.x < -0.0001:
+			to_x_wall = (bounds.position.x - current_position.x) / direction.x
+		if direction.y > 0.0001:
+			to_y_wall = (bounds.end.y - current_position.y) / direction.y
+		elif direction.y < -0.0001:
+			to_y_wall = (bounds.position.y - current_position.y) / direction.y
+		var hit_distance: float = minf(to_x_wall, to_y_wall)
+		if hit_distance == INF or hit_distance < 0.0:
+			current_position += direction * remaining_distance
+			remaining_distance = 0.0
+			break
+		if hit_distance > remaining_distance:
+			current_position += direction * remaining_distance
+			remaining_distance = 0.0
+			break
+		current_position += direction * maxf(hit_distance, 0.0)
+		remaining_distance -= maxf(hit_distance, 0.0)
+		if max_bounces <= 0:
+			remaining_distance = 0.0
+			break
+		var hit_x: bool = absf(hit_distance - to_x_wall) <= 0.05
+		var hit_y: bool = absf(hit_distance - to_y_wall) <= 0.05
+		var normal: Vector2 = Vector2.ZERO
+		if hit_x:
+			normal.x = -signf(direction.x)
+		if hit_y:
+			normal.y = -signf(direction.y)
+		if normal == Vector2.ZERO:
+			normal = -direction
+		bounce_points.append(current_position)
+		bounce_normals.append(normal.normalized())
+		if bounce_points.size() >= max_bounces:
+			break
+		if hit_x:
+			direction.x = -direction.x
+		if hit_y:
+			direction.y = -direction.y
+		direction = direction.normalized()
+		if direction == Vector2.ZERO:
+			direction = Vector2.RIGHT
+		current_position += direction * 0.4
+		current_position.x = clampf(current_position.x, bounds.position.x + 0.2, bounds.end.x - 0.2)
+		current_position.y = clampf(current_position.y, bounds.position.y + 0.2, bounds.end.y - 0.2)
+	current_position.x = clampf(current_position.x, bounds.position.x, bounds.end.x)
+	current_position.y = clampf(current_position.y, bounds.position.y, bounds.end.y)
+	return {
+		"final_position": current_position,
+		"final_direction": direction,
+		"bounce_points": bounce_points,
+		"bounce_normals": bounce_normals,
+	}
+
 static func enemies_in_cone_in_room(game: Node, room_coord: Vector2i, origin: Vector2, aim_direction: Vector2, max_distance: float, arc_angle_degrees: float, max_count: int = -1) -> Array:
 	var half_arc_radians: float = deg_to_rad(clampf(arc_angle_degrees * 0.5, 5.0, 180.0))
 	var resolved_direction: Vector2 = aim_direction.normalized()
@@ -1432,6 +1531,69 @@ static func cast_whirling_blade(game: Node, hero: Variant, target_world_position
 	hero.trigger_attack(landing_position, "melee")
 	apply_whirling_blade_sweep_damage(game, hero, from_room, target_room, landing_position, roll_steps, hand_card)
 	append_timed_effect_projectile(game, "shield_flash", hero.global_position, Color(hand_card.get("color", Color("ffe08b"))), 0.2, 0.2)
+	return true
+
+static func cast_silver_gauntlet_toss(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> bool:
+	if hero == null or not is_instance_valid(hero):
+		return false
+	if target_room != hero.current_room:
+		game.status_message = "Rage Throw can only be used in your current room."
+		return false
+	var pickup_radius_multiplier: float = maxf(float(hand_card.get("pickup_radius_multiplier", 2.0)), 1.0)
+	var pickup_radius: float = maxf(hero.attack_range * pickup_radius_multiplier, 24.0)
+	var throw_target: Variant = strongest_enemy_in_range(game, target_room, hero.global_position, pickup_radius)
+	if throw_target == null or not is_instance_valid(throw_target):
+		game.status_message = "%s found no enemy to grab for Rage Throw." % hero.hero_name
+		return false
+	var aim_direction: Vector2 = (target_world_position - hero.global_position).normalized()
+	if aim_direction == Vector2.ZERO:
+		aim_direction = Vector2.LEFT if bool(hero.get("visual_facing_left")) else Vector2.RIGHT
+	var rage_max: int = maxi(int(hero.fighter_rage_max), 1)
+	var rage_value: int = clampi(int(hero.fighter_rage), 0, rage_max)
+	var rage_ratio: float = clampf(float(rage_value) / float(rage_max), 0.0, 1.0)
+	var throw_bounds: Rect2 = room_interior_rect(game, target_room, 20.0)
+	var room_span: float = maxf(maxf(throw_bounds.size.x, throw_bounds.size.y), 1.0)
+	var throw_distance_scale: float = maxf(float(hand_card.get("throw_distance_scale", 2.35)), 0.0)
+	var throw_distance_curve: float = maxf(float(hand_card.get("throw_distance_curve", 1.8)), 1.0)
+	var throw_distance: float = room_span * throw_distance_scale * pow(rage_ratio, throw_distance_curve)
+	var max_bounces: int = maxi(0, int(hand_card.get("max_bounces", 2)))
+	var allowed_bounces: int = mini(max_bounces, int(floor(float(rage_value) / 3.0)))
+	if rage_value >= rage_max:
+		allowed_bounces = mini(max_bounces, maxi(allowed_bounces, 2))
+	if allowed_bounces >= 2:
+		throw_distance = maxf(throw_distance, room_span * 2.2)
+	var bounce_damage: float = maxf(float(hand_card.get("base_bounce_damage", 8.0)) + float(rage_value) * maxf(float(hand_card.get("bounce_damage_per_rage", 9.0)), 0.0), 0.0)
+	var flatfooted_duration: float = maxf(float(hand_card.get("flatfooted_duration", 4.0)), 0.0)
+	var flatfooted_move_multiplier: float = clampf(float(hand_card.get("flatfooted_move_multiplier", 0.72)), 0.0, 1.0)
+	var flatfooted_attack_speed_multiplier: float = clampf(float(hand_card.get("flatfooted_attack_speed_multiplier", 0.78)), 0.0, 1.0)
+	var flatfooted_damage_taken_multiplier: float = maxf(float(hand_card.get("flatfooted_damage_taken_multiplier", 1.5)), 1.0)
+	var throw_duration: float = clampf(0.34 + rage_ratio * 0.5, 0.24, 1.0)
+	if allowed_bounces >= 2:
+		throw_duration = maxf(throw_duration, 0.62)
+	var launch_speed: float = clampf(throw_distance / maxf(throw_duration, 0.01), 220.0, 1650.0)
+	var launch_velocity: Vector2 = aim_direction * launch_speed
+	var throw_regions: Array = game.room_walkable_regions(target_room, game.ROOM_WALKABLE_INSET + 2.0)
+	if throw_target.has_method("begin_physics_throw"):
+		throw_target.begin_physics_throw(
+			launch_velocity,
+			throw_duration,
+			throw_bounds,
+			throw_regions,
+			allowed_bounces,
+			bounce_damage,
+			flatfooted_duration,
+			flatfooted_move_multiplier,
+			flatfooted_attack_speed_multiplier,
+			flatfooted_damage_taken_multiplier,
+			hero.hero_index,
+			Color(hand_card.get("color", Color("c5d4df")))
+		)
+	else:
+		game.knockback_actor(throw_target, aim_direction, launch_speed * 0.24, throw_duration, target_room)
+	hero.trigger_attack(target_world_position, "melee")
+	append_timed_effect_projectile(game, "shield_flash", hero.global_position, Color(hand_card.get("color", Color("c5d4df"))), 0.2, 0.2)
+	game.add_resource_floating_text(hero.global_position, "Rage %d" % rage_value, Color(hand_card.get("color", Color("c5d4df"))))
+	game.status_message = "%s hurled %s with Rage %d." % [hero.hero_name, String(throw_target.enemy_role).capitalize(), rage_value]
 	return true
 
 static func cast_shield_bash(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> bool:

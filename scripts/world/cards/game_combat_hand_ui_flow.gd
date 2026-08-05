@@ -91,7 +91,8 @@ static func combat_hand_card_index_at_screen_position(game: Node, hero: Variant,
 static func hand_card_footer_bits(game: Node, hand_card: Dictionary) -> Array[String]:
 	var footer_bits: Array[String] = []
 	var interval: int = int(hand_card.get("door_interval", 0))
-	if interval > 0:
+	var generation_mode: String = String(hand_card.get("generation_mode", ""))
+	if interval > 0 and generation_mode == "door_interval" and not bool(hand_card.get("reusable", false)):
 		footer_bits.append("Every %d" % interval)
 	var food_cost: int = int(hand_card.get("food_cost", 0))
 	if food_cost > 0:

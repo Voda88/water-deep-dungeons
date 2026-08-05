@@ -2,10 +2,21 @@ extends RefCounted
 
 const GAME_DUNGEON_BUILDER: GDScript = preload("res://scripts/world/rooms/game_dungeon_builder.gd")
 
+static func item_rotation_steps(item: Dictionary) -> int:
+	if item.has("rotation_steps"):
+		var explicit_steps: int = int(item.get("rotation_steps", 0))
+		return ((explicit_steps % 4) + 4) % 4
+	return 1 if bool(item.get("rotated", false)) else 0
+
+static func set_item_rotation_steps(item: Dictionary, steps: int) -> void:
+	var normalized_steps: int = ((steps % 4) + 4) % 4
+	item["rotation_steps"] = normalized_steps
+	item["rotated"] = normalized_steps % 2 == 1
+
 static func item_size_in_cells(game: Node, item: Dictionary) -> Vector2i:
 	var item_def: Dictionary = game.item_defs.get(String(item.get("item_id", "")), {})
 	var base_size: Vector2i = item_def.get("size", Vector2i.ONE)
-	if bool(item.get("rotated", false)):
+	if item_rotation_steps(item) % 2 == 1:
 		return Vector2i(base_size.y, base_size.x)
 	return base_size
 
@@ -33,12 +44,21 @@ static func item_footprint_offsets(game: Node, item: Dictionary) -> Array:
 	var item_def: Dictionary = game.item_defs.get(String(item.get("item_id", "")), {})
 	var base_size: Vector2i = item_def.get("size", Vector2i.ONE)
 	var base_footprint: Array = item_base_footprint_offsets(item_def)
-	if not bool(item.get("rotated", false)):
+	var rotation_steps: int = item_rotation_steps(item)
+	if rotation_steps == 0:
 		return base_footprint
 	var rotated_footprint: Array = []
 	for offset_variant in base_footprint:
 		var offset: Vector2i = offset_variant
-		rotated_footprint.append(Vector2i(base_size.y - 1 - offset.y, offset.x))
+		match rotation_steps:
+			1:
+				rotated_footprint.append(Vector2i(base_size.y - 1 - offset.y, offset.x))
+			2:
+				rotated_footprint.append(Vector2i(base_size.x - 1 - offset.x, base_size.y - 1 - offset.y))
+			3:
+				rotated_footprint.append(Vector2i(offset.y, base_size.x - 1 - offset.x))
+			_:
+				rotated_footprint.append(offset)
 	return rotated_footprint
 
 static func infer_item_level_from_definition(game: Node, item_def: Dictionary) -> int:
@@ -62,6 +82,7 @@ static func normalize_item_instance(game: Node, item_variant: Variant) -> Dictio
 	var item: Dictionary = (item_variant as Dictionary).duplicate(true)
 	var item_def: Dictionary = game.item_defs.get(String(item.get("item_id", "")), {})
 	var inferred_level: int = infer_item_level_from_definition(game, item_def)
+	set_item_rotation_steps(item, item_rotation_steps(item))
 	if not item.has("uid"):
 		item["uid"] = game.next_item_uid
 		game.next_item_uid += 1
@@ -95,6 +116,7 @@ static func make_inventory_item(game: Node, item_id: String, anchor: Vector2i = 
 		"uid": game.next_item_uid,
 		"item_id": item_id,
 		"rotated": rotated,
+		"rotation_steps": 1 if rotated else 0,
 	}
 	if anchor != game.INVALID_ROOM:
 		item["anchor"] = anchor
@@ -116,7 +138,8 @@ static func default_inventory_items_for_class(game: Node, class_id: String) -> A
 			items.append(make_inventory_item(game, "rogue_bandolier", base_anchor))
 			items.append(make_inventory_item(game, "rogue_emergency_snack", base_anchor + Vector2i(0, 1)))
 		_:
-			items.append(make_inventory_item(game, "rogue_emergency_snack", base_anchor))
+			items.append(make_inventory_item(game, "silver_gauntlets", base_anchor))
+			items.append(make_inventory_item(game, "fighter_emergency_snack", base_anchor + Vector2i(1, 0)))
 	return items
 
 static func roll_ground_item_id(game: Node) -> String:
@@ -378,9 +401,17 @@ static func item_instance_enabled(_game: Node, _item: Dictionary) -> bool:
 static func rotated_socket_offset(game: Node, item: Dictionary, socket_offset: Vector2i) -> Vector2i:
 	var item_def: Dictionary = game.item_defs.get(String(item.get("item_id", "")), {})
 	var base_size: Vector2i = item_def.get("size", Vector2i.ONE)
-	if not bool(item.get("rotated", false)):
-		return socket_offset
-	return Vector2i(base_size.y - 1 - socket_offset.y, socket_offset.x)
+	match item_rotation_steps(item):
+		0:
+			return socket_offset
+		1:
+			return Vector2i(base_size.y - 1 - socket_offset.y, socket_offset.x)
+		2:
+			return Vector2i(base_size.x - 1 - socket_offset.x, base_size.y - 1 - socket_offset.y)
+		3:
+			return Vector2i(socket_offset.y, base_size.x - 1 - socket_offset.x)
+		_:
+			return socket_offset
 
 static func socket_match_entries(_game: Node, socket_rule: Dictionary) -> Array:
 	if socket_rule.has("matches"):

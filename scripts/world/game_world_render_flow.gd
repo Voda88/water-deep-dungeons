@@ -16,6 +16,7 @@ const PROJECTILE_AIM_PREVIEW_CARD_IDS: Dictionary = {
 	"rogue_combo_dagger_card": true,
 	"ricochet_dagger_card": true,
 	"axe_card": true,
+	"silver_gauntlet_toss_card": true,
 }
 
 static func _draw(game: Node) -> void:

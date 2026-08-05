@@ -106,6 +106,13 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 				"melee_windup": 0.24,
 				"body_color": Color("ff9a7a"),
 				"core_color": Color("fff2dd"),
+				"level_passives": [
+					{
+						"level": 1,
+						"name": "Rage",
+						"detail": "Gain 1 Rage whenever you are hit. Rage caps at 6 and powers Silver Gauntlets throws.",
+					},
+				],
 			}
 
 static func operate_unlock_level_for_class(class_id: String) -> int:

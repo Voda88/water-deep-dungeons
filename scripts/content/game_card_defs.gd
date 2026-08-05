@@ -109,6 +109,27 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"door_interval": 2,
 				"color": Color("ffe08b"),
 			}
+		"silver_gauntlet_toss_card":
+			return {
+				"id": "silver_gauntlet_toss_card",
+				"name": "Rage Throw",
+				"spell_level": 0,
+				"target_scope": "same_room",
+				"phase": "combat",
+				"description_lines": ["Aim a direction in your room", "Auto-grabs the strongest enemy within 2x melee range", "Bounce damage and throw force scale with Rage", "Each wall hit applies Flatfooted", "At full Rage, throw reaches 2 wall bounces"],
+				"pickup_radius_multiplier": 2.0,
+				"throw_distance_scale": 2.35,
+				"throw_distance_curve": 1.8,
+				"max_bounces": 2,
+				"base_bounce_damage": 8.0,
+				"bounce_damage_per_rage": 9.0,
+				"flatfooted_duration": 4.0,
+				"flatfooted_move_multiplier": 0.72,
+				"flatfooted_attack_speed_multiplier": 0.78,
+				"flatfooted_damage_taken_multiplier": 1.5,
+				"reusable": true,
+				"color": Color("c5d4df"),
+			}
 		"web_card":
 			return {
 				"id": "web_card",

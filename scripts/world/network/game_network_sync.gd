@@ -46,6 +46,8 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 			"invulnerability_time_left": hero.invulnerability_time_left,
 			"max_hand_size": hero.max_hand_size,
 			"combo_points": hero.combo_points,
+			"fighter_rage": hero.fighter_rage,
+			"fighter_rage_max": hero.fighter_rage_max,
 			"combo_attack_progress": hero.combo_attack_progress,
 			"combo_decay_time_left": hero.combo_decay_time_left,
 			"food_attack_cooldown_multiplier": hero.food_attack_cooldown_multiplier,
@@ -328,6 +330,8 @@ static func apply_hero_snapshots(game: Node, hero_states: Array) -> void:
 		hero.invulnerability_time_left = float(hero_state.get("invulnerability_time_left", hero.invulnerability_time_left))
 		hero.max_hand_size = int(hero_state.get("max_hand_size", hero.max_hand_size))
 		hero.combo_points = clampi(int(hero_state.get("combo_points", hero.combo_points)), 0, 3)
+		hero.fighter_rage_max = maxi(int(hero_state.get("fighter_rage_max", hero.fighter_rage_max)), 0)
+		hero.fighter_rage = clampi(int(hero_state.get("fighter_rage", hero.fighter_rage)), 0, hero.fighter_rage_max)
 		hero.combo_attack_progress = int(hero_state.get("combo_attack_progress", hero.combo_attack_progress))
 		hero.combo_decay_time_left = float(hero_state.get("combo_decay_time_left", hero.combo_decay_time_left))
 		hero.food_attack_cooldown_multiplier = float(hero_state.get("food_attack_cooldown_multiplier", hero.food_attack_cooldown_multiplier))
