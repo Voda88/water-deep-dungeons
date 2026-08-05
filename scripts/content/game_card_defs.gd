@@ -116,7 +116,7 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"spell_level": 0,
 				"target_scope": "same_room",
 				"phase": "combat",
-				"description_lines": ["Combat self-buff", "Consumes all Rage", "Next 6 hits throw enemies with Rage-scaled force", "Wall bounces deal damage and apply Flatfooted", "No Rage gain while buff is active"],
+				"description_lines": ["Combat self-buff", "Consumes all Rage", "Next 6 hits throw enemies with Rage-scaled force", "Wall bounces apply Flatfooted (no damage)", "Each buffed hit adds +5 damage per Rage level", "No Rage gain while buff is active"],
 				"rage_throw_buff_hits": 6,
 				"pickup_radius_multiplier": 2.0,
 				"throw_distance_scale": 2.35,

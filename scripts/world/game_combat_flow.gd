@@ -226,8 +226,6 @@ static func apply_fighter_rage_throw_buff_hit(game: Node, hero: Variant, enemy: 
 		return
 	if String(hero.hero_class_id) != game.HERO_CLASS_FIGHTER:
 		return
-	if bool(enemy.get("throw_active")):
-		return
 	var hits_left: int = maxi(int(hero.fighter_rage_throw_hits_left), 0)
 	if hits_left <= 0:
 		hero.fighter_rage_throw_level = 0
@@ -237,56 +235,58 @@ static func apply_fighter_rage_throw_buff_hit(game: Node, hero: Variant, enemy: 
 		hero.fighter_rage_throw_hits_left = 0
 		hero.fighter_rage_throw_level = 0
 		return
-	var target_room: Vector2i = Vector2i(enemy.current_room)
-	if target_room == game.INVALID_ROOM or not game.rooms.has(target_room):
-		return
-	var throw_card_def: Dictionary = game.card_definition("silver_gauntlet_toss_card")
-	var rage_max: int = maxi(int(hero.fighter_rage_max), 1)
-	var rage_ratio: float = clampf(float(rage_level) / float(rage_max), 0.0, 1.0)
-	var throw_bounds: Rect2 = game.room_interior_rect(target_room, 20.0)
-	var room_span: float = maxf(maxf(throw_bounds.size.x, throw_bounds.size.y), 1.0)
-	var throw_distance_scale: float = maxf(float(throw_card_def.get("throw_distance_scale", 2.35)), 0.0)
-	var throw_distance_curve: float = maxf(float(throw_card_def.get("throw_distance_curve", 1.8)), 1.0)
-	var throw_distance: float = room_span * throw_distance_scale * pow(rage_ratio, throw_distance_curve)
-	var max_bounces: int = maxi(0, int(throw_card_def.get("max_bounces", 2)))
-	var allowed_bounces: int = mini(max_bounces, int(floor(float(rage_level) / 3.0)))
-	if rage_level >= rage_max:
-		allowed_bounces = mini(max_bounces, maxi(allowed_bounces, 2))
-	if allowed_bounces >= 2:
-		throw_distance = maxf(throw_distance, room_span * 2.2)
-	var bounce_damage: float = maxf(float(throw_card_def.get("base_bounce_damage", 8.0)) + float(rage_level) * maxf(float(throw_card_def.get("bounce_damage_per_rage", 9.0)), 0.0), 0.0)
-	var flatfooted_duration: float = maxf(float(throw_card_def.get("flatfooted_duration", 4.0)), 0.0)
-	var flatfooted_move_multiplier: float = clampf(float(throw_card_def.get("flatfooted_move_multiplier", 0.72)), 0.0, 1.0)
-	var flatfooted_attack_speed_multiplier: float = clampf(float(throw_card_def.get("flatfooted_attack_speed_multiplier", 0.78)), 0.0, 1.0)
-	var flatfooted_damage_taken_multiplier: float = maxf(float(throw_card_def.get("flatfooted_damage_taken_multiplier", 1.5)), 1.0)
-	var throw_duration: float = clampf(0.34 + rage_ratio * 0.5, 0.24, 1.0)
-	if allowed_bounces >= 2:
-		throw_duration = maxf(throw_duration, 0.62)
-	var launch_speed: float = clampf(throw_distance / maxf(throw_duration, 0.01), 220.0, 1650.0)
 	var launch_direction: Vector2 = impact_direction.normalized()
 	if launch_direction == Vector2.ZERO:
 		launch_direction = (enemy.global_position - hero.global_position).normalized()
 	if launch_direction == Vector2.ZERO:
 		launch_direction = Vector2.RIGHT
-	var launch_velocity: Vector2 = launch_direction * launch_speed
-	var throw_regions: Array = game.room_walkable_regions(target_room, game.ROOM_WALKABLE_INSET + 2.0)
-	if enemy.has_method("begin_physics_throw"):
-		enemy.begin_physics_throw(
-			launch_velocity,
-			throw_duration,
-			throw_bounds,
-			throw_regions,
-			allowed_bounces,
-			bounce_damage,
-			flatfooted_duration,
-			flatfooted_move_multiplier,
-			flatfooted_attack_speed_multiplier,
-			flatfooted_damage_taken_multiplier,
-			hero.hero_index,
-			Color(throw_card_def.get("color", Color("c5d4df")))
-		)
-	else:
-		game.knockback_actor(enemy, launch_direction, launch_speed * 0.24, throw_duration, target_room)
+	var rage_bonus_damage: float = float(rage_level) * PHYSICAL_CARD_RAGE_DAMAGE_PER_LEVEL
+	if game.enemy_is_active(enemy) and rage_bonus_damage > 0.0:
+		enemy.take_damage(rage_bonus_damage, launch_direction)
+	var can_apply_throw: bool = game.enemy_is_active(enemy) and not bool(enemy.get("throw_active"))
+	var target_room: Vector2i = Vector2i(enemy.current_room)
+	if can_apply_throw and target_room != game.INVALID_ROOM and game.rooms.has(target_room):
+		var throw_card_def: Dictionary = game.card_definition("silver_gauntlet_toss_card")
+		var rage_max: int = maxi(int(hero.fighter_rage_max), 1)
+		var rage_ratio: float = clampf(float(rage_level) / float(rage_max), 0.0, 1.0)
+		var throw_bounds: Rect2 = game.room_interior_rect(target_room, 20.0)
+		var room_span: float = maxf(maxf(throw_bounds.size.x, throw_bounds.size.y), 1.0)
+		var throw_distance_scale: float = maxf(float(throw_card_def.get("throw_distance_scale", 2.35)), 0.0)
+		var throw_distance_curve: float = maxf(float(throw_card_def.get("throw_distance_curve", 1.8)), 1.0)
+		var throw_distance: float = room_span * throw_distance_scale * pow(rage_ratio, throw_distance_curve)
+		var max_bounces: int = maxi(0, int(throw_card_def.get("max_bounces", 2)))
+		var allowed_bounces: int = mini(max_bounces, int(floor(float(rage_level) / 3.0)))
+		if rage_level >= rage_max:
+			allowed_bounces = mini(max_bounces, maxi(allowed_bounces, 2))
+		if allowed_bounces >= 2:
+			throw_distance = maxf(throw_distance, room_span * 2.2)
+		var flatfooted_duration: float = maxf(float(throw_card_def.get("flatfooted_duration", 4.0)), 0.0)
+		var flatfooted_move_multiplier: float = clampf(float(throw_card_def.get("flatfooted_move_multiplier", 0.72)), 0.0, 1.0)
+		var flatfooted_attack_speed_multiplier: float = clampf(float(throw_card_def.get("flatfooted_attack_speed_multiplier", 0.78)), 0.0, 1.0)
+		var flatfooted_damage_taken_multiplier: float = maxf(float(throw_card_def.get("flatfooted_damage_taken_multiplier", 1.5)), 1.0)
+		var throw_duration: float = clampf(0.34 + rage_ratio * 0.5, 0.24, 1.0)
+		if allowed_bounces >= 2:
+			throw_duration = maxf(throw_duration, 0.62)
+		var launch_speed: float = clampf(throw_distance / maxf(throw_duration, 0.01), 220.0, 1650.0)
+		var launch_velocity: Vector2 = launch_direction * launch_speed
+		var throw_regions: Array = game.room_walkable_regions(target_room, game.ROOM_WALKABLE_INSET + 2.0)
+		if enemy.has_method("begin_physics_throw"):
+			enemy.begin_physics_throw(
+				launch_velocity,
+				throw_duration,
+				throw_bounds,
+				throw_regions,
+				allowed_bounces,
+				0.0,
+				flatfooted_duration,
+				flatfooted_move_multiplier,
+				flatfooted_attack_speed_multiplier,
+				flatfooted_damage_taken_multiplier,
+				hero.hero_index,
+				Color(throw_card_def.get("color", Color("c5d4df")))
+			)
+		else:
+			game.knockback_actor(enemy, launch_direction, launch_speed * 0.24, throw_duration, target_room)
 	hero.fighter_rage_throw_hits_left = maxi(hits_left - 1, 0)
 	if hero.fighter_rage_throw_hits_left <= 0:
 		hero.fighter_rage_throw_level = 0
