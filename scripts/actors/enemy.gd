@@ -566,11 +566,8 @@ func apply_throw_wall_hit(wall_normal: Vector2) -> void:
 		apply_flatfooted_debuff(throw_flatfooted_duration, throw_flatfooted_move_multiplier, throw_flatfooted_attack_speed_multiplier, throw_flatfooted_damage_taken_multiplier)
 	var host: Node = resolve_game_host()
 	if host != null and throw_source_hero_index >= 0:
-		var source_hero: Variant = host.call("find_hero_by_index", throw_source_hero_index)
-		if source_hero != null and is_instance_valid(source_hero):
-			host.call("register_hero_enemy_hit", source_hero, self, hit_direction)
-			if host.has_method("add_resource_floating_text"):
-				host.call("add_resource_floating_text", global_position, "Wall", throw_bounce_fx_color)
+		if host.has_method("add_resource_floating_text"):
+			host.call("add_resource_floating_text", global_position, "Wall", throw_bounce_fx_color)
 
 func advance_thrown_motion(delta: float, had_dynamic_overlay_before: bool) -> bool:
 	if not throw_active:
