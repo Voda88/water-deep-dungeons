@@ -9,6 +9,7 @@ const MELEE_ATTACK_SPEED_SCALE: float = 0.72
 const UNLIMITED_HAND_SIZE: int = 9999
 const FIGHTER_CLASS_ID: String = "fighter"
 const FIGHTER_RAGE_MAX_START: int = 6
+const FIGHTER_RAGE_HITS_PER_POINT: int = 2
 const HERO_SPRITE_PROFILES := {
 	"fighter": {
 		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Knight/Knight/Knight_Idle.png",
@@ -107,6 +108,7 @@ var combo_attack_progress: int = 0
 var combo_decay_time_left: float = 0.0
 var fighter_rage: int = 0
 var fighter_rage_max: int = 0
+var fighter_rage_hit_progress: int = 0
 var food_attack_cooldown_multiplier: float = 1.0
 var food_attack_speed_time_left: float = 0.0
 var food_defence_bonus: float = 0.0
@@ -560,7 +562,10 @@ func take_damage(amount: float, allow_lethal_death: bool = true) -> bool:
 	if invulnerability_time_left > 0.0:
 		return false
 	if amount > 0.0 and hero_class_id == FIGHTER_CLASS_ID and fighter_rage_max > 0:
-		gain_fighter_rage(1)
+		fighter_rage_hit_progress = maxi(fighter_rage_hit_progress, 0) + 1
+		if fighter_rage_hit_progress >= FIGHTER_RAGE_HITS_PER_POINT:
+			gain_fighter_rage(fighter_rage_hit_progress / FIGHTER_RAGE_HITS_PER_POINT)
+			fighter_rage_hit_progress = fighter_rage_hit_progress % FIGHTER_RAGE_HITS_PER_POINT
 	var remaining_damage: float = mitigated_damage_by_defence(amount)
 	if barrier_amount > 0.0 and remaining_damage > 0.0:
 		var absorbed: float = minf(barrier_amount, remaining_damage)
@@ -710,6 +715,7 @@ func apply_inventory_stats(move_bonus: float, health_bonus: float, attack_bonus:
 		current_health = clampf(current_health + (max_health - previous_max_health), 1.0, max_health)
 	combo_points = maxi(combo_points, 0)
 	fighter_rage = clampi(fighter_rage, 0, fighter_rage_max)
+	fighter_rage_hit_progress = maxi(fighter_rage_hit_progress, 0)
 	combo_attack_progress = maxi(combo_attack_progress, 0)
 	combo_decay_time_left = maxf(combo_decay_time_left, 0.0)
 	food_attack_speed_time_left = maxf(food_attack_speed_time_left, 0.0)
@@ -769,9 +775,11 @@ func configure_archetype(class_id: String, display_name: String, next_move_speed
 	if class_id == FIGHTER_CLASS_ID:
 		fighter_rage_max = FIGHTER_RAGE_MAX_START
 		fighter_rage = 0
+		fighter_rage_hit_progress = 0
 	else:
 		fighter_rage_max = 0
 		fighter_rage = 0
+		fighter_rage_hit_progress = 0
 	clear_haste_buff()
 	end_scorcher_channel()
 	current_health = clampf(current_health if current_health > 0.0 else max_health, 1.0, max_health)
