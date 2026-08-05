@@ -158,7 +158,6 @@ const ENEMY_SPAWN_PREVIEW_FRAME_BUDGET: int = 5
 const ENEMY_SPAWN_FRAME_GAP: int = 5
 const ENEMY_ACTIVE_CAP: int = 15
 const ENEMY_AI_THINK_INTERVAL: float = 0.2
-const MOBILE_WORLD_REDRAW_INTERVAL: float = 1.0 / 30.0
 const LOW_FPS_ANIMATION_DISABLE_THRESHOLD: float = 30.0
 const LOW_FPS_ANIMATION_RESTORE_THRESHOLD: float = 33.0
 const LOW_FPS_ANIMATION_DISABLE_HOLD: float = 0.2
@@ -341,7 +340,6 @@ var rejoin_claimable_hero_indices: Array[int] = []
 var lobby_peer_ready: Dictionary = {}
 var lobby_game_started: bool = false
 var network_snapshot_timer: float = 0.0
-var mobile_world_redraw_time_left: float = 0.0
 var low_fps_animation_mode_enabled: bool = false
 var low_fps_below_threshold_time: float = 0.0
 var low_fps_above_threshold_time: float = 0.0
@@ -506,16 +504,14 @@ func _process(delta: float) -> void:
 	if game_over:
 		advance_ui_button_hold(delta)
 		update_performance_ui(delta)
-		if should_queue_world_redraw(delta):
-			queue_redraw()
+		queue_redraw()
 		return
 	advance_ui_button_hold(delta)
 	advance_hand_card_return_animations(delta)
 	advance_camera(delta)
 	update_low_fps_animation_mode(delta)
 	update_performance_ui(delta)
-	if should_queue_world_redraw(delta):
-		queue_redraw()
+	queue_redraw()
 
 func update_low_fps_animation_mode(delta: float) -> void:
 	if delta <= 0.0:
@@ -572,18 +568,6 @@ func update_performance_ui(delta: float) -> void:
 	var normal_color: Color = Color("d6e4ee")
 	var reduced_color: Color = Color("ffcec4")
 	performance_label.add_theme_color_override("font_color", reduced_color if animations_reduced_mode_active() else normal_color)
-
-func is_mobile_profile() -> bool:
-	return OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")
-
-func should_queue_world_redraw(delta: float) -> bool:
-	if not is_mobile_profile():
-		return true
-	mobile_world_redraw_time_left = maxf(mobile_world_redraw_time_left - delta, 0.0)
-	if mobile_world_redraw_time_left > 0.0:
-		return false
-	mobile_world_redraw_time_left = MOBILE_WORLD_REDRAW_INTERVAL
-	return true
 
 func _draw() -> void:
 	GAME_WORLD_RENDER_FLOW._draw(self)

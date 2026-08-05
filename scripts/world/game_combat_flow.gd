@@ -496,8 +496,6 @@ static func next_pending_spawn_queue_order(game: Node) -> int:
 
 static func spawn_stagger_interval(game: Node, spawn_source: String) -> float:
 	var interval: float = maxf(float(game.WAVE_STAGGER_ENEMY_INTERVAL), 0.04)
-	if game.is_mobile_profile():
-		interval *= 3.0
 	if spawn_source == "crystal_pressure":
 		interval *= 1.2
 	return interval

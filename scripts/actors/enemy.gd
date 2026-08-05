@@ -29,8 +29,7 @@ const OVERKILL_KNOCKBACK_FORCE_PER_DAMAGE: float = 18.0
 const OVERKILL_KNOCKBACK_MAX_FORCE: float = 620.0
 const OVERKILL_KNOCKBACK_DURATION_PER_DAMAGE: float = 0.008
 const OVERKILL_KNOCKBACK_MAX_DURATION: float = 0.34
-const OVERLAY_REDRAW_INTERVAL_DESKTOP: float = 1.0 / 30.0
-const OVERLAY_REDRAW_INTERVAL_MOBILE: float = 1.0 / 15.0
+const OVERLAY_REDRAW_INTERVAL: float = 1.0 / 30.0
 
 static var enemy_sprite_frames_cache: Dictionary = {}
 
@@ -431,8 +430,7 @@ func set_destination(world_position: Vector2) -> void:
 	destination = world_position
 
 func overlay_redraw_interval() -> float:
-	var mobile_profile: bool = OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")
-	return OVERLAY_REDRAW_INTERVAL_MOBILE if mobile_profile else OVERLAY_REDRAW_INTERVAL_DESKTOP
+	return OVERLAY_REDRAW_INTERVAL
 
 func has_dynamic_overlay_visuals() -> bool:
 	if enemy_role == TYPE_SPIRITUAL_WEAPON or bool(get_meta("temporary_summon", false)):

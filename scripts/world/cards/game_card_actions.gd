@@ -2198,8 +2198,6 @@ static func active_enemy_count_for_vfx_load(game: Node) -> int:
 	return active_count
 
 static func use_light_enemy_blast_vfx(game: Node) -> bool:
-	if game.is_mobile_profile():
-		return true
 	return active_enemy_count_for_vfx_load(game) >= 16
 
 static func explode_fireball_projectile(game: Node, projectile: Dictionary) -> void:
