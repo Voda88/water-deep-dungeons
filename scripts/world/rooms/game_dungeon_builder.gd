@@ -771,14 +771,15 @@ static func assign_special_room_features(game: Node) -> void:
 		var room_coord: Vector2i = room_coord_variant
 		if room_coord == game.crystal_room or room_coord == game.exit_room:
 			continue
+		if game.floor_index == 1 and room_coord == first_discovered_room:
+			continue
 		var room: Dictionary = game.rooms[room_coord]
 		eligible_rooms.append(room_coord)
-		if game.floor_index != 1 or room_coord != first_discovered_room:
-			if game.effective_minor_slot_count(room_coord) > 0 and int(room.get("major_slots", 0)) > 0:
-				weighted_research_candidates.append({
-					"room": room_coord,
-					"weight": research_room_feature_weight(game, room_coord),
-				})
+		if game.effective_minor_slot_count(room_coord) > 0 and int(room.get("major_slots", 0)) > 0:
+			weighted_research_candidates.append({
+				"room": room_coord,
+				"weight": research_room_feature_weight(game, room_coord),
+			})
 		weighted_merchant_candidates.append({
 			"room": room_coord,
 			"weight": merchant_room_feature_weight(game, room_coord),
