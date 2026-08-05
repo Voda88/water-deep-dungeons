@@ -74,31 +74,8 @@ static func targetable_room_actors_cached(game: Node, room_coord: Vector2i, stri
 	game.set_meta(ROOM_TARGETABLE_CACHE_VALUE_META, cache)
 	return room_actors
 
-static func adaptive_enemy_ai_think_interval(game: Node, active_enemy_count: int) -> float:
-	if active_enemy_count < int(game.ENEMY_AI_THINK_THRESHOLD):
-		return float(game.ENEMY_AI_THINK_INTERVAL_BASE)
-	var heavy_load: bool = active_enemy_count >= int(game.ENEMY_AI_THINK_HEAVY_THRESHOLD)
-	return float(game.ENEMY_AI_THINK_INTERVAL_HEAVY) if heavy_load else float(game.ENEMY_AI_THINK_INTERVAL)
-
-static func enemy_role_is_melee_pressure_role(game: Node, role: String) -> bool:
-	return role == game.ENEMY_TYPE_ORC \
-		or role == game.ENEMY_TYPE_ORC_RIDER \
-		or role == game.ENEMY_TYPE_GOLEM \
-		or role == game.ENEMY_TYPE_BAT \
-		or role == game.ENEMY_TYPE_DEMON_A \
-		or role == game.ENEMY_TYPE_DEMON_D \
-		or role == game.ENEMY_TYPE_SKELETON \
-		or role == game.ENEMY_TYPE_SKELETON_ARMORED \
-		or role == game.ENEMY_TYPE_SKELETON_GREATSWORD \
-		or role == game.ENEMY_TYPE_SPIRITUAL_WEAPON
-
-static func enemy_think_interval_for_role(game: Node, enemy: Variant, base_interval: float) -> float:
-	var resolved_interval: float = base_interval
-	if enemy != null and is_instance_valid(enemy) and enemy_role_is_melee_pressure_role(game, String(enemy.enemy_role)):
-		resolved_interval *= 1.22
-	if game.has_method("animations_reduced_mode_active") and bool(game.animations_reduced_mode_active()):
-		resolved_interval *= 1.35
-	return resolved_interval
+static func adaptive_enemy_ai_think_interval(game: Node, _active_enemy_count: int) -> float:
+	return float(game.ENEMY_AI_THINK_INTERVAL)
 
 static func room_has_active_major_module(game: Node, room_coord: Vector2i) -> bool:
 	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
@@ -241,9 +218,8 @@ static func advance_enemy_routes(game: Node, delta: float) -> void:
 	for enemy_variant in game.enemies:
 		if game.enemy_is_active(enemy_variant):
 			active_enemies.append(enemy_variant)
-	var base_think_interval: float = adaptive_enemy_ai_think_interval(game, active_enemies.size())
+	var think_interval: float = adaptive_enemy_ai_think_interval(game, active_enemies.size())
 	for enemy in active_enemies:
-		var think_interval: float = enemy_think_interval_for_role(game, enemy, base_think_interval)
 		if enemy.has_method("set_situational_speed_multiplier"):
 			enemy.set_situational_speed_multiplier(enemy_situational_speed_multiplier(game, enemy))
 		var cooldown_tick_scale: float = 1.0

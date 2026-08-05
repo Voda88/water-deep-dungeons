@@ -345,7 +345,7 @@ static func queue_wave_spawn(game: Node, room_coord: Vector2i, wave_points: int,
 	var first_spawn_delay: float = room_delay + marker_lead
 	var per_enemy_interval: float = spawn_stagger_interval(game, "door_wave")
 	game.rooms[room_coord]["warning_timer_left"] = first_spawn_delay
-	game.pending_enemy_spawns.append({
+	var pending_spawn_data: Dictionary = {
 		"room": room_coord,
 		"spawn_source": "door_wave",
 		"remaining": spawn_plan.size(),
@@ -358,7 +358,17 @@ static func queue_wave_spawn(game: Node, room_coord: Vector2i, wave_points: int,
 		"cluster_anchor": cluster_anchor,
 		"cluster_radius": cluster_radius,
 		"cluster_base_angle": cluster_base_angle,
-	})
+	}
+	pending_spawn_data["queue_order"] = next_pending_spawn_queue_order(game)
+	game.pending_enemy_spawns.append(pending_spawn_data)
+
+static func next_pending_spawn_queue_order(game: Node) -> int:
+	var next_order: int = 0
+	for pending_spawn_variant in game.pending_enemy_spawns:
+		var pending_spawn: Dictionary = Dictionary(pending_spawn_variant)
+		var order_value: int = int(pending_spawn.get("queue_order", next_order))
+		next_order = maxi(next_order, order_value + 1)
+	return next_order
 
 static func spawn_stagger_interval(game: Node, spawn_source: String) -> float:
 	var interval: float = maxf(float(game.WAVE_STAGGER_ENEMY_INTERVAL), 0.04)
@@ -382,8 +392,17 @@ static func advance_pending_enemy_spawns(game: Node, delta: float) -> void:
 	var current_frame: int = Engine.get_physics_frames()
 	var spawn_frame_gap: int = maxi(1, int(game.ENEMY_SPAWN_FRAME_GAP))
 	var spawn_frame_ready: bool = current_frame >= int(game.enemy_spawn_next_allowed_frame)
+	var queue_head_index: int = -1
+	for pending_index in range(pending_spawns.size()):
+		var queued_spawn: Dictionary = pending_spawns[pending_index]
+		if int(queued_spawn.get("remaining", 0)) > 0:
+			queue_head_index = pending_index
+			break
 	for pending_index in range(pending_spawns.size()):
 		var pending_spawn: Dictionary = pending_spawns[pending_index]
+		if pending_index != queue_head_index:
+			pending_spawns[pending_index] = pending_spawn
+			continue
 		pending_spawn["delay_left"] = float(pending_spawn["delay_left"]) - delta
 		if preview_budget > 0:
 			var preview_positions: Array = Array(pending_spawn.get("positions", []))
@@ -438,6 +457,14 @@ static func advance_pending_enemy_spawns(game: Node, delta: float) -> void:
 		if int(pending_spawn.get("remaining", 0)) > 0:
 			active_spawns.append(pending_spawn)
 	game.pending_enemy_spawns = active_spawns
+	for room_coord_variant in game.rooms.keys():
+		var room_coord: Vector2i = room_coord_variant
+		game.rooms[room_coord]["warning_timer_left"] = 0.0
+	if not active_spawns.is_empty():
+		var queue_head_spawn: Dictionary = active_spawns[0]
+		var queue_head_room: Vector2i = Vector2i(queue_head_spawn.get("room", game.INVALID_ROOM))
+		if game.rooms.has(queue_head_room):
+			game.rooms[queue_head_room]["warning_timer_left"] = maxf(float(queue_head_spawn.get("delay_left", 0.0)), 0.0)
 
 static func advance_crystal_pressure(game: Node, delta: float) -> void:
 	if game.crystal_holder == null or not is_instance_valid(game.crystal_holder):
@@ -528,7 +555,7 @@ static func queue_pressure_spawn(game: Node, room_coord: Vector2i, count: int, m
 	var first_spawn_delay: float = maxf(float(game.CRYSTAL_PRESSURE_WARNING_DURATION), 0.0) + marker_lead
 	var per_enemy_interval: float = spawn_stagger_interval(game, "crystal_pressure")
 	game.rooms[room_coord]["warning_timer_left"] = maxf(float(game.rooms[room_coord].get("warning_timer_left", 0.0)), first_spawn_delay)
-	game.pending_enemy_spawns.append({
+	var pending_spawn_data: Dictionary = {
 		"room": room_coord,
 		"spawn_source": "crystal_pressure",
 		"remaining": spawn_plan.size(),
@@ -541,7 +568,9 @@ static func queue_pressure_spawn(game: Node, room_coord: Vector2i, count: int, m
 		"cluster_anchor": cluster_anchor,
 		"cluster_radius": cluster_radius,
 		"cluster_base_angle": cluster_base_angle,
-	})
+	}
+	pending_spawn_data["queue_order"] = next_pending_spawn_queue_order(game)
+	game.pending_enemy_spawns.append(pending_spawn_data)
 	return spawn_plan.size()
 
 static func enemy_pack_size(game: Node, enemy_type: String) -> int:

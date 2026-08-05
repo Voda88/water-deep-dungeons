@@ -261,25 +261,32 @@ static func draw_room_spawn_warning_effects(game: Node, room_coord: Vector2i, vi
 		return
 	var marker_lead: float = maxf(float(game.WAVE_PRESPAWN_MARKER_LEAD), 0.0)
 	var effect_frame: int = animated_effect_frame_index(NECROMANCER_ATTACK_EFFECT, 0.052) if animate_effect else 0
+	var queue_head_spawn: Dictionary = {}
 	for pending_spawn_variant in game.pending_enemy_spawns:
-		var pending_spawn: Dictionary = pending_spawn_variant
-		if Vector2i(pending_spawn.get("room", game.INVALID_ROOM)) != room_coord:
+		var pending_spawn: Dictionary = Dictionary(pending_spawn_variant)
+		if int(pending_spawn.get("remaining", 0)) <= 0:
 			continue
-		var positions: Array = Array(pending_spawn.get("positions", []))
-		var spawned_count: int = int(pending_spawn.get("spawned", 0))
-		var delay_left: float = float(pending_spawn.get("delay_left", 0.0))
-		var interval: float = maxf(float(pending_spawn.get("interval", game.WAVE_STAGGER_ENEMY_INTERVAL)), 0.0)
-		for spawn_index in range(spawned_count, positions.size()):
-			var index_offset: int = spawn_index - spawned_count
-			var time_until_spawn: float = maxf(delay_left, 0.0) + float(index_offset) * interval
-			if time_until_spawn > marker_lead:
-				continue
-			var spawn_position: Vector2 = Vector2(positions[spawn_index])
-			if not view_rect.has_point(spawn_position):
-				continue
-			var pulse_alpha: float = clampf(0.94 - float(index_offset) * 0.08, 0.72, 0.94)
-			var pulse_wave: float = (0.9 + 0.1 * sin(float(Time.get_ticks_msec()) / 95.0 + float(index_offset) * 0.55)) if animate_effect else 1.0
-			draw_effect_strip(game, NECROMANCER_ATTACK_EFFECT, effect_frame, spawn_position + Vector2(0.0, -4.0), Vector2(124.0, 124.0), Color(1.0, 0.95, 0.86, minf(pulse_alpha * pulse_wave, 1.0)))
+		queue_head_spawn = pending_spawn
+		break
+	if queue_head_spawn.is_empty():
+		return
+	if Vector2i(queue_head_spawn.get("room", game.INVALID_ROOM)) != room_coord:
+		return
+	var positions: Array = Array(queue_head_spawn.get("positions", []))
+	var spawned_count: int = int(queue_head_spawn.get("spawned", 0))
+	var delay_left: float = float(queue_head_spawn.get("delay_left", 0.0))
+	var interval: float = maxf(float(queue_head_spawn.get("interval", game.WAVE_STAGGER_ENEMY_INTERVAL)), 0.0)
+	for spawn_index in range(spawned_count, positions.size()):
+		var index_offset: int = spawn_index - spawned_count
+		var time_until_spawn: float = maxf(delay_left, 0.0) + float(index_offset) * interval
+		if time_until_spawn > marker_lead:
+			continue
+		var spawn_position: Vector2 = Vector2(positions[spawn_index])
+		if not view_rect.has_point(spawn_position):
+			continue
+		var pulse_alpha: float = clampf(0.94 - float(index_offset) * 0.08, 0.72, 0.94)
+		var pulse_wave: float = (0.9 + 0.1 * sin(float(Time.get_ticks_msec()) / 95.0 + float(index_offset) * 0.55)) if animate_effect else 1.0
+		draw_effect_strip(game, NECROMANCER_ATTACK_EFFECT, effect_frame, spawn_position + Vector2(0.0, -4.0), Vector2(124.0, 124.0), Color(1.0, 0.95, 0.86, minf(pulse_alpha * pulse_wave, 1.0)))
 
 static func draw_floating_resource_texts(game: Node) -> void:
 	var view_rect: Rect2 = current_view_world_rect(game, 96.0)
