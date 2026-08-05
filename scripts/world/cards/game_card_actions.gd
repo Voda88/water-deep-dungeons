@@ -1580,7 +1580,7 @@ static func cast_turn_undead_spell(game: Node, hero: Variant, target_room: Vecto
 			continue
 		if enemy.has_method("is_converted") and bool(enemy.is_converted()):
 			continue
-		var enemy_role: String = String(enemy.get("enemy_role", ""))
+		var enemy_role: String = String(enemy.enemy_role)
 		if not GAME_ENEMY_DEFS.enemy_is_undead(enemy_role):
 			continue
 		if enemy.has_method("apply_fear_debuff"):
@@ -1610,9 +1610,10 @@ static func cast_calm_emotions_spell(game: Node, hero: Variant, target_room: Vec
 			continue
 		if enemy.has_method("apply_calm_emotions"):
 			enemy.apply_calm_emotions(calm_duration)
-		append_timed_effect_projectile(game, "shield_flash", enemy.global_position, Color(hand_card.get("color", Color("b7e8ff"))), 0.2, 0.2)
+		append_timed_effect_projectile(game, "calm_emotions_wave", enemy.global_position, Color(hand_card.get("color", Color("b7e8ff"))), 0.56, 0.56)
 		neutralized_count += 1
 	if neutralized_count > 0:
+		append_timed_effect_projectile(game, "calm_emotions_wave", game.room_center(target_room), Color(hand_card.get("color", Color("b7e8ff"))), 0.64, 0.64)
 		hero.trigger_attack(game.room_center(target_room), "laser")
 		var calm_label: String = "Calmed" if neutralized_count == 1 else "Calmed x%d" % neutralized_count
 		game.add_resource_floating_text(game.room_center(target_room), calm_label, Color(hand_card.get("color", Color("b7e8ff"))))
@@ -1846,7 +1847,9 @@ static func cast_beacon_of_hope_spell(game: Node, hero: Variant, target_room: Ve
 static func cast_haste_spell(game: Node, hero: Variant, target_room: Vector2i, hand_card: Dictionary) -> Variant:
 	if target_room == game.INVALID_ROOM or not game.rooms.has(target_room):
 		return null
-	var haste_duration: float = maxf(float(hand_card.get("haste_duration", 12.0)), 0.1)
+	var haste_duration: float = maxf(float(hand_card.get("haste_duration", 18.0)), 0.1)
+	if haste_duration < 18.0:
+		haste_duration = 18.0
 	var move_speed_multiplier: float = maxf(float(hand_card.get("haste_move_speed_multiplier", 2.0)), 1.0)
 	var attack_speed_multiplier: float = maxf(float(hand_card.get("haste_attack_speed_multiplier", 2.0)), 1.0)
 	var best_target: Variant = null

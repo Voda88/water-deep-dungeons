@@ -10,7 +10,8 @@ const TYPE_SKELETON: String = "skeleton"
 const TYPE_SKELETON_ARMORED: String = "skeleton_armored"
 const TYPE_SKELETON_GREATSWORD: String = "skeleton_greatsword"
 const TYPE_SPIRITUAL_WEAPON: String = "spiritual_weapon"
-const TYPE_ORC_SHAMAN: String = "orc_shaman"
+const TYPE_WRAITH: String = "wraith"
+const TYPE_ORC_SHAMAN: String = TYPE_WRAITH
 const TYPE_SKELETON_ARCHER: String = "skeleton_archer"
 
 const ENEMY_SPRITE_PROFILES := {
@@ -21,7 +22,7 @@ const ENEMY_SPRITE_PROFILES := {
 		"attack_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc/Orc/Orc_Attack01.png",
 		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Orc/Orc/Orc_Death.png",
 	},
-	TYPE_ORC_SHAMAN: {
+	TYPE_WRAITH: {
 		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Necromancer/Necromancer/Necromancer_Idle.png",
 		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Necromancer/Necromancer/Necromancer_Walk.png",
 		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Necromancer/Necromancer/Necromancer_Hurt.png",
@@ -107,7 +108,9 @@ static func normalize_enemy_type(enemy_type: String) -> String:
 		"goblin":
 			return TYPE_ORC
 		"goblin_shaman":
-			return TYPE_ORC_SHAMAN
+			return TYPE_WRAITH
+		"orc_shaman":
+			return TYPE_WRAITH
 		"kobold":
 			return TYPE_BAT
 		"raider_demon":
@@ -116,7 +119,7 @@ static func normalize_enemy_type(enemy_type: String) -> String:
 
 static func enemy_is_undead(enemy_type: String) -> bool:
 	match normalize_enemy_type(enemy_type):
-		TYPE_SKELETON, TYPE_SKELETON_ARMORED, TYPE_SKELETON_GREATSWORD, TYPE_SKELETON_ARCHER:
+		TYPE_SKELETON, TYPE_SKELETON_ARMORED, TYPE_SKELETON_GREATSWORD, TYPE_SKELETON_ARCHER, TYPE_WRAITH:
 			return true
 		_:
 			return false
@@ -157,7 +160,7 @@ static func enemy_role_scale(enemy_type: String) -> float:
 			return 1.88
 		TYPE_DEMON_D:
 			return 2.1
-		TYPE_ORC_SHAMAN:
+		TYPE_WRAITH:
 			return 2.05
 		_:
 			return 1.92
@@ -263,9 +266,9 @@ static func enemy_role_definition(enemy_type: String) -> Dictionary:
 				"weight": 0.4,
 				"body_color": Color("ecedff"),
 			}
-		TYPE_ORC_SHAMAN:
+		TYPE_WRAITH:
 			return {
-				"id": TYPE_ORC_SHAMAN,
+				"id": TYPE_WRAITH,
 				"move_speed": 31.0,
 				"max_health": 272.0,
 				"attack_damage": 16.0,
@@ -313,7 +316,7 @@ static func enemy_pack_size(enemy_type: String) -> int:
 			return 2
 		TYPE_GOLEM:
 			return 1
-		TYPE_ORC_SHAMAN:
+		TYPE_WRAITH:
 			return 1
 		_:
 			return 1
@@ -339,13 +342,13 @@ static func enemy_spawn_weight(enemy_type: String, pressure_spawn: bool = false)
 			return 1.35 if not pressure_spawn else 1.25
 		TYPE_GOLEM:
 			return 0.42 if not pressure_spawn else 0.36
-		TYPE_ORC_SHAMAN:
+		TYPE_WRAITH:
 			return 0.72 if not pressure_spawn else 0.54
 		_:
 			return 1.0
 
 static func enemy_spawn_order() -> Array[String]:
-	return [TYPE_ORC, TYPE_BAT, TYPE_SKELETON_ARCHER, TYPE_ORC_SHAMAN, TYPE_ORC_RIDER, TYPE_GOLEM, TYPE_DEMON_D]
+	return [TYPE_ORC, TYPE_BAT, TYPE_SKELETON_ARCHER, TYPE_WRAITH, TYPE_ORC_RIDER, TYPE_GOLEM, TYPE_DEMON_D]
 
 static func enemy_dust_drop_chance(enemy_type: String) -> float:
 	match normalize_enemy_type(enemy_type):
@@ -355,7 +358,7 @@ static func enemy_dust_drop_chance(enemy_type: String) -> float:
 			return 0.5
 		TYPE_SKELETON_ARCHER:
 			return 0.7
-		TYPE_ORC_SHAMAN:
+		TYPE_WRAITH:
 			return 0.7
 		TYPE_ORC_RIDER:
 			return 0.9

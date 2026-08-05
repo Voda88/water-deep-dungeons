@@ -1480,7 +1480,7 @@ static func advance_projectiles(game: Node, delta: float) -> void:
 				projectile["rotation_angle"] = velocity.angle()
 			active_projectiles.append(projectile)
 			continue
-		if projectile_kind == "fireball_blast" or projectile_kind == "shield_flash" or projectile_kind == "lightning_bolt" or projectile_kind == "gas_pulse" or projectile_kind == "necromancer_attack_effect" or projectile_kind == "priest_heal_effect" or projectile_kind == "priest_attack_effect" or projectile_kind == "web_field" or projectile_kind == "ghostfire_ray" or projectile_kind == "scorcher_flame_cone" or projectile_kind == "dust_burst":
+		if projectile_kind == "fireball_blast" or projectile_kind == "shield_flash" or projectile_kind == "calm_emotions_wave" or projectile_kind == "lightning_bolt" or projectile_kind == "gas_pulse" or projectile_kind == "necromancer_attack_effect" or projectile_kind == "priest_heal_effect" or projectile_kind == "priest_attack_effect" or projectile_kind == "web_field" or projectile_kind == "ghostfire_ray" or projectile_kind == "scorcher_flame_cone" or projectile_kind == "dust_burst":
 			projectile["lifetime_left"] = maxf(float(projectile.get("lifetime_left", 0.0)) - delta, 0.0)
 			if float(projectile["lifetime_left"]) <= 0.0:
 				continue
@@ -1688,6 +1688,27 @@ static func draw_projectiles(game: Node, canvas: CanvasItem = null) -> void:
 			surface.draw_circle(current_position, shield_radius * 0.72, Color(color.r, color.g, color.b, 0.18 * (1.0 - shield_ratio * 0.45)))
 			surface.draw_arc(current_position, shield_radius, 0.0, TAU, 44, Color(color.r, color.g, color.b, 0.88 - shield_ratio * 0.52), maxf(width * (1.15 - shield_ratio * 0.25), 2.1), true)
 			surface.draw_arc(current_position, shield_radius * 0.82, 0.0, TAU, 36, Color(0.9, 0.97, 1.0, 0.62 - shield_ratio * 0.35), maxf(width * 0.6, 1.3), true)
+			continue
+		if projectile_kind == "calm_emotions_wave":
+			var calm_duration: float = maxf(float(projectile.get("blast_duration", 0.56)), 0.001)
+			var calm_life_ratio: float = clampf(float(projectile.get("lifetime_left", 0.0)) / calm_duration, 0.0, 1.0)
+			var calm_progress: float = 1.0 - calm_life_ratio
+			var calm_fade: float = pow(calm_life_ratio, 0.72)
+			var calm_radius: float = maxf(float(projectile.get("impact_radius", 54.0)), 14.0)
+			var calm_outer_radius: float = lerpf(calm_radius * 0.32, calm_radius * 1.18, calm_progress)
+			surface.draw_circle(current_position, calm_outer_radius, Color(color.r, color.g, color.b, 0.12 * calm_fade))
+			surface.draw_arc(current_position, calm_outer_radius, 0.0, TAU, 38, Color(color.r, color.g, color.b, 0.56 * calm_fade), 2.1, true)
+			surface.draw_arc(current_position, calm_outer_radius * 0.66, 0.0, TAU, 34, Color(0.9, 1.0, 0.97, 0.62 * calm_fade), 1.7, true)
+			var calm_time: float = float(Time.get_ticks_msec()) / 1000.0
+			for mote_index in range(10):
+				var mote_seed: float = float(mote_index) / 10.0
+				var mote_angle: float = mote_seed * TAU + calm_time * 1.9 + calm_progress * 2.6
+				var mote_orbit: float = lerpf(calm_radius * 0.22, calm_outer_radius * 0.94, fposmod(calm_progress + mote_seed * 0.7, 1.0))
+				var mote_position: Vector2 = current_position + Vector2.RIGHT.rotated(mote_angle) * mote_orbit
+				var mote_size: float = lerpf(3.6, 1.2, calm_progress)
+				surface.draw_circle(mote_position, mote_size, Color(0.86, 1.0, 0.95, 0.56 * calm_fade))
+				var mote_tail: Vector2 = mote_position - Vector2.RIGHT.rotated(mote_angle) * 3.0
+				surface.draw_circle(mote_tail, mote_size * 0.55, Color(color.r, color.g, color.b, 0.36 * calm_fade))
 			continue
 		if projectile_kind == "lightning_bolt":
 			var bolt_duration: float = maxf(float(projectile.get("blast_duration", 0.18)), 0.001)

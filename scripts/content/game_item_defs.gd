@@ -338,7 +338,7 @@ static func build_item_defs() -> Dictionary:
 			"color": Color("ffd56e"),
 			"description_lines": ["Single-use spell scroll", "Cast once or study in calm as a wizard"],
 			"tags": ["scroll", "magical"],
-			"hand_card": {"card_id": "haste_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Haste Scroll", "description_lines_override": ["Buff the highest-damage ally in a room", "Double move speed and attack speed for 12s"]},
+			"hand_card": {"card_id": "haste_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Haste Scroll", "description_lines_override": ["Buff the highest-damage ally in a room", "Double move speed and attack speed for 18s"]},
 		},
 		"scroll_lightning_bolt": {
 			"name": "Scroll of Lightning Bolt",

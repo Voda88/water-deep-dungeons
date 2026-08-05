@@ -282,12 +282,12 @@ static func target_room_for_enemy(game: Node, enemy: Variant) -> Vector2i:
 			if orc_target != null:
 				return hero_room_for_enemy_targeting(game, orc_target)
 			return game.crystal_room
-		game.ENEMY_TYPE_ORC_SHAMAN:
+		game.ENEMY_TYPE_WRAITH:
 			if enemy.current_room == game.crystal_room and enemy_targetable_heroes_in_room_strict(game, Vector2i(enemy.current_room)).is_empty():
 				return game.crystal_room
-			var shaman_target: Variant = orc_shaman_target_hero(game, enemy)
-			if shaman_target != null:
-				return hero_room_for_enemy_targeting(game, shaman_target)
+			var wraith_target: Variant = wraith_target_hero(game, enemy)
+			if wraith_target != null:
+				return hero_room_for_enemy_targeting(game, wraith_target)
 			return game.crystal_room
 		game.ENEMY_TYPE_GOLEM:
 			return golem_objective_room(game, enemy)
@@ -326,7 +326,7 @@ static func enemy_target_position(game: Node, enemy: Variant) -> Vector2:
 		return feared_enemy_target_position(game, enemy)
 	var local_target: Variant = local_enemy_override_target(game, enemy)
 	if local_target != null:
-		if String(enemy.enemy_role) == game.ENEMY_TYPE_SKELETON_ARCHER or String(enemy.enemy_role) == game.ENEMY_TYPE_ORC_SHAMAN:
+		if String(enemy.enemy_role) == game.ENEMY_TYPE_SKELETON_ARCHER or String(enemy.enemy_role) == game.ENEMY_TYPE_WRAITH:
 			return skeleton_archer_goal_position(game, enemy)
 		return local_target.global_position
 	match String(enemy.enemy_role):
@@ -351,14 +351,14 @@ static func enemy_target_position(game: Node, enemy: Variant) -> Vector2:
 			if orc_target != null:
 				return orc_target.global_position
 			return game.crystal_world_position()
-		game.ENEMY_TYPE_ORC_SHAMAN:
+		game.ENEMY_TYPE_WRAITH:
 			if enemy.current_room == game.crystal_room and enemy_targetable_heroes_in_room_strict(game, Vector2i(enemy.current_room)).is_empty():
 				return game.crystal_world_position()
-			var shaman_target: Variant = orc_shaman_target_hero(game, enemy)
-			if shaman_target != null:
-				if hero_is_in_room(game, shaman_target, enemy.current_room):
+			var wraith_target: Variant = wraith_target_hero(game, enemy)
+			if wraith_target != null:
+				if hero_is_in_room(game, wraith_target, enemy.current_room):
 					return game.clamp_point_to_room(enemy.global_position, enemy.current_room)
-				return shaman_target.global_position
+				return wraith_target.global_position
 			return game.crystal_world_position()
 		game.ENEMY_TYPE_GOLEM:
 			return golem_objective_position(game, enemy)
@@ -497,7 +497,7 @@ static func enemy_target_category_priority_for_role(game: Node, enemy_role: Stri
 				TARGET_CATEGORY_MAJOR_MODULE: 4,
 				TARGET_CATEGORY_GENERATOR_CRYSTAL: 5,
 			}
-		game.ENEMY_TYPE_SKELETON_ARCHER, game.ENEMY_TYPE_ORC_SHAMAN:
+		game.ENEMY_TYPE_SKELETON_ARCHER, game.ENEMY_TYPE_WRAITH:
 			return {
 				TARGET_CATEGORY_RANGED: 1,
 				TARGET_CATEGORY_MELEE: 2,
@@ -749,7 +749,7 @@ static func local_enemy_override_target(game: Node, enemy: Variant) -> Variant:
 	match String(enemy.enemy_role):
 		game.ENEMY_TYPE_ORC_RIDER:
 			return locked_room_target_hero(game, enemy)
-		game.ENEMY_TYPE_SKELETON_ARCHER, game.ENEMY_TYPE_ORC_SHAMAN:
+		game.ENEMY_TYPE_SKELETON_ARCHER, game.ENEMY_TYPE_WRAITH:
 			return skeleton_archer_target_hero(game, enemy)
 		game.ENEMY_TYPE_ORC:
 			return locked_room_target_hero(game, enemy)
@@ -780,7 +780,7 @@ static func orc_target_hero(game: Node, enemy: Variant) -> Variant:
 	var priority_table: Dictionary = enemy_target_category_priority_for_role(game, String(enemy.enemy_role))
 	return choose_path_target_from_actor_candidates(game, enemy, enemy_targetable_actor_candidates(game), priority_table)
 
-static func orc_shaman_target_hero(game: Node, enemy: Variant) -> Variant:
+static func wraith_target_hero(game: Node, enemy: Variant) -> Variant:
 	return skeleton_archer_target_hero(game, enemy)
 
 static func bat_target_hero(_game: Node, _enemy: Variant) -> Variant:
@@ -1009,7 +1009,7 @@ static func resolve_enemy_attack(game: Node, enemy: Variant) -> void:
 				game.status_message = "A raider demon is carving into the crystal."
 			else:
 				return
-		game.ENEMY_TYPE_ORC_SHAMAN:
+		game.ENEMY_TYPE_WRAITH:
 			var room_targets: Array = enemy_targetable_heroes_in_room(game, enemy.current_room)
 			if not room_targets.is_empty():
 				var shaman_priority_table: Dictionary = enemy_target_category_priority_for_role(game, String(enemy.enemy_role))
@@ -1017,17 +1017,17 @@ static func resolve_enemy_attack(game: Node, enemy: Variant) -> void:
 				var blast_position: Vector2 = blast_target.global_position if blast_target != null else game.room_walkable_center(enemy.current_room)
 				blast_position = game.clamp_point_to_room(blast_position, enemy.current_room)
 				enemy.trigger_attack(blast_position)
-				var defeated_heroes: Array[String] = game.explode_enemy_fireball(enemy.current_room, blast_position, enemy.attack_damage, 68.0, 360.0, "An orc shaman")
+				var defeated_heroes: Array[String] = game.explode_enemy_fireball(enemy.current_room, blast_position, enemy.attack_damage, 68.0, 360.0, "A wraith")
 				if defeated_heroes.is_empty():
-					game.status_message = "An orc shaman hurls a mini fireball."
+					game.status_message = "A wraith hurls a mini fireball."
 				elif defeated_heroes.size() == 1:
-					game.status_message = "An orc shaman burned down %s." % defeated_heroes[0]
+					game.status_message = "A wraith burned down %s." % defeated_heroes[0]
 				else:
-					game.status_message = "An orc shaman burned down multiple heroes."
+					game.status_message = "A wraith burned down multiple heroes."
 			elif enemy.current_room == game.crystal_room:
 				enemy.trigger_attack(game.room_center(game.crystal_room))
 				apply_enemy_crystal_strike(game, enemy)
-				game.status_message = "Orc shamans are scorching the crystal."
+				game.status_message = "Wraiths are scorching the crystal."
 			else:
 				return
 		_:
