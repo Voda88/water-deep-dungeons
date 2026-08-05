@@ -15,12 +15,94 @@ const TARGET_CATEGORY_MELEE: String = "melee_target"
 const TARGET_CATEGORY_RESEARCH_CRYSTAL: String = "research_crystal"
 const TARGET_CATEGORY_MAJOR_MODULE: String = "major_module"
 const TARGET_CATEGORY_GENERATOR_CRYSTAL: String = "generator_crystal"
+const TARGETABLE_ACTOR_CACHE_FRAME_META: StringName = &"enemy_targetable_actor_cache_frame"
+const TARGETABLE_ACTOR_CACHE_VALUE_META: StringName = &"enemy_targetable_actor_cache_value"
+const ROOM_TARGETABLE_CACHE_FRAME_META: StringName = &"enemy_room_targetable_cache_frame"
+const ROOM_TARGETABLE_CACHE_VALUE_META: StringName = &"enemy_room_targetable_cache_value"
+const ROOM_PATH_DISTANCE_CACHE_FRAME_META: StringName = &"enemy_room_path_distance_cache_frame"
+const ROOM_PATH_DISTANCE_CACHE_VALUE_META: StringName = &"enemy_room_path_distance_cache_value"
+
+static func room_target_cache_key(room_coord: Vector2i, strict: bool) -> String:
+	return "%d:%d:%d" % [room_coord.x, room_coord.y, 1 if strict else 0]
+
+static func room_path_distance_cached(game: Node, from_room: Vector2i, to_room: Vector2i) -> int:
+	if from_room == to_room:
+		return 0
+	var physics_frame: int = Engine.get_physics_frames()
+	var cache_frame: int = int(game.get_meta(ROOM_PATH_DISTANCE_CACHE_FRAME_META, -1))
+	var cache: Dictionary = {}
+	if cache_frame == physics_frame:
+		cache = game.get_meta(ROOM_PATH_DISTANCE_CACHE_VALUE_META, {})
+	else:
+		game.set_meta(ROOM_PATH_DISTANCE_CACHE_FRAME_META, physics_frame)
+	var cache_key: String = "%d:%d|%d:%d" % [from_room.x, from_room.y, to_room.x, to_room.y]
+	if cache.has(cache_key):
+		return int(cache[cache_key])
+	var distance_value: int = int(game.room_path_distance(from_room, to_room))
+	cache[cache_key] = distance_value
+	game.set_meta(ROOM_PATH_DISTANCE_CACHE_VALUE_META, cache)
+	return distance_value
+
+static func targetable_room_actors_cached(game: Node, room_coord: Vector2i, strict: bool) -> Array:
+	if room_coord == game.INVALID_ROOM:
+		return []
+	var physics_frame: int = Engine.get_physics_frames()
+	var cache_frame: int = int(game.get_meta(ROOM_TARGETABLE_CACHE_FRAME_META, -1))
+	var cache: Dictionary = {}
+	if cache_frame == physics_frame:
+		cache = game.get_meta(ROOM_TARGETABLE_CACHE_VALUE_META, {})
+	else:
+		game.set_meta(ROOM_TARGETABLE_CACHE_FRAME_META, physics_frame)
+	var cache_key: String = room_target_cache_key(room_coord, strict)
+	if cache.has(cache_key):
+		return cache[cache_key]
+	var room_actors: Array = []
+	var room_heroes: Array = heroes_in_room_strict(game, room_coord) if strict else heroes_in_room(game, room_coord)
+	for hero in room_heroes:
+		if hero_is_enemy_targetable(game, hero):
+			room_actors.append(hero)
+	for summon in game.enemies:
+		if not enemy_summon_is_enemy_targetable(game, summon):
+			continue
+		if strict:
+			if Vector2i(summon.current_room) != room_coord:
+				continue
+		elif not hero_is_in_room(game, summon, room_coord):
+			continue
+		room_actors.append(summon)
+	cache[cache_key] = room_actors
+	game.set_meta(ROOM_TARGETABLE_CACHE_VALUE_META, cache)
+	return room_actors
 
 static func adaptive_enemy_ai_think_interval(game: Node, active_enemy_count: int) -> float:
 	if active_enemy_count < int(game.ENEMY_AI_THINK_THRESHOLD):
 		return float(game.ENEMY_AI_THINK_INTERVAL_BASE)
 	var heavy_load: bool = active_enemy_count >= int(game.ENEMY_AI_THINK_HEAVY_THRESHOLD)
 	return float(game.ENEMY_AI_THINK_INTERVAL_HEAVY) if heavy_load else float(game.ENEMY_AI_THINK_INTERVAL)
+
+static func enemy_role_is_melee_pressure_role(game: Node, role: String) -> bool:
+	match role:
+		game.ENEMY_TYPE_ORC,
+		game.ENEMY_TYPE_ORC_RIDER,
+		game.ENEMY_TYPE_GOLEM,
+		game.ENEMY_TYPE_BAT,
+		game.ENEMY_TYPE_DEMON_A,
+		game.ENEMY_TYPE_DEMON_D,
+		game.ENEMY_TYPE_SKELETON,
+		game.ENEMY_TYPE_SKELETON_ARMORED,
+		game.ENEMY_TYPE_SKELETON_GREATSWORD,
+		game.ENEMY_TYPE_SPIRITUAL_WEAPON:
+			return true
+		_:
+			return false
+
+static func enemy_think_interval_for_role(game: Node, enemy: Variant, base_interval: float) -> float:
+	var resolved_interval: float = base_interval
+	if enemy != null and is_instance_valid(enemy) and enemy_role_is_melee_pressure_role(game, String(enemy.enemy_role)):
+		resolved_interval *= 1.22
+	if game.has_method("animations_reduced_mode_active") and bool(game.animations_reduced_mode_active()):
+		resolved_interval *= 1.35
+	return resolved_interval
 
 static func room_has_active_major_module(game: Node, room_coord: Vector2i) -> bool:
 	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
@@ -163,8 +245,9 @@ static func advance_enemy_routes(game: Node, delta: float) -> void:
 	for enemy_variant in game.enemies:
 		if game.enemy_is_active(enemy_variant):
 			active_enemies.append(enemy_variant)
-	var think_interval: float = adaptive_enemy_ai_think_interval(game, active_enemies.size())
+	var base_think_interval: float = adaptive_enemy_ai_think_interval(game, active_enemies.size())
 	for enemy in active_enemies:
+		var think_interval: float = enemy_think_interval_for_role(game, enemy, base_think_interval)
 		if enemy.has_method("set_situational_speed_multiplier"):
 			enemy.set_situational_speed_multiplier(enemy_situational_speed_multiplier(game, enemy))
 		var cooldown_tick_scale: float = 1.0
@@ -576,7 +659,7 @@ static func choose_path_target_from_actor_candidates(game: Node, enemy: Variant,
 		var candidate_room: Vector2i = hero_room_for_enemy_targeting(game, actor)
 		if candidate_room == game.INVALID_ROOM:
 			continue
-		var path_length: int = game.room_path_distance(enemy.current_room, candidate_room)
+		var path_length: int = room_path_distance_cached(game, Vector2i(enemy.current_room), candidate_room)
 		if path_length >= 99999:
 			continue
 		var category: String = enemy_target_category_for_actor(game, actor)
@@ -613,28 +696,10 @@ static func heroes_in_room_strict(game: Node, room_coord: Vector2i) -> Array:
 	return room_heroes
 
 static func enemy_targetable_heroes_in_room(game: Node, room_coord: Vector2i) -> Array:
-	var room_heroes: Array = []
-	for hero in heroes_in_room(game, room_coord):
-		if hero_is_enemy_targetable(game, hero):
-			room_heroes.append(hero)
-	for summon in game.enemies:
-		if not enemy_summon_is_enemy_targetable(game, summon):
-			continue
-		if hero_is_in_room(game, summon, room_coord):
-			room_heroes.append(summon)
-	return room_heroes
+	return targetable_room_actors_cached(game, room_coord, false)
 
 static func enemy_targetable_heroes_in_room_strict(game: Node, room_coord: Vector2i) -> Array:
-	var room_heroes: Array = []
-	for hero in heroes_in_room_strict(game, room_coord):
-		if hero_is_enemy_targetable(game, hero):
-			room_heroes.append(hero)
-	for summon in game.enemies:
-		if not enemy_summon_is_enemy_targetable(game, summon):
-			continue
-		if Vector2i(summon.current_room) == room_coord:
-			room_heroes.append(summon)
-	return room_heroes
+	return targetable_room_actors_cached(game, room_coord, true)
 
 static func actor_target_lock_key(game: Node, actor: Variant) -> String:
 	if actor == null or not is_instance_valid(actor):
@@ -879,6 +944,9 @@ static func skeleton_archer_goal_position(game: Node, enemy: Variant) -> Vector2
 	return game.clamp_point_to_room(enemy.global_position, enemy.current_room)
 
 static func enemy_targetable_actor_candidates(game: Node) -> Array:
+	var physics_frame: int = Engine.get_physics_frames()
+	if int(game.get_meta(TARGETABLE_ACTOR_CACHE_FRAME_META, -1)) == physics_frame:
+		return game.get_meta(TARGETABLE_ACTOR_CACHE_VALUE_META, [])
 	var candidates: Array = []
 	for hero in game.heroes:
 		if not game.hero_is_active(hero):
@@ -888,6 +956,8 @@ static func enemy_targetable_actor_candidates(game: Node) -> Array:
 	for summon in game.enemies:
 		if enemy_summon_is_enemy_targetable(game, summon):
 			candidates.append(summon)
+	game.set_meta(TARGETABLE_ACTOR_CACHE_FRAME_META, physics_frame)
+	game.set_meta(TARGETABLE_ACTOR_CACHE_VALUE_META, candidates)
 	return candidates
 
 static func module_target_position(game: Node, room_coord: Vector2i, origin: Vector2) -> Vector2:
@@ -940,8 +1010,8 @@ static func golem_objective_room(game: Node, enemy: Variant) -> Vector2i:
 	var research_room: Vector2i = active_research_room(game)
 	if research_room == game.INVALID_ROOM:
 		return game.crystal_room
-	var crystal_distance: int = game.room_path_distance(enemy.current_room, game.crystal_room)
-	var research_distance: int = game.room_path_distance(enemy.current_room, research_room)
+	var crystal_distance: int = room_path_distance_cached(game, Vector2i(enemy.current_room), game.crystal_room)
+	var research_distance: int = room_path_distance_cached(game, Vector2i(enemy.current_room), research_room)
 	if research_distance < crystal_distance:
 		return research_room
 	if research_distance == crystal_distance:
@@ -963,8 +1033,8 @@ static func preferred_golem_major_module_room(game: Node, enemy: Variant) -> Vec
 	var module_room: Vector2i = find_nearest_major_module_room(game, enemy.current_room)
 	if module_room == game.INVALID_ROOM:
 		return game.INVALID_ROOM
-	var module_distance: int = game.room_path_distance(enemy.current_room, module_room)
-	var crystal_distance: int = game.room_path_distance(enemy.current_room, game.crystal_room)
+	var module_distance: int = room_path_distance_cached(game, Vector2i(enemy.current_room), module_room)
+	var crystal_distance: int = room_path_distance_cached(game, Vector2i(enemy.current_room), game.crystal_room)
 	if module_distance < crystal_distance:
 		return module_room
 	return game.INVALID_ROOM
@@ -1106,11 +1176,11 @@ static func find_nearest_major_module_room(game: Node, from_room: Vector2i) -> V
 			continue
 		if String(room.get("major_module_type", "")) == "" or float(room.get("major_health", 0.0)) <= 0.0:
 			continue
-		var path: Array[Vector2i] = game.find_path(from_room, room_coord, true)
-		if path.is_empty():
+		var path_length: int = room_path_distance_cached(game, from_room, room_coord)
+		if path_length >= 99999:
 			continue
-		if path.size() < closest_path_length:
-			closest_path_length = path.size()
+		if path_length < closest_path_length:
+			closest_path_length = path_length
 			closest_room = room_coord
 	return closest_room
 

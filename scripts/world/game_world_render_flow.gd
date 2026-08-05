@@ -27,26 +27,6 @@ static func _draw(game: Node) -> void:
 	game.draw_room_action_hold()
 	game.draw_room_action_menu()
 	game.draw_combat_hand()
-	draw_performance_overlay(game, reduce_animations)
-
-static func draw_performance_overlay(game: Node, reduce_animations: bool) -> void:
-	if not game.has_method("performance_overlay_text"):
-		return
-	var perf_text: String = String(game.performance_overlay_text())
-	if perf_text == "":
-		return
-	var top_left: Vector2 = screen_to_world(game, Vector2(10.0, 10.0))
-	var bottom_right: Vector2 = screen_to_world(game, Vector2(252.0, 38.0))
-	var panel_rect: Rect2 = Rect2(top_left, bottom_right - top_left)
-	var panel_color: Color = Color(0.07, 0.12, 0.14, 0.62)
-	if reduce_animations:
-		panel_color = Color(0.22, 0.10, 0.10, 0.68)
-	game.draw_rect(panel_rect, panel_color, true)
-	game.draw_rect(panel_rect, Color(0.82, 0.92, 0.95, 0.72), false, 1.5)
-	var text_color: Color = Color(0.93, 0.98, 1.0, 0.96)
-	if reduce_animations:
-		text_color = Color(1.0, 0.89, 0.86, 0.98)
-	game.draw_string(ThemeDB.fallback_font, top_left + Vector2(8.0, 19.0), perf_text, HORIZONTAL_ALIGNMENT_LEFT, panel_rect.size.x - 12.0, 14, text_color)
 
 static func active_hand_drag_target_preview(game: Node) -> Dictionary:
 	if game.active_hand_drag.is_empty():

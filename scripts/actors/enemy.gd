@@ -207,7 +207,11 @@ func apply_role_visuals() -> void:
 
 func should_reduce_animations() -> bool:
 	var host: Node = get_parent()
-	return host != null and host.has_method("animations_reduced_mode_active") and bool(host.call("animations_reduced_mode_active"))
+	while host != null:
+		if host.has_method("animations_reduced_mode_active"):
+			return bool(host.call("animations_reduced_mode_active"))
+		host = host.get_parent()
+	return false
 
 func is_find_familiar_summon() -> bool:
 	if not bool(get_meta("temporary_summon", false)):

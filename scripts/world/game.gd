@@ -161,10 +161,11 @@ const ENEMY_AI_THINK_INTERVAL_BASE: float = 0.02
 const ENEMY_AI_THINK_INTERVAL: float = 0.055
 const ENEMY_AI_THINK_INTERVAL_HEAVY: float = 0.1
 const MOBILE_WORLD_REDRAW_INTERVAL: float = 1.0 / 30.0
-const LOW_FPS_ANIMATION_DISABLE_THRESHOLD: float = 26.0
-const LOW_FPS_ANIMATION_RESTORE_THRESHOLD: float = 34.0
-const LOW_FPS_ANIMATION_DISABLE_HOLD: float = 0.45
-const LOW_FPS_ANIMATION_RESTORE_HOLD: float = 1.2
+const LOW_FPS_ANIMATION_DISABLE_THRESHOLD: float = 30.0
+const LOW_FPS_ANIMATION_RESTORE_THRESHOLD: float = 33.0
+const LOW_FPS_ANIMATION_DISABLE_HOLD: float = 0.2
+const LOW_FPS_ANIMATION_RESTORE_HOLD: float = 1.1
+const PERFORMANCE_UI_REFRESH_INTERVAL: float = 0.2
 const CRYSTAL_DUST_DAMAGE_BASE_HIT: float = 0.25
 const CRYSTAL_PRESSURE_PICKUP_DELAY: float = 2.0
 const CRYSTAL_PRESSURE_INTERVAL: float = 4.0
@@ -378,6 +379,8 @@ var room_action_camera_target_active: bool = false
 var room_action_camera_target: Vector2 = Vector2.ZERO
 var pending_room_loot_requests: Dictionary = {}
 var pending_room_action_requests: Dictionary = {}
+var performance_label: Label = null
+var performance_ui_refresh_time_left: float = 0.0
 var door_wave_auto_heal_pending: bool = false
 var door_wave_healing_active: bool = false
 var door_wave_major_payout_pending: bool = false
@@ -489,6 +492,7 @@ func _physics_process(delta: float) -> void:
 func _process(delta: float) -> void:
 	if game_over:
 		advance_ui_button_hold(delta)
+		update_performance_ui(delta)
 		if should_queue_world_redraw(delta):
 			queue_redraw()
 		return
@@ -496,6 +500,7 @@ func _process(delta: float) -> void:
 	advance_hand_card_return_animations(delta)
 	advance_camera(delta)
 	update_low_fps_animation_mode(delta)
+	update_performance_ui(delta)
 	if should_queue_world_redraw(delta):
 		queue_redraw()
 
@@ -538,6 +543,22 @@ func performance_overlay_text() -> String:
 	var fps: int = int(round(Engine.get_frames_per_second()))
 	var animation_mode_label: String = "FX:REDUCED" if animations_reduced_mode_active() else "FX:FULL"
 	return "FPS %d | %s | EN %d/%d" % [fps, animation_mode_label, active_enemy_runtime_count(), ENEMY_ACTIVE_CAP]
+
+func refresh_performance_ui_now() -> void:
+	performance_ui_refresh_time_left = 0.0
+	update_performance_ui(0.0)
+
+func update_performance_ui(delta: float) -> void:
+	if performance_label == null or not is_instance_valid(performance_label):
+		return
+	performance_ui_refresh_time_left = maxf(performance_ui_refresh_time_left - maxf(delta, 0.0), 0.0)
+	if performance_ui_refresh_time_left > 0.0:
+		return
+	performance_ui_refresh_time_left = PERFORMANCE_UI_REFRESH_INTERVAL
+	performance_label.text = performance_overlay_text()
+	var normal_color: Color = Color("d6e4ee")
+	var reduced_color: Color = Color("ffcec4")
+	performance_label.add_theme_color_override("font_color", reduced_color if animations_reduced_mode_active() else normal_color)
 
 func should_queue_world_redraw(delta: float) -> bool:
 	var mobile_profile: bool = OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")

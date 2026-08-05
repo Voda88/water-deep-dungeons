@@ -260,7 +260,11 @@ func apply_sprite_tint() -> void:
 
 func should_reduce_animations() -> bool:
 	var host: Node = get_parent()
-	return host != null and host.has_method("animations_reduced_mode_active") and bool(host.call("animations_reduced_mode_active"))
+	while host != null:
+		if host.has_method("animations_reduced_mode_active"):
+			return bool(host.call("animations_reduced_mode_active"))
+		host = host.get_parent()
+	return false
 
 func desired_sprite_animation(move_offset: Vector2) -> String:
 	if dead_started:

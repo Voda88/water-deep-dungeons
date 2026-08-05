@@ -2,6 +2,7 @@ extends RefCounted
 
 static func ensure_runtime_ui(game: Node) -> void:
 	game.apply_hud_styling()
+	ensure_performance_label(game)
 	ensure_hero_select_toggle_button(game)
 	ensure_calm_speed_bar(game)
 	ensure_hero_bar_panel(game)
@@ -13,6 +14,25 @@ static func ensure_runtime_ui(game: Node) -> void:
 	ensure_hero_select_overlay(game)
 	game.update_hero_select_overlay()
 	game.update_network_ui()
+
+static func ensure_performance_label(game: Node) -> void:
+	if game.performance_label != null and is_instance_valid(game.performance_label):
+		return
+	var hbox: HBoxContainer = game.top_bar_panel.get_node("HBox")
+	game.performance_label = Label.new()
+	game.performance_label.name = "PerformanceLabel"
+	game.performance_label.custom_minimum_size = Vector2(220.0, 0.0)
+	game.performance_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	game.performance_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	game.performance_label.add_theme_font_size_override("font_size", 14)
+	game.performance_label.add_theme_color_override("font_color", Color("d6e4ee"))
+	hbox.add_child(game.performance_label)
+	if game.center_button != null and is_instance_valid(game.center_button):
+		var center_index: int = hbox.get_children().find(game.center_button)
+		if center_index >= 0:
+			hbox.move_child(game.performance_label, center_index)
+	if game.has_method("refresh_performance_ui_now"):
+		game.refresh_performance_ui_now()
 
 static func ensure_hero_select_toggle_button(game: Node) -> void:
 	if game.hero_select_toggle_button != null:
