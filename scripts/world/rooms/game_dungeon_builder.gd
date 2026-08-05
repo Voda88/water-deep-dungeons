@@ -48,6 +48,7 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 	}
 	game.pending_room_constructions.clear()
 	game.next_enemy_uid = 1
+	game.active_spawn_warning_room = game.INVALID_ROOM
 	game.next_card_uid = 1
 	game.global_item_card_states.clear()
 	game.global_item_passive_timers.clear()

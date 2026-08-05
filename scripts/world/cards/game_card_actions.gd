@@ -2198,8 +2198,7 @@ static func active_enemy_count_for_vfx_load(game: Node) -> int:
 	return active_count
 
 static func use_light_enemy_blast_vfx(game: Node) -> bool:
-	var mobile_profile: bool = OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")
-	if mobile_profile:
+	if game.is_mobile_profile():
 		return true
 	return active_enemy_count_for_vfx_load(game) >= 16
 

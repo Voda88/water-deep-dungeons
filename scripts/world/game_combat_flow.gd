@@ -496,17 +496,13 @@ static func next_pending_spawn_queue_order(game: Node) -> int:
 
 static func spawn_stagger_interval(game: Node, spawn_source: String) -> float:
 	var interval: float = maxf(float(game.WAVE_STAGGER_ENEMY_INTERVAL), 0.04)
-	var mobile_profile: bool = OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")
-	if mobile_profile:
+	if game.is_mobile_profile():
 		interval *= 3.0
 	if spawn_source == "crystal_pressure":
 		interval *= 1.2
 	return interval
 
 static func advance_pending_enemy_spawns(game: Node, delta: float) -> void:
-	for room_coord_variant in game.rooms.keys():
-		var room_coord: Vector2i = room_coord_variant
-		game.rooms[room_coord]["warning_timer_left"] = maxf(float(game.rooms[room_coord].get("warning_timer_left", 0.0)) - delta, 0.0)
 	var pending_spawns: Array = game.pending_enemy_spawns
 	var spawn_budget_base: int = int(floor(float(game.ENEMY_SPAWN_FRAME_BUDGET) * 0.5))
 	var spawn_budget: int = maxi(1, spawn_budget_base)
@@ -516,9 +512,15 @@ static func advance_pending_enemy_spawns(game: Node, delta: float) -> void:
 	var current_frame: int = Engine.get_physics_frames()
 	var spawn_frame_gap: int = maxi(1, int(game.ENEMY_SPAWN_FRAME_GAP))
 	var spawn_frame_ready: bool = current_frame >= int(game.enemy_spawn_next_allowed_frame)
+	var touched_warning_rooms: Dictionary = {}
+	if game.active_spawn_warning_room != game.INVALID_ROOM:
+		touched_warning_rooms[game.active_spawn_warning_room] = true
 	var queue_head_index: int = -1
 	for pending_index in range(pending_spawns.size()):
 		var queued_spawn: Dictionary = pending_spawns[pending_index]
+		var queued_room: Vector2i = Vector2i(queued_spawn.get("room", game.INVALID_ROOM))
+		if queued_room != game.INVALID_ROOM:
+			touched_warning_rooms[queued_room] = true
 		if int(queued_spawn.get("remaining", 0)) > 0:
 			queue_head_index = pending_index
 			break
@@ -581,14 +583,17 @@ static func advance_pending_enemy_spawns(game: Node, delta: float) -> void:
 		if int(pending_spawn.get("remaining", 0)) > 0:
 			active_spawns.append(pending_spawn)
 	game.pending_enemy_spawns = active_spawns
-	for room_coord_variant in game.rooms.keys():
-		var room_coord: Vector2i = room_coord_variant
-		game.rooms[room_coord]["warning_timer_left"] = 0.0
+	for touched_room_variant in touched_warning_rooms.keys():
+		var touched_room: Vector2i = touched_room_variant
+		if game.rooms.has(touched_room):
+			game.rooms[touched_room]["warning_timer_left"] = 0.0
+	game.active_spawn_warning_room = game.INVALID_ROOM
 	if not active_spawns.is_empty():
 		var queue_head_spawn: Dictionary = active_spawns[0]
 		var queue_head_room: Vector2i = Vector2i(queue_head_spawn.get("room", game.INVALID_ROOM))
 		if game.rooms.has(queue_head_room):
 			game.rooms[queue_head_room]["warning_timer_left"] = maxf(float(queue_head_spawn.get("delay_left", 0.0)), 0.0)
+			game.active_spawn_warning_room = queue_head_room
 
 static func advance_crystal_pressure(game: Node, delta: float) -> void:
 	if game.crystal_holder == null or not is_instance_valid(game.crystal_holder):
@@ -1274,18 +1279,21 @@ static func process_combat(game: Node, delta: float) -> void:
 
 static func process_modules(game: Node, delta: float) -> void:
 	var cleric_menders_by_room: Dictionary = collect_cleric_menders_by_room(game)
+	var targetable_enemies_by_room: Dictionary = collect_targetable_enemies_by_room(game)
 	for room_coord_variant in game.rooms.keys():
 		var room_coord: Vector2i = room_coord_variant
 		var room: Dictionary = game.rooms[room_coord]
 		var cleric_mender_count: int = int(cleric_menders_by_room.get(room_coord, 0))
+		var room_targetable_enemies: Array = Array(targetable_enemies_by_room.get(room_coord, []))
 		room["neurostun_time_left"] = maxf(float(room.get("neurostun_time_left", 0.0)) - delta, 0.0)
 		if float(room.get("neurostun_time_left", 0.0)) <= 0.0:
 			room["neurostun_damage_per_second"] = 0.0
 		else:
 			var neurostun_dps: float = maxf(float(room.get("neurostun_damage_per_second", 0.0)), 0.0)
 			if neurostun_dps > 0.0:
-				for enemy in game.enemies:
-					if not enemy_is_targetable_by_module(game, enemy, room_coord):
+				for enemy_variant in room_targetable_enemies:
+					var enemy: Variant = enemy_variant
+					if not game.enemy_is_active(enemy):
 						continue
 					var dot_direction: Vector2 = (enemy.global_position - game.room_center(room_coord)).normalized()
 					if dot_direction == Vector2.ZERO:
@@ -1319,8 +1327,9 @@ static func process_modules(game: Node, delta: float) -> void:
 					var gas_hit: bool = false
 					var gas_slow_duration: float = 1.4 + float(clampi(game.minor_module_level(module_type), 1, 4)) * 0.2
 					var gas_damage_per_second: float = game.minor_module_damage(module_type)
-					for enemy in game.enemies:
-						if not enemy_is_targetable_by_module(game, enemy, room_coord):
+					for enemy_variant in room_targetable_enemies:
+						var enemy: Variant = enemy_variant
+						if not game.enemy_is_active(enemy):
 							continue
 						var module_impact_direction: Vector2 = (enemy.global_position - slot_position).normalized()
 						if module_impact_direction == Vector2.ZERO:
@@ -1346,13 +1355,14 @@ static func process_modules(game: Node, delta: float) -> void:
 							"width": 3.0,
 						})
 				game.MINOR_MODULE_CANNON:
-					var mortar_target: Variant = nearest_enemy_for_module(game, room_coord, slot_position, 620.0)
+					var mortar_target: Variant = nearest_enemy_for_module_candidates(room_targetable_enemies, slot_position, 620.0)
 					if mortar_target != null:
 						module_data["cooldown"] = game.minor_module_cooldown(module_type)
 						var splash_center: Vector2 = mortar_target.global_position
 						var splash_radius: float = 56.0 + float(clampi(game.minor_module_level(module_type), 1, 4)) * 8.0
-						for splash_enemy in game.enemies:
-							if not enemy_is_targetable_by_module(game, splash_enemy, room_coord):
+						for splash_enemy_variant in room_targetable_enemies:
+							var splash_enemy: Variant = splash_enemy_variant
+							if not game.enemy_is_active(splash_enemy):
 								continue
 							if splash_enemy.global_position.distance_to(splash_center) > splash_radius:
 								continue
@@ -1375,7 +1385,7 @@ static func process_modules(game: Node, delta: float) -> void:
 							"width": 3.0,
 						})
 				game.MINOR_MODULE_KIP:
-					var arcana_target: Variant = strongest_enemy_for_module(game, room_coord, slot_position, 620.0)
+					var arcana_target: Variant = strongest_enemy_for_module_candidates(room_targetable_enemies, slot_position, 620.0)
 					if arcana_target != null:
 						var arcana_level: int = clampi(game.minor_module_level(module_type), 1, 4)
 						var arcana_damage_cap: float = float(game.minor_module_kip_max_damage(arcana_level))
@@ -1383,7 +1393,7 @@ static func process_modules(game: Node, delta: float) -> void:
 						module_data["cooldown"] = game.minor_module_cooldown(module_type)
 						spawn_laser_projectile(game, slot_position, arcana_target, arcana_damage, game.minor_module_color(module_type), game.minor_module_projectile_width(module_type), game.minor_module_projectile_speed(module_type))
 				game.MINOR_MODULE_CONVERSION:
-					var conversion_target: Variant = strongest_enemy_for_module(game, room_coord, slot_position, 620.0)
+					var conversion_target: Variant = strongest_enemy_for_module_candidates(room_targetable_enemies, slot_position, 620.0)
 					if conversion_target != null:
 						module_data["cooldown"] = game.minor_module_cooldown(module_type)
 						var conversion_center: Vector2 = conversion_target.global_position
@@ -1406,7 +1416,7 @@ static func process_modules(game: Node, delta: float) -> void:
 				game.MINOR_MODULE_BOUNTY_INDUSTRY, game.MINOR_MODULE_BOUNTY_FOOD, game.MINOR_MODULE_BOUNTY_SCIENCE:
 					pass
 				_:
-					var turret_target: Variant = nearest_enemy_for_module(game, room_coord, slot_position, 620.0)
+					var turret_target: Variant = nearest_enemy_for_module_candidates(room_targetable_enemies, slot_position, 620.0)
 					if turret_target == null:
 						room["minor_modules"][module_index] = module_data
 						continue
@@ -2108,6 +2118,56 @@ static func enemy_is_targetable_by_module(game: Node, enemy: Variant, room_coord
 	if enemy.has_method("is_converted") and enemy.is_converted():
 		return false
 	return enemy.current_room == room_coord or enemy.pending_room == room_coord or enemy.next_room == room_coord
+
+static func collect_targetable_enemies_by_room(game: Node) -> Dictionary:
+	var enemies_by_room: Dictionary = {}
+	for enemy_variant in game.enemies:
+		var enemy: Variant = enemy_variant
+		if not game.enemy_is_active(enemy):
+			continue
+		if enemy.has_method("is_converted") and enemy.is_converted():
+			continue
+		var candidate_rooms: Array[Vector2i] = [Vector2i(enemy.current_room), Vector2i(enemy.pending_room), Vector2i(enemy.next_room)]
+		var visited_rooms: Dictionary = {}
+		for candidate_room in candidate_rooms:
+			if candidate_room == game.INVALID_ROOM or visited_rooms.has(candidate_room) or not game.rooms.has(candidate_room):
+				continue
+			visited_rooms[candidate_room] = true
+			if not enemies_by_room.has(candidate_room):
+				enemies_by_room[candidate_room] = []
+			(enemies_by_room[candidate_room] as Array).append(enemy)
+	return enemies_by_room
+
+static func nearest_enemy_for_module_candidates(candidates: Array, origin: Vector2, max_range: float) -> Variant:
+	var closest_enemy: Variant = null
+	var closest_distance: float = max_range
+	for candidate_variant in candidates:
+		var enemy: Variant = candidate_variant
+		if enemy == null or not is_instance_valid(enemy):
+			continue
+		var distance_value: float = origin.distance_to(enemy.global_position)
+		if distance_value <= closest_distance:
+			closest_distance = distance_value
+			closest_enemy = enemy
+	return closest_enemy
+
+static func strongest_enemy_for_module_candidates(candidates: Array, origin: Vector2, max_range: float) -> Variant:
+	var chosen_enemy: Variant = null
+	var chosen_health: float = -1.0
+	var chosen_distance: float = max_range
+	for candidate_variant in candidates:
+		var enemy: Variant = candidate_variant
+		if enemy == null or not is_instance_valid(enemy):
+			continue
+		var distance_value: float = origin.distance_to(enemy.global_position)
+		if distance_value > max_range:
+			continue
+		var health_value: float = float(enemy.current_health)
+		if chosen_enemy == null or health_value > chosen_health or (is_equal_approx(health_value, chosen_health) and distance_value < chosen_distance):
+			chosen_enemy = enemy
+			chosen_health = health_value
+			chosen_distance = distance_value
+	return chosen_enemy
 
 static func nearest_enemy_for_module(game: Node, room_coord: Vector2i, origin: Vector2, max_range: float) -> Variant:
 	var closest_enemy: Variant = null

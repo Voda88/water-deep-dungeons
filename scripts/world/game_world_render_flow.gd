@@ -26,7 +26,11 @@ static func _draw(game: Node) -> void:
 		draw_floating_resource_texts(game)
 	game.draw_room_action_hold()
 	game.draw_room_action_menu()
+	# Hand cards are UI and should remain screen-stable while camera pans.
+	var inverse_canvas: Transform2D = game.get_viewport().get_canvas_transform().affine_inverse()
+	game.draw_set_transform_matrix(inverse_canvas)
 	game.draw_combat_hand()
+	game.draw_set_transform_matrix(Transform2D.IDENTITY)
 
 static func active_hand_drag_target_preview(game: Node) -> Dictionary:
 	if game.active_hand_drag.is_empty():

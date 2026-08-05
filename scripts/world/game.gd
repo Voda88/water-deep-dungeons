@@ -387,6 +387,7 @@ var door_wave_spawns_incoming: bool = false
 var pending_room_constructions: Array = []
 var next_enemy_uid: int = 1
 var enemy_spawn_next_allowed_frame: int = 0
+var active_spawn_warning_room: Vector2i = INVALID_ROOM
 var next_item_uid: int = 1
 var next_card_uid: int = 1
 var global_item_card_states: Dictionary = {}
@@ -572,9 +573,11 @@ func update_performance_ui(delta: float) -> void:
 	var reduced_color: Color = Color("ffcec4")
 	performance_label.add_theme_color_override("font_color", reduced_color if animations_reduced_mode_active() else normal_color)
 
+func is_mobile_profile() -> bool:
+	return OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")
+
 func should_queue_world_redraw(delta: float) -> bool:
-	var mobile_profile: bool = OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")
-	if not mobile_profile:
+	if not is_mobile_profile():
 		return true
 	mobile_world_redraw_time_left = maxf(mobile_world_redraw_time_left - delta, 0.0)
 	if mobile_world_redraw_time_left > 0.0:
