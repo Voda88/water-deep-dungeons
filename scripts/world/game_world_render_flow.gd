@@ -255,31 +255,15 @@ static func draw_effect_strip(surface: CanvasItem, texture: Texture2D, frame_ind
 	surface.draw_texture_rect_region(texture, draw_rect, source_rect, modulate, false, true)
 
 static func draw_room_spawn_warning_effects(game: Node, room_coord: Vector2i, view_rect: Rect2, animate_effect: bool = true) -> void:
-	if NECROMANCER_ATTACK_EFFECT == null:
+	var warning_context: Dictionary = build_spawn_warning_draw_context(game, animate_effect)
+	if warning_context.is_empty() or Vector2i(warning_context.get("room", game.INVALID_ROOM)) != room_coord:
 		return
-	var active_enemy_total: int = 0
-	for enemy_variant in game.enemies:
-		if game.enemy_is_active(enemy_variant):
-			active_enemy_total += 1
-	if active_enemy_total >= maxi(1, int(game.ENEMY_ACTIVE_CAP)):
-		return
-	var marker_lead: float = maxf(float(game.WAVE_PRESPAWN_MARKER_LEAD), 0.0)
-	var effect_frame: int = animated_effect_frame_index(NECROMANCER_ATTACK_EFFECT, 0.052) if animate_effect else 0
-	var queue_head_spawn: Dictionary = {}
-	for pending_spawn_variant in game.pending_enemy_spawns:
-		var pending_spawn: Dictionary = Dictionary(pending_spawn_variant)
-		if int(pending_spawn.get("remaining", 0)) <= 0:
-			continue
-		queue_head_spawn = pending_spawn
-		break
-	if queue_head_spawn.is_empty():
-		return
-	if Vector2i(queue_head_spawn.get("room", game.INVALID_ROOM)) != room_coord:
-		return
-	var positions: Array = Array(queue_head_spawn.get("positions", []))
-	var spawned_count: int = int(queue_head_spawn.get("spawned", 0))
-	var delay_left: float = float(queue_head_spawn.get("delay_left", 0.0))
-	var interval: float = maxf(float(queue_head_spawn.get("interval", game.WAVE_STAGGER_ENEMY_INTERVAL)), 0.0)
+	var marker_lead: float = float(warning_context.get("marker_lead", 0.0))
+	var effect_frame: int = int(warning_context.get("effect_frame", 0))
+	var positions: Array = Array(warning_context.get("positions", []))
+	var spawned_count: int = int(warning_context.get("spawned", 0))
+	var delay_left: float = float(warning_context.get("delay_left", 0.0))
+	var interval: float = maxf(float(warning_context.get("interval", game.WAVE_STAGGER_ENEMY_INTERVAL)), 0.0)
 	for spawn_index in range(spawned_count, positions.size()):
 		var index_offset: int = spawn_index - spawned_count
 		var time_until_spawn: float = maxf(delay_left, 0.0) + float(index_offset) * interval
@@ -291,6 +275,34 @@ static func draw_room_spawn_warning_effects(game: Node, room_coord: Vector2i, vi
 		var pulse_alpha: float = clampf(0.94 - float(index_offset) * 0.08, 0.72, 0.94)
 		var pulse_wave: float = (0.9 + 0.1 * sin(float(Time.get_ticks_msec()) / 95.0 + float(index_offset) * 0.55)) if animate_effect else 1.0
 		draw_effect_strip(game, NECROMANCER_ATTACK_EFFECT, effect_frame, spawn_position + Vector2(0.0, -4.0), Vector2(124.0, 124.0), Color(1.0, 0.95, 0.86, minf(pulse_alpha * pulse_wave, 1.0)))
+
+static func build_spawn_warning_draw_context(game: Node, animate_effect: bool = true) -> Dictionary:
+	if NECROMANCER_ATTACK_EFFECT == null:
+		return {}
+	var active_enemy_total: int = 0
+	for enemy_variant in game.enemies:
+		if game.enemy_is_active(enemy_variant):
+			active_enemy_total += 1
+	if active_enemy_total >= maxi(1, int(game.ENEMY_ACTIVE_CAP)):
+		return {}
+	var queue_head_spawn: Dictionary = {}
+	for pending_spawn_variant in game.pending_enemy_spawns:
+		var pending_spawn: Dictionary = Dictionary(pending_spawn_variant)
+		if int(pending_spawn.get("remaining", 0)) <= 0:
+			continue
+		queue_head_spawn = pending_spawn
+		break
+	if queue_head_spawn.is_empty():
+		return {}
+	return {
+		"room": Vector2i(queue_head_spawn.get("room", game.INVALID_ROOM)),
+		"positions": Array(queue_head_spawn.get("positions", [])),
+		"spawned": int(queue_head_spawn.get("spawned", 0)),
+		"delay_left": float(queue_head_spawn.get("delay_left", 0.0)),
+		"interval": float(queue_head_spawn.get("interval", game.WAVE_STAGGER_ENEMY_INTERVAL)),
+		"marker_lead": maxf(float(game.WAVE_PRESPAWN_MARKER_LEAD), 0.0),
+		"effect_frame": animated_effect_frame_index(NECROMANCER_ATTACK_EFFECT, 0.052) if animate_effect else 0,
+	}
 
 static func draw_floating_resource_texts(game: Node) -> void:
 	var view_rect: Rect2 = current_view_world_rect(game, 96.0)
@@ -585,6 +597,24 @@ static func room_theme_palette(game: Node, theme_id: String, lit: bool, crystal_
 
 static func draw_room_overlays(game: Node, reduce_animations: bool = false) -> void:
 	var view_rect: Rect2 = current_view_world_rect(game, 160.0)
+	var warning_context: Dictionary = build_spawn_warning_draw_context(game, not reduce_animations)
+	var hero_room_presence: Dictionary = {}
+	var selected_hero_room_presence: Dictionary = {}
+	var selected_hero: Variant = game.selected_hero()
+	for hero_variant in game.heroes:
+		var hero: Variant = hero_variant
+		if hero == null or not is_instance_valid(hero):
+			continue
+		var current_room: Vector2i = Vector2i(hero.current_room)
+		if current_room != game.INVALID_ROOM:
+			hero_room_presence[current_room] = true
+			if hero == selected_hero:
+				selected_hero_room_presence[current_room] = true
+		var pending_room: Vector2i = Vector2i(hero.pending_room)
+		if pending_room != game.HERO_INVALID_ROOM:
+			hero_room_presence[pending_room] = true
+			if hero == selected_hero:
+				selected_hero_room_presence[pending_room] = true
 	for room_coord_variant in game.rooms.keys():
 		var room_coord: Vector2i = room_coord_variant
 		var room: Dictionary = game.rooms[room_coord]
@@ -618,15 +648,8 @@ static func draw_room_overlays(game: Node, reduce_animations: bool = false) -> v
 			game.draw_rect(rect.grow(-aura_inset), Color(0.88, 1.0, 0.72, 0.08 + 0.05 * aura_pulse), false, 3.0)
 			var sanctuary_label: String = "Sanctuary %ds" % int(ceil(float(room.get("sanctuary_time_left", 0.0))))
 			game.draw_string(ThemeDB.fallback_font, rect.position + Vector2(12.0, rect.size.y - 12.0), sanctuary_label, HORIZONTAL_ALIGNMENT_LEFT, 118.0, 12, Color(0.93, 1.0, 0.82, 0.78 + 0.18 * sanctuary_ratio))
-		var room_has_hero: bool = false
-		var room_has_selected_hero: bool = false
-		for hero in game.heroes:
-			if not is_instance_valid(hero):
-				continue
-			if room_coord == hero.current_room or room_coord == hero.pending_room:
-				room_has_hero = true
-				if hero == game.selected_hero():
-					room_has_selected_hero = true
+		var room_has_hero: bool = hero_room_presence.has(room_coord)
+		var room_has_selected_hero: bool = selected_hero_room_presence.has(room_coord)
 		if room_coord == game.selected_room:
 			game.draw_rect(rect.grow(-10.0), Color("f7f7f2", 0.92), false, 3.0)
 		if room_has_hero:
@@ -749,7 +772,8 @@ static func draw_room_overlays(game: Node, reduce_animations: bool = false) -> v
 		if warning_ratio > 0.0:
 			var inset: float = 12.0 + 8.0 * (1.0 - warning_ratio)
 			game.draw_rect(rect.grow(-inset), Color(1.0, 0.66, 0.52, 0.10 + 0.12 * warning_ratio), false, 4.0)
-		draw_room_spawn_warning_effects(game, room_coord, view_rect, not reduce_animations)
+		if warning_context.is_empty() or Vector2i(warning_context.get("room", game.INVALID_ROOM)) == room_coord:
+			draw_room_spawn_warning_effects(game, room_coord, view_rect, not reduce_animations)
 		if room["exit"]:
 			var exit_center: Vector2 = rect.get_center() + Vector2(0.0, -12.0)
 			game.draw_circle(exit_center, 18.0, Color("203846"))

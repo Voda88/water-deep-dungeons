@@ -77,6 +77,15 @@ static func targetable_room_actors_cached(game: Node, room_coord: Vector2i, stri
 static func adaptive_enemy_ai_think_interval(game: Node, _active_enemy_count: int) -> float:
 	return float(game.ENEMY_AI_THINK_INTERVAL)
 
+static func deterministic_ai_budget_defer(enemy: Variant, defer_min: float, defer_max: float) -> float:
+	if defer_max <= defer_min:
+		return defer_min
+	var uid_value: int = abs(int(enemy.enemy_uid))
+	var bucket_count: int = 7
+	var bucket_index: int = uid_value % bucket_count
+	var ratio: float = float(bucket_index) / float(bucket_count - 1)
+	return lerpf(defer_min, defer_max, ratio)
+
 static func room_has_active_major_module(game: Node, room_coord: Vector2i) -> bool:
 	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
 		return false
@@ -219,6 +228,9 @@ static func advance_enemy_routes(game: Node, delta: float) -> void:
 		if game.enemy_is_active(enemy_variant):
 			active_enemies.append(enemy_variant)
 	var think_interval: float = adaptive_enemy_ai_think_interval(game, active_enemies.size())
+	var pathfind_budget: int = maxi(1, int(game.ENEMY_AI_PATHFIND_PER_TICK_BUDGET))
+	var defer_min: float = maxf(float(game.ENEMY_AI_BUDGET_DEFER_MIN), 0.0)
+	var defer_max: float = maxf(float(game.ENEMY_AI_BUDGET_DEFER_MAX), defer_min)
 	for enemy in active_enemies:
 		if enemy.has_method("set_situational_speed_multiplier"):
 			enemy.set_situational_speed_multiplier(enemy_situational_speed_multiplier(game, enemy))
@@ -290,7 +302,11 @@ static func advance_enemy_routes(game: Node, delta: float) -> void:
 				var target_room_path: Array[Vector2i] = [target_room]
 				game.issue_enemy_steps(enemy, game.build_steps_for_path(target_room_path, enemy.global_position, target_position))
 			else:
+				if pathfind_budget <= 0:
+					enemy.set_meta(ENEMY_AI_THINK_TIMER_META, deterministic_ai_budget_defer(enemy, defer_min, defer_max))
+					continue
 				var path: Array[Vector2i] = game.find_path(enemy.current_room, target_room, true)
+				pathfind_budget -= 1
 				if path.size() <= 1:
 					enemy.move_steps.clear()
 					continue
