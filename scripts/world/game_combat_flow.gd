@@ -63,6 +63,7 @@ static func maybe_show_fighter_rage_popup(game: Node, hero: Variant, previous_ra
 		return
 	if previous_rage >= 0 and current_rage <= previous_rage:
 		return
+	hero.combo_decay_time_left = ROGUE_COMBO_DECAY_INTERVAL
 	game.add_resource_floating_text(
 		hero.global_position + Vector2(0.0, -ROGUE_COMBO_POPUP_Y_OFFSET),
 		"Rage %d" % current_rage,
@@ -119,28 +120,35 @@ static func advance_hero_combo_decay(game: Node, delta: float) -> void:
 	if delta <= 0.0:
 		return
 	for hero in game.heroes:
-		if not hero_is_combo_class(game, hero):
+		var is_combo_hero: bool = hero_is_combo_class(game, hero)
+		var is_fighter_hero: bool = hero != null and is_instance_valid(hero) and String(hero.hero_class_id) == game.HERO_CLASS_FIGHTER
+		if not is_combo_hero and not is_fighter_hero:
 			continue
 		var combo_points: int = clampi(int(hero.combo_points), 0, ROGUE_COMBO_MAX_POINTS)
 		var combo_progress: int = maxi(0, int(hero.combo_attack_progress))
-		if combo_points <= 0 and combo_progress <= 0:
+		var rage_points: int = clampi(int(hero.fighter_rage), 0, maxi(int(hero.fighter_rage_max), 0)) if is_fighter_hero else 0
+		if combo_points <= 0 and combo_progress <= 0 and rage_points <= 0:
 			hero.combo_decay_time_left = 0.0
 			continue
 		var decay_time_left: float = float(hero.combo_decay_time_left)
 		if decay_time_left <= 0.0:
 			decay_time_left = ROGUE_COMBO_DECAY_INTERVAL
 		decay_time_left -= delta
-		while decay_time_left <= 0.0 and (combo_points > 0 or combo_progress > 0):
+		while decay_time_left <= 0.0 and (combo_points > 0 or combo_progress > 0 or rage_points > 0):
 			if combo_points > 0:
 				combo_points -= 1
 			elif combo_progress > 0:
 				combo_progress -= 1
-			if combo_points > 0 or combo_progress > 0:
+			if is_fighter_hero and rage_points > 0:
+				rage_points -= 1
+			if combo_points > 0 or combo_progress > 0 or rage_points > 0:
 				decay_time_left += ROGUE_COMBO_DECAY_INTERVAL
 			else:
 				decay_time_left = 0.0
 		hero.combo_points = combo_points
 		hero.combo_attack_progress = combo_progress
+		if is_fighter_hero:
+			hero.fighter_rage = rage_points
 		hero.combo_decay_time_left = maxf(decay_time_left, 0.0)
 
 static func apply_poison_coating_to_hero(_game: Node, hero: Variant, coating: Dictionary) -> Dictionary:
@@ -1148,11 +1156,11 @@ static func apply_card_projectile_hits(game: Node, projectile: Dictionary) -> vo
 		if owner_hero != null and is_instance_valid(owner_hero) and hero_is_combo_class(game, owner_hero):
 			combo_level = combo_level_for_hero(game, owner_hero)
 		var combo_modifiers: Dictionary = {
-			"combo_flatfooted_on_damage": bool(projectile.get("combo_flatfooted_on_damage", false)),
-			"combo_flatfooted_duration": float(projectile.get("combo_flatfooted_duration", PHYSICAL_CARD_COMBO_FLATFOOTED_DURATION)),
-			"combo_flatfooted_move_multiplier": float(projectile.get("combo_flatfooted_move_multiplier", PHYSICAL_CARD_COMBO_FLATFOOTED_MOVE_MULTIPLIER)),
-			"combo_flatfooted_attack_speed_multiplier": float(projectile.get("combo_flatfooted_attack_speed_multiplier", PHYSICAL_CARD_COMBO_FLATFOOTED_ATTACK_SPEED_MULTIPLIER)),
-			"combo_flatfooted_damage_taken_multiplier": float(projectile.get("combo_flatfooted_damage_taken_multiplier", PHYSICAL_CARD_COMBO_FLATFOOTED_DAMAGE_TAKEN_MULTIPLIER)),
+			"combo_flatfooted_on_damage": bool(projectile.get("mod_combo_flatfooted_on_damage", false)),
+			"combo_flatfooted_duration": float(projectile.get("mod_combo_flatfooted_duration", PHYSICAL_CARD_COMBO_FLATFOOTED_DURATION)),
+			"combo_flatfooted_move_multiplier": float(projectile.get("mod_combo_flatfooted_move_multiplier", PHYSICAL_CARD_COMBO_FLATFOOTED_MOVE_MULTIPLIER)),
+			"combo_flatfooted_attack_speed_multiplier": float(projectile.get("mod_combo_flatfooted_attack_speed_multiplier", PHYSICAL_CARD_COMBO_FLATFOOTED_ATTACK_SPEED_MULTIPLIER)),
+			"combo_flatfooted_damage_taken_multiplier": float(projectile.get("mod_combo_flatfooted_damage_taken_multiplier", PHYSICAL_CARD_COMBO_FLATFOOTED_DAMAGE_TAKEN_MULTIPLIER)),
 		}
 		var damage: float = float(projectile.get("damage", 0.0))
 		var trigger_bounce_explosion: bool = false

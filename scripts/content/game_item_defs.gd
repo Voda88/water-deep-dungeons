@@ -8,12 +8,12 @@ static func build_item_defs() -> Dictionary:
 			"size": Vector2i(2, 2),
 			"footprint_cells": [Vector2i(0, 0), Vector2i(0, 1), Vector2i(1, 1)],
 			"color": Color("ffb36b"),
-			"description_lines": ["Adds 1 Razor Boomerang card", "L-shaped footprint", "Card cooldown scales with item level"],
+			"description_lines": ["Adds 2 Razor Boomerang cards", "L-shaped footprint", "Card cooldown scales with item level"],
 			"tags": ["weapon", "physical"],
 			"synergy_sockets": [
 				{"offset": Vector2i(0, 2), "tag": "poison", "bonuses": {"attack": 6.0}},
 			],
-			"hand_card": {"card_id": "axe_card", "door_interval": 3, "generation_mode": "door_interval", "cooldown_scales_with_item_level": true, "initial_queued_cards": 1, "max_stored_cards": 1},
+			"hand_card": {"card_id": "axe_card", "door_interval": 3, "generation_mode": "door_interval", "cooldown_scales_with_item_level": true, "initial_queued_cards": 2, "max_stored_cards": 2},
 		},
 		"daggers": {
 			"name": "Daggers",

@@ -580,12 +580,10 @@ func advance_thrown_motion(delta: float, had_dynamic_overlay_before: bool) -> bo
 	if throw_time_left <= 0.0 or throw_velocity.length() <= THROW_KNOCKBACK_MIN_SPEED:
 		clear_throw_state()
 		return false
-	velocity = throw_velocity
-	move_and_slide()
+	var next_position: Vector2 = global_position + throw_velocity * delta
 	var bounced: bool = false
 	var wall_normal: Vector2 = Vector2.ZERO
 	if knockback_bounds_enabled:
-		var next_position: Vector2 = global_position
 		if next_position.x <= knockback_bounds.position.x and throw_velocity.x < 0.0:
 			next_position.x = knockback_bounds.position.x
 			throw_velocity.x = absf(throw_velocity.x) * throw_restitution
@@ -606,7 +604,7 @@ func advance_thrown_motion(delta: float, had_dynamic_overlay_before: bool) -> bo
 			throw_velocity.y = -absf(throw_velocity.y) * throw_restitution
 			wall_normal.y = -1.0
 			bounced = true
-		global_position = next_position
+	global_position = next_position
 	if bounced:
 		if throw_bounces_left <= 0:
 			clear_throw_state()
