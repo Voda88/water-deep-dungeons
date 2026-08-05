@@ -379,6 +379,9 @@ static func advance_pending_enemy_spawns(game: Node, delta: float) -> void:
 	var preview_budget: int = maxi(1, int(game.ENEMY_SPAWN_PREVIEW_FRAME_BUDGET))
 	var max_active_enemies: int = maxi(1, int(game.ENEMY_ACTIVE_CAP))
 	var active_enemy_total: int = active_enemy_count(game)
+	var current_frame: int = Engine.get_physics_frames()
+	var spawn_frame_gap: int = maxi(1, int(game.ENEMY_SPAWN_FRAME_GAP))
+	var spawn_frame_ready: bool = current_frame >= int(game.enemy_spawn_next_allowed_frame)
 	for pending_index in range(pending_spawns.size()):
 		var pending_spawn: Dictionary = pending_spawns[pending_index]
 		pending_spawn["delay_left"] = float(pending_spawn["delay_left"]) - delta
@@ -409,7 +412,7 @@ static func advance_pending_enemy_spawns(game: Node, delta: float) -> void:
 			pending_spawn["cluster_base_angle"] = preview_base_angle
 		if int(pending_spawn["remaining"]) > 0 and float(pending_spawn["delay_left"]) <= 0.0 and active_enemy_total >= max_active_enemies:
 			pending_spawn["delay_left"] = 0.0
-		if spawn_budget > 0 and active_enemy_total < max_active_enemies and int(pending_spawn["remaining"]) > 0 and float(pending_spawn["delay_left"]) <= 0.0:
+		if spawn_budget > 0 and spawn_frame_ready and active_enemy_total < max_active_enemies and int(pending_spawn["remaining"]) > 0 and float(pending_spawn["delay_left"]) <= 0.0:
 			var plan: Array = Array(pending_spawn.get("plan", []))
 			var positions: Array = Array(pending_spawn.get("positions", []))
 			var spawn_source: String = String(pending_spawn.get("spawn_source", "door_wave"))
@@ -422,6 +425,8 @@ static func advance_pending_enemy_spawns(game: Node, delta: float) -> void:
 				pending_spawn["spawned"] = int(pending_spawn["spawned"]) + 1
 				pending_spawn["remaining"] = int(pending_spawn["remaining"]) - 1
 				pending_spawn["delay_left"] = float(pending_spawn["delay_left"]) + float(pending_spawn["interval"])
+				game.enemy_spawn_next_allowed_frame = current_frame + spawn_frame_gap
+				spawn_frame_ready = false
 				spawn_budget -= 1
 				active_enemy_total += 1
 			else:

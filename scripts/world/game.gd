@@ -153,6 +153,7 @@ const WAVE_STAGGER_ROOM_INTERVAL: float = 4.0
 const WAVE_STAGGER_ENEMY_INTERVAL: float = 0.14
 const ENEMY_SPAWN_FRAME_BUDGET: int = 3
 const ENEMY_SPAWN_PREVIEW_FRAME_BUDGET: int = 5
+const ENEMY_SPAWN_FRAME_GAP: int = 5
 const ENEMY_ACTIVE_CAP: int = 20
 const ENEMY_AI_THINK_THRESHOLD: int = 20
 const ENEMY_AI_THINK_HEAVY_THRESHOLD: int = 32
@@ -207,6 +208,8 @@ const CAMERA_PAN_DRAG_MULTIPLIER: float = 1.52
 const CAMERA_SOFT_FOLLOW_OFFSET: Vector2 = Vector2(0.0, -70.0)
 const CAMERA_BOUNDS_PADDING: Vector2 = Vector2(360.0, 320.0)
 const CAMERA_DISCOVERED_PAN_SLACK: Vector2 = Vector2(220.0, 180.0)
+const CAMERA_LIGHTWEIGHT_OVERLAY_SPEED_THRESHOLD: float = 150.0
+const CAMERA_LIGHTWEIGHT_OVERLAY_HOLD: float = 0.14
 const HERO_SELECTION_RADIUS: float = 72.0
 const CALM_SPEED_OPTIONS: Array = [1, 2, 5, 10]
 const CARD_HAND_CARD_SIZE: Vector2 = Vector2(64.0, 88.0)
@@ -338,6 +341,8 @@ var lobby_peer_ready: Dictionary = {}
 var lobby_game_started: bool = false
 var network_snapshot_timer: float = 0.0
 var mobile_world_redraw_time_left: float = 0.0
+var camera_last_global_position: Vector2 = Vector2.INF
+var camera_overlay_lightweight_time_left: float = 0.0
 var calm_speed_bar: HBoxContainer = null
 var calm_speed_buttons: Array = []
 var calm_speed_option_index: int = 1
@@ -377,6 +382,7 @@ var door_wave_major_payout_pending: bool = false
 var door_wave_spawns_incoming: bool = false
 var pending_room_constructions: Array = []
 var next_enemy_uid: int = 1
+var enemy_spawn_next_allowed_frame: int = 0
 var next_item_uid: int = 1
 var next_card_uid: int = 1
 var global_item_card_states: Dictionary = {}
@@ -487,8 +493,32 @@ func _process(delta: float) -> void:
 	advance_ui_button_hold(delta)
 	advance_hand_card_return_animations(delta)
 	advance_camera(delta)
+	update_camera_overlay_quality_mode(delta)
 	if should_queue_world_redraw(delta):
 		queue_redraw()
+
+func update_camera_overlay_quality_mode(delta: float) -> void:
+	var mobile_profile: bool = OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")
+	if camera == null:
+		camera_last_global_position = Vector2.INF
+		camera_overlay_lightweight_time_left = 0.0
+		return
+	if not mobile_profile:
+		camera_last_global_position = camera.global_position
+		camera_overlay_lightweight_time_left = 0.0
+		return
+	var move_speed: float = 0.0
+	if camera_last_global_position != Vector2.INF and delta > 0.0001:
+		move_speed = camera.global_position.distance_to(camera_last_global_position) / delta
+	camera_last_global_position = camera.global_position
+	var interaction_moving: bool = touch_dragging or mouse_dragging or pinch_active or room_action_camera_target_active or not room_action_menu.is_empty()
+	if interaction_moving or move_speed >= CAMERA_LIGHTWEIGHT_OVERLAY_SPEED_THRESHOLD:
+		camera_overlay_lightweight_time_left = CAMERA_LIGHTWEIGHT_OVERLAY_HOLD
+		return
+	camera_overlay_lightweight_time_left = maxf(camera_overlay_lightweight_time_left - delta, 0.0)
+
+func camera_overlay_lightweight_mode_active() -> bool:
+	return camera_overlay_lightweight_time_left > 0.0
 
 func should_queue_world_redraw(delta: float) -> bool:
 	var mobile_profile: bool = OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")

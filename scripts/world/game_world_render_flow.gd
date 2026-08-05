@@ -19,9 +19,11 @@ const PROJECTILE_AIM_PREVIEW_CARD_IDS: Dictionary = {
 }
 
 static func _draw(game: Node) -> void:
-	draw_room_overlays(game)
+	var lightweight_camera_mode: bool = game.has_method("camera_overlay_lightweight_mode_active") and bool(game.camera_overlay_lightweight_mode_active())
+	draw_room_overlays(game, lightweight_camera_mode)
 	draw_active_hand_card_target_preview(game)
-	draw_floating_resource_texts(game)
+	if not lightweight_camera_mode:
+		draw_floating_resource_texts(game)
 	game.draw_room_action_hold()
 	game.draw_room_action_menu()
 	game.draw_combat_hand()
@@ -266,8 +268,6 @@ static func draw_room_spawn_warning_effects(game: Node, room_coord: Vector2i, vi
 		var positions: Array = Array(pending_spawn.get("positions", []))
 		var spawned_count: int = int(pending_spawn.get("spawned", 0))
 		var delay_left: float = float(pending_spawn.get("delay_left", 0.0))
-		if delay_left > 0.0:
-			continue
 		var interval: float = maxf(float(pending_spawn.get("interval", game.WAVE_STAGGER_ENEMY_INTERVAL)), 0.0)
 		for spawn_index in range(spawned_count, positions.size()):
 			var index_offset: int = spawn_index - spawned_count
@@ -572,7 +572,7 @@ static func room_theme_palette(game: Node, theme_id: String, lit: bool, crystal_
 		palette["growth_edge"] = Color("a7864f")
 	return palette
 
-static func draw_room_overlays(game: Node) -> void:
+static func draw_room_overlays(game: Node, lightweight_camera_mode: bool = false) -> void:
 	var view_rect: Rect2 = current_view_world_rect(game, 160.0)
 	for room_coord_variant in game.rooms.keys():
 		var room_coord: Vector2i = room_coord_variant
@@ -597,7 +597,7 @@ static func draw_room_overlays(game: Node) -> void:
 			continue
 		var warning_ratio: float = clampf(float(room.get("warning_timer_left", 0.0)) / maxf(game.WAVE_WARNING_DURATION, 0.001), 0.0, 1.0)
 		var sanctuary_ratio: float = clampf(float(room.get("sanctuary_time_left", 0.0)) / maxf(float(room.get("sanctuary_duration", room.get("sanctuary_time_left", 1.0))), 0.001), 0.0, 1.0)
-		if float(room.get("sanctuary_time_left", 0.0)) > 0.0:
+		if not lightweight_camera_mode and float(room.get("sanctuary_time_left", 0.0)) > 0.0:
 			var aura_pulse: float = 0.5 + 0.5 * sin(float(Time.get_ticks_msec()) / 150.0 + float(room_coord.x - room_coord.y) * 0.33)
 			var aura_inset: float = 10.0 + 5.0 * aura_pulse
 			game.draw_rect(rect.grow(-aura_inset), Color(0.88, 1.0, 0.72, 0.08 + 0.05 * aura_pulse), false, 3.0)
@@ -622,8 +622,9 @@ static func draw_room_overlays(game: Node) -> void:
 			game.draw_circle(marker_center, 10.0, Color(marker_color.r, marker_color.g, marker_color.b, 0.18))
 			game.draw_arc(marker_center, 10.0, 0.0, TAU, 24, marker_color, 2.2, true)
 			game.draw_circle(marker_center, 4.0, marker_color)
-		draw_room_light_marker(game, room_coord, room)
-		if room["major_slots"] > 0 and room_coord != game.crystal_room:
+		if not lightweight_camera_mode:
+			draw_room_light_marker(game, room_coord, room)
+		if not lightweight_camera_mode and room["major_slots"] > 0 and room_coord != game.crystal_room:
 			var major_position: Vector2 = game.major_slot_position(room_coord)
 			var pending_major: Dictionary = game.pending_major_construction_for_room(room_coord)
 			var show_major_slot: bool = game.should_show_room_slot_guides(room_coord) or game.should_highlight_major_slot(room_coord) or (room["major_module_type"] != "" and float(room["major_health"]) > 0.0) or not pending_major.is_empty()
@@ -677,8 +678,9 @@ static func draw_room_overlays(game: Node) -> void:
 				game.draw_arc(major_position, 19.0, -PI * 0.5, -PI * 0.5 + TAU * pending_ratio, 24, Color("ffe39b"), 3.0, true)
 				game.draw_rect(Rect2(major_position + Vector2(-20.0, 30.0), Vector2(40.0, 5.0)), Color("1b1610"), true)
 				game.draw_rect(Rect2(major_position + Vector2(-20.0, 30.0), Vector2(40.0 * pending_ratio, 5.0)), Color("ffe39b"), true)
-		var slot_positions: Array = game.minor_slot_positions(room_coord)
-		for slot_index in range(slot_positions.size()):
+		if not lightweight_camera_mode:
+			var slot_positions: Array = game.minor_slot_positions(room_coord)
+			for slot_index in range(slot_positions.size()):
 			var slot_position: Vector2 = slot_positions[slot_index]
 			var module_index: int = game.minor_module_index_for_slot(room_coord, slot_index)
 			var pending_minor: Dictionary = game.pending_minor_construction_for_slot(room_coord, slot_index)
@@ -724,17 +726,19 @@ static func draw_room_overlays(game: Node) -> void:
 				var pending_ratio_minor: float = 1.0 - (float(pending_minor.get("timer_left", 0.0)) / maxf(float(pending_minor.get("duration", 1.0)), 0.001))
 				game.draw_circle(slot_position, 8.0, Color("b3efff", 0.18))
 				game.draw_arc(slot_position, 14.0, -PI * 0.5, -PI * 0.5 + TAU * pending_ratio_minor, 24, Color("8df6ff"), 2.5, true)
-		draw_room_loot_chest(game, room_coord, room, bool(room.get("lit", false)))
-		draw_room_merchant_visual(game, room_coord, room, bool(room.get("lit", false)))
+		if not lightweight_camera_mode:
+			draw_room_loot_chest(game, room_coord, room, bool(room.get("lit", false)))
+			draw_room_merchant_visual(game, room_coord, room, bool(room.get("lit", false)))
 		if room_coord == game.opening_origin_room:
 			var progress_ratio: float = 1.0 - (game.opening_timer_left / game.DOOR_OPEN_DURATION)
 			game.draw_rect(rect, Color(1.0, 1.0, 1.0, 0.08), true)
 			game.draw_rect(Rect2(rect.position + Vector2(18.0, rect.size.y - 20.0), Vector2(rect.size.x - 36.0, 8.0)), Color("1d2630"), true)
 			game.draw_rect(Rect2(rect.position + Vector2(18.0, rect.size.y - 20.0), Vector2((rect.size.x - 36.0) * progress_ratio, 8.0)), Color("f3dfa2"), true)
-		if warning_ratio > 0.0:
+		if not lightweight_camera_mode and warning_ratio > 0.0:
 			var inset: float = 12.0 + 8.0 * (1.0 - warning_ratio)
 			game.draw_rect(rect.grow(-inset), Color(1.0, 0.66, 0.52, 0.10 + 0.12 * warning_ratio), false, 4.0)
-		draw_room_spawn_warning_effects(game, room_coord, view_rect)
+		if not lightweight_camera_mode:
+			draw_room_spawn_warning_effects(game, room_coord, view_rect)
 		if room["exit"]:
 			var exit_center: Vector2 = rect.get_center() + Vector2(0.0, -12.0)
 			game.draw_circle(exit_center, 18.0, Color("203846"))
