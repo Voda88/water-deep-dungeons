@@ -312,11 +312,8 @@ static func advance_hero_movement(game: Node) -> void:
 			continue
 		if hero.pending_room != game.HERO_INVALID_ROOM:
 			if hero.is_idle():
-				var previous_room: Vector2i = hero.current_room
 				hero.current_room = hero.pending_room
 				hero.pending_room = game.HERO_INVALID_ROOM
-				if previous_room != game.INVALID_ROOM and previous_room != hero.current_room:
-					hero.entered_room_from = previous_room
 				if hero == game.selected_hero():
 					game.selected_room = hero.current_room
 			else:
