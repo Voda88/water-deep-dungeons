@@ -26,6 +26,31 @@ static func random_room_offset(game: Node, radius: float) -> Vector2:
 		game.rng.randf_range(-radius * 0.55, radius * 0.55)
 	)
 
+static func grow_layout_towards_room_count(game: Node, minimum_room_count: int, target_room_count: int) -> void:
+	var growth_attempts: int = 0
+	while game.rooms.size() < minimum_room_count and game.rooms.size() < target_room_count and growth_attempts < 2200:
+		growth_attempts += 1
+		var frontier_sockets: Array = game.collect_frontier_sockets()
+		if frontier_sockets.is_empty():
+			break
+		var socket: Dictionary = frontier_sockets[game.rng.randi_range(0, frontier_sockets.size() - 1)]
+		var origin: Vector2i = socket["room"]
+		var direction: Vector2i = socket["direction"]
+		var room_coord: Vector2i = origin + direction
+		var force_branching: bool = game.rooms.size() < minimum_room_count
+		var minimum_doors: int = 2 if force_branching else 1
+		var blueprint: Dictionary = game.roll_room_blueprint(-direction, false, false, minimum_doors)
+		if blueprint.is_empty() and minimum_doors > 1:
+			blueprint = game.roll_room_blueprint(-direction, false, false, 1)
+		if blueprint.is_empty():
+			continue
+		var template_id: String = String(blueprint["template_id"])
+		var candidate_center: Vector2 = game.proposed_room_center(origin, template_id, direction)
+		if not game.can_place_room_center(candidate_center, game.room_template_size(template_id)):
+			continue
+		game.create_room(room_coord, template_id, blueprint["door_dirs"], candidate_center)
+		game.connect_rooms(origin, room_coord)
+
 static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 	if reset_resources:
 		game.hero_profiles.clear()
@@ -95,10 +120,14 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 		game.major_module_levels = game.normalized_major_module_levels(game.initialized_major_module_levels())
 	game.minor_module_levels = game.normalized_minor_module_levels(game.minor_module_levels)
 	game.major_module_levels = game.normalized_major_module_levels(game.major_module_levels)
-	var minimum_room_count: int = 13 if game.floor_index == 1 else 10
-	var target_room_count: int = 17 if game.floor_index == 1 else 15
+	var is_first_floor: bool = game.floor_index == 1
+	var minimum_room_count: int = 13 if is_first_floor else 10
+	var maximum_room_count: int = 17 if is_first_floor else 15
+	var target_room_count: int = game.rng.randi_range(minimum_room_count, maximum_room_count) if is_first_floor else 15
+	var layout_generation_attempt_limit: int = 256 if is_first_floor else 12
+	var max_layout_steps: int = 1200 if is_first_floor else 800
 	var layout_generation_attempts: int = 0
-	while layout_generation_attempts < 12:
+	while layout_generation_attempts < layout_generation_attempt_limit:
 		layout_generation_attempts += 1
 		game.rooms.clear()
 		game.room_nav_cache.clear()
@@ -116,7 +145,7 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 		crystal["major_slots"] = 0
 		crystal["major_under_construction"] = false
 		var layout_attempts: int = 0
-		while game.rooms.size() < target_room_count and layout_attempts < 800:
+		while game.rooms.size() < target_room_count and layout_attempts < max_layout_steps:
 			layout_attempts += 1
 			var frontier_sockets: Array = game.collect_frontier_sockets()
 			if frontier_sockets.is_empty():
@@ -126,8 +155,9 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 			var direction: Vector2i = socket["direction"]
 			var room_coord: Vector2i = origin + direction
 			var generating_second_room: bool = game.rooms.size() == 1
-			var prefer_dead_end: bool = game.rooms.size() >= 4 and frontier_sockets.size() >= 3 and game.rng.randf() < 0.58
-			var minimum_doors: int = 2 if generating_second_room else 1
+			var needs_growth: bool = is_first_floor and game.rooms.size() < minimum_room_count
+			var prefer_dead_end: bool = (not needs_growth) and game.rooms.size() >= 4 and frontier_sockets.size() >= 3 and game.rng.randf() < 0.58
+			var minimum_doors: int = 2 if generating_second_room or needs_growth else 1
 			var blueprint: Dictionary = game.roll_room_blueprint(-direction, generating_second_room, prefer_dead_end, minimum_doors)
 			if blueprint.is_empty():
 				continue
@@ -137,6 +167,8 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 				continue
 			game.create_room(room_coord, template_id, blueprint["door_dirs"], candidate_center)
 			game.connect_rooms(origin, room_coord)
+		if is_first_floor and game.rooms.size() < minimum_room_count:
+			grow_layout_towards_room_count(game, minimum_room_count, maximum_room_count)
 		if game.rooms.size() >= minimum_room_count:
 			break
 	game.reconcile_room_connections()

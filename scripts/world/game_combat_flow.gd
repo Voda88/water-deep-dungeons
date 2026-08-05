@@ -268,25 +268,23 @@ static func apply_fighter_rage_throw_buff_hit(game: Node, hero: Variant, enemy: 
 		if allowed_bounces >= 2:
 			throw_duration = maxf(throw_duration, 0.62)
 		var launch_speed: float = clampf(throw_distance / maxf(throw_duration, 0.01), 220.0, 1650.0)
-		var launch_velocity: Vector2 = launch_direction * launch_speed
-		var throw_regions: Array = game.room_walkable_regions(target_room, game.ROOM_WALKABLE_INSET + 2.0)
-		if enemy.has_method("begin_physics_throw"):
-			enemy.begin_physics_throw(
-				launch_velocity,
-				throw_duration,
-				throw_bounds,
-				throw_regions,
-				allowed_bounces,
-				0.0,
-				flatfooted_duration,
-				flatfooted_move_multiplier,
-				flatfooted_attack_speed_multiplier,
-				flatfooted_damage_taken_multiplier,
-				hero.hero_index,
-				Color(throw_card_def.get("color", Color("c5d4df")))
-			)
-		else:
-			game.knockback_actor(enemy, launch_direction, launch_speed * 0.24, throw_duration, target_room)
+		game.knockback_actor(
+			enemy,
+			launch_direction,
+			launch_speed,
+			throw_duration,
+			target_room,
+			{
+				"max_wall_bounces": allowed_bounces,
+				"wall_hit_damage": 0.0,
+				"flatfooted_duration": flatfooted_duration,
+				"flatfooted_move_multiplier": flatfooted_move_multiplier,
+				"flatfooted_attack_speed_multiplier": flatfooted_attack_speed_multiplier,
+				"flatfooted_damage_taken_multiplier": flatfooted_damage_taken_multiplier,
+				"source_hero_index": int(hero.hero_index),
+				"bounce_effect_color": Color(throw_card_def.get("color", Color("c5d4df"))),
+			}
+		)
 	hero.fighter_rage_throw_hits_left = maxi(hits_left - 1, 0)
 	if hero.fighter_rage_throw_hits_left <= 0:
 		hero.fighter_rage_throw_level = 0

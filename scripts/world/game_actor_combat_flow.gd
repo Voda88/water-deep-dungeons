@@ -1,5 +1,11 @@
 extends RefCounted
 
+const UNIFIED_KNOCKBACK_FLATFOOTED_DURATION: float = 4.0
+const UNIFIED_KNOCKBACK_FLATFOOTED_MOVE_MULTIPLIER: float = 0.72
+const UNIFIED_KNOCKBACK_FLATFOOTED_ATTACK_SPEED_MULTIPLIER: float = 0.78
+const UNIFIED_KNOCKBACK_FLATFOOTED_DAMAGE_TAKEN_MULTIPLIER: float = 1.5
+const UNIFIED_KNOCKBACK_BOUNCE_COLOR: Color = Color("c5d4df")
+
 static func enemy_forward_direction(game: Node, enemy: Variant) -> Vector2:
 	if enemy == null or not is_instance_valid(enemy):
 		return Vector2.RIGHT
@@ -32,13 +38,38 @@ static func find_hero_by_index(game: Node, hero_index: int) -> Variant:
 	var hero: Variant = game.heroes[hero_index]
 	return hero if game.hero_is_active(hero) else null
 
-static func knockback_actor(game: Node, actor: Variant, direction: Vector2, impulse_strength: float, recovery_duration: float, room_coord: Vector2i) -> void:
+static func knockback_actor(game: Node, actor: Variant, direction: Vector2, impulse_strength: float, recovery_duration: float, room_coord: Vector2i, options: Dictionary = {}) -> void:
 	if actor == null or not is_instance_valid(actor) or direction == Vector2.ZERO or impulse_strength <= 0.0 or recovery_duration <= 0.0:
-		return
-	if not actor.has_method("apply_knockback_impulse"):
 		return
 	var knockback_bounds: Rect2 = game.room_interior_rect(room_coord, 20.0)
 	var knockback_regions: Array = game.room_walkable_regions(room_coord, game.ROOM_WALKABLE_INSET + 2.0)
+	if game.is_enemy_actor(actor) and actor.has_method("begin_physics_throw"):
+		var max_wall_bounces: int = maxi(0, int(options.get("max_wall_bounces", 1)))
+		var wall_hit_damage: float = maxf(float(options.get("wall_hit_damage", 0.0)), 0.0)
+		var flatfooted_duration: float = maxf(float(options.get("flatfooted_duration", UNIFIED_KNOCKBACK_FLATFOOTED_DURATION)), 0.0)
+		var flatfooted_move_multiplier: float = clampf(float(options.get("flatfooted_move_multiplier", UNIFIED_KNOCKBACK_FLATFOOTED_MOVE_MULTIPLIER)), 0.0, 1.0)
+		var flatfooted_attack_speed_multiplier: float = clampf(float(options.get("flatfooted_attack_speed_multiplier", UNIFIED_KNOCKBACK_FLATFOOTED_ATTACK_SPEED_MULTIPLIER)), 0.0, 1.0)
+		var flatfooted_damage_taken_multiplier: float = maxf(float(options.get("flatfooted_damage_taken_multiplier", UNIFIED_KNOCKBACK_FLATFOOTED_DAMAGE_TAKEN_MULTIPLIER)), 1.0)
+		var source_hero_index: int = int(options.get("source_hero_index", -1))
+		var bounce_effect_color: Color = Color(options.get("bounce_effect_color", UNIFIED_KNOCKBACK_BOUNCE_COLOR))
+		actor.begin_physics_throw(
+			direction.normalized() * impulse_strength,
+			recovery_duration,
+			knockback_bounds,
+			knockback_regions,
+			max_wall_bounces,
+			wall_hit_damage,
+			flatfooted_duration,
+			flatfooted_move_multiplier,
+			flatfooted_attack_speed_multiplier,
+			flatfooted_damage_taken_multiplier,
+			source_hero_index,
+			bounce_effect_color
+		)
+		actor.reset_physics_interpolation()
+		return
+	if not actor.has_method("apply_knockback_impulse"):
+		return
 	actor.apply_knockback_impulse(direction.normalized() * impulse_strength, recovery_duration, knockback_bounds, knockback_regions)
 	actor.reset_physics_interpolation()
 

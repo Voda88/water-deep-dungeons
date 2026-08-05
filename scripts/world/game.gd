@@ -2407,8 +2407,8 @@ func hero_incoming_damage_multiplier(hero: Variant) -> float:
 func adjusted_incoming_damage_for_hero(hero: Variant, base_damage: float) -> float:
 	return maxf(base_damage, 0.0) * hero_incoming_damage_multiplier(hero)
 
-func knockback_actor(actor: Variant, direction: Vector2, impulse_strength: float, recovery_duration: float, room_coord: Vector2i) -> void:
-	GAME_ACTOR_COMBAT_FLOW.knockback_actor(self, actor, direction, impulse_strength, recovery_duration, room_coord)
+func knockback_actor(actor: Variant, direction: Vector2, impulse_strength: float, recovery_duration: float, room_coord: Vector2i, options: Dictionary = {}) -> void:
+	GAME_ACTOR_COMBAT_FLOW.knockback_actor(self, actor, direction, impulse_strength, recovery_duration, room_coord, options)
 
 func apply_weighted_melee_knockback(attacker: Variant, defender: Variant, room_coord: Vector2i, base_force: float = 0.0) -> void:
 	GAME_ACTOR_COMBAT_FLOW.apply_weighted_melee_knockback(self, attacker, defender, room_coord, base_force)

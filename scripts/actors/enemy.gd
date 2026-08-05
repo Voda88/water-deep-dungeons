@@ -548,7 +548,7 @@ func begin_physics_throw(launch_velocity: Vector2, duration: float, bounds: Rect
 	throw_velocity = launch_velocity
 	throw_time_left = duration
 	throw_bounces_left = maxi(max_wall_bounces, 0)
-	throw_bounce_damage = maxf(wall_hit_damage, 0.0)
+	throw_bounce_damage = 0.0
 	throw_flatfooted_duration = maxf(flatfooted_duration_seconds, 0.0)
 	throw_flatfooted_move_multiplier = clampf(flatfooted_move_multiplier_value, 0.0, 1.0)
 	throw_flatfooted_attack_speed_multiplier = clampf(flatfooted_attack_speed_multiplier_value, 0.0, 1.0)
@@ -562,8 +562,6 @@ func apply_throw_wall_hit(wall_normal: Vector2) -> void:
 	var hit_direction: Vector2 = -wall_normal if wall_normal != Vector2.ZERO else throw_velocity.normalized()
 	if hit_direction == Vector2.ZERO:
 		hit_direction = Vector2.RIGHT
-	if throw_bounce_damage > 0.0:
-		take_damage(throw_bounce_damage, hit_direction)
 	if throw_flatfooted_duration > 0.0:
 		apply_flatfooted_debuff(throw_flatfooted_duration, throw_flatfooted_move_multiplier, throw_flatfooted_attack_speed_multiplier, throw_flatfooted_damage_taken_multiplier)
 	var host: Node = resolve_game_host()
