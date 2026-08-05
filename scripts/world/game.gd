@@ -150,15 +150,17 @@ const PRELIT_ROOM_CHANCE: float = 0.24
 const WAVE_WARNING_DURATION: float = 1.0
 const WAVE_PRESPAWN_MARKER_LEAD: float = 2.0
 const WAVE_STAGGER_ROOM_INTERVAL: float = 4.0
-const WAVE_STAGGER_ENEMY_INTERVAL: float = 0.1
+const WAVE_STAGGER_ENEMY_INTERVAL: float = 0.14
 const ENEMY_SPAWN_FRAME_BUDGET: int = 3
 const ENEMY_SPAWN_PREVIEW_FRAME_BUDGET: int = 5
+const ENEMY_ACTIVE_CAP: int = 20
 const ENEMY_AI_THINK_THRESHOLD: int = 20
 const ENEMY_AI_THINK_HEAVY_THRESHOLD: int = 32
 const ENEMY_AI_THINK_INTERVAL_DESKTOP: float = 0.035
 const ENEMY_AI_THINK_INTERVAL_HEAVY_DESKTOP: float = 0.06
 const ENEMY_AI_THINK_INTERVAL_MOBILE: float = 0.075
 const ENEMY_AI_THINK_INTERVAL_HEAVY_MOBILE: float = 0.12
+const MOBILE_WORLD_REDRAW_INTERVAL: float = 1.0 / 30.0
 const CRYSTAL_DUST_DAMAGE_BASE_HIT: float = 0.25
 const CRYSTAL_PRESSURE_PICKUP_DELAY: float = 2.0
 const CRYSTAL_PRESSURE_INTERVAL: float = 4.0
@@ -335,6 +337,7 @@ var rejoin_claimable_hero_indices: Array[int] = []
 var lobby_peer_ready: Dictionary = {}
 var lobby_game_started: bool = false
 var network_snapshot_timer: float = 0.0
+var mobile_world_redraw_time_left: float = 0.0
 var calm_speed_bar: HBoxContainer = null
 var calm_speed_buttons: Array = []
 var calm_speed_option_index: int = 1
@@ -432,6 +435,12 @@ func invalidate_static_dungeon_layer() -> void:
 	if static_dungeon_layer != null:
 		static_dungeon_layer.rebuild()
 
+func queue_adjacent_room_prewarm(room_coord: Vector2i) -> void:
+	if static_dungeon_layer == null:
+		return
+	if static_dungeon_layer.has_method("queue_adjacent_rooms_for_prewarm"):
+		static_dungeon_layer.call("queue_adjacent_rooms_for_prewarm", room_coord)
+
 func _unhandled_input(event: InputEvent) -> void:
 	GAME_WORLD_INPUT_FLOW._unhandled_input(self, event)
 
@@ -472,12 +481,24 @@ func _physics_process(delta: float) -> void:
 func _process(delta: float) -> void:
 	if game_over:
 		advance_ui_button_hold(delta)
-		queue_redraw()
+		if should_queue_world_redraw(delta):
+			queue_redraw()
 		return
 	advance_ui_button_hold(delta)
 	advance_hand_card_return_animations(delta)
 	advance_camera(delta)
-	queue_redraw()
+	if should_queue_world_redraw(delta):
+		queue_redraw()
+
+func should_queue_world_redraw(delta: float) -> bool:
+	var mobile_profile: bool = OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")
+	if not mobile_profile:
+		return true
+	mobile_world_redraw_time_left = maxf(mobile_world_redraw_time_left - delta, 0.0)
+	if mobile_world_redraw_time_left > 0.0:
+		return false
+	mobile_world_redraw_time_left = MOBILE_WORLD_REDRAW_INTERVAL
+	return true
 
 func _draw() -> void:
 	GAME_WORLD_RENDER_FLOW._draw(self)

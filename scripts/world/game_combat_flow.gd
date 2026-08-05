@@ -343,13 +343,14 @@ static func queue_wave_spawn(game: Node, room_coord: Vector2i, wave_points: int,
 	var room_stagger_interval: float = game.WAVE_STAGGER_ROOM_INTERVAL if crystal_is_carried else 0.0
 	var room_delay: float = 0.0 if immediate else float(spawn_order + 1) * room_stagger_interval
 	var first_spawn_delay: float = room_delay + marker_lead
+	var per_enemy_interval: float = spawn_stagger_interval(game, "door_wave")
 	game.rooms[room_coord]["warning_timer_left"] = first_spawn_delay
 	game.pending_enemy_spawns.append({
 		"room": room_coord,
 		"spawn_source": "door_wave",
 		"remaining": spawn_plan.size(),
 		"delay_left": first_spawn_delay,
-		"interval": game.WAVE_STAGGER_ENEMY_INTERVAL,
+		"interval": per_enemy_interval,
 		"total_count": spawn_plan.size(),
 		"spawned": 0,
 		"plan": spawn_plan,
@@ -359,6 +360,15 @@ static func queue_wave_spawn(game: Node, room_coord: Vector2i, wave_points: int,
 		"cluster_base_angle": cluster_base_angle,
 	})
 
+static func spawn_stagger_interval(game: Node, spawn_source: String) -> float:
+	var interval: float = maxf(float(game.WAVE_STAGGER_ENEMY_INTERVAL), 0.04)
+	var mobile_profile: bool = OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")
+	if mobile_profile:
+		interval *= 3.0
+	if spawn_source == "crystal_pressure":
+		interval *= 1.2
+	return interval
+
 static func advance_pending_enemy_spawns(game: Node, delta: float) -> void:
 	for room_coord_variant in game.rooms.keys():
 		var room_coord: Vector2i = room_coord_variant
@@ -367,6 +377,8 @@ static func advance_pending_enemy_spawns(game: Node, delta: float) -> void:
 	var spawn_budget_base: int = int(floor(float(game.ENEMY_SPAWN_FRAME_BUDGET) * 0.5))
 	var spawn_budget: int = maxi(1, spawn_budget_base)
 	var preview_budget: int = maxi(1, int(game.ENEMY_SPAWN_PREVIEW_FRAME_BUDGET))
+	var max_active_enemies: int = maxi(1, int(game.ENEMY_ACTIVE_CAP))
+	var active_enemy_total: int = active_enemy_count(game)
 	for pending_index in range(pending_spawns.size()):
 		var pending_spawn: Dictionary = pending_spawns[pending_index]
 		pending_spawn["delay_left"] = float(pending_spawn["delay_left"]) - delta
@@ -395,7 +407,9 @@ static func advance_pending_enemy_spawns(game: Node, delta: float) -> void:
 			pending_spawn["cluster_anchor"] = preview_anchor
 			pending_spawn["cluster_radius"] = preview_radius
 			pending_spawn["cluster_base_angle"] = preview_base_angle
-		if spawn_budget > 0 and int(pending_spawn["remaining"]) > 0 and float(pending_spawn["delay_left"]) <= 0.0:
+		if int(pending_spawn["remaining"]) > 0 and float(pending_spawn["delay_left"]) <= 0.0 and active_enemy_total >= max_active_enemies:
+			pending_spawn["delay_left"] = 0.0
+		if spawn_budget > 0 and active_enemy_total < max_active_enemies and int(pending_spawn["remaining"]) > 0 and float(pending_spawn["delay_left"]) <= 0.0:
 			var plan: Array = Array(pending_spawn.get("plan", []))
 			var positions: Array = Array(pending_spawn.get("positions", []))
 			var spawn_source: String = String(pending_spawn.get("spawn_source", "door_wave"))
@@ -409,6 +423,7 @@ static func advance_pending_enemy_spawns(game: Node, delta: float) -> void:
 				pending_spawn["remaining"] = int(pending_spawn["remaining"]) - 1
 				pending_spawn["delay_left"] = float(pending_spawn["delay_left"]) + float(pending_spawn["interval"])
 				spawn_budget -= 1
+				active_enemy_total += 1
 			else:
 				pending_spawn["remaining"] = 0
 		pending_spawns[pending_index] = pending_spawn
@@ -506,13 +521,14 @@ static func queue_pressure_spawn(game: Node, room_coord: Vector2i, count: int, m
 	var clustered_positions: Array = build_spawn_positions(game, room_coord, spawn_plan.size(), cluster_anchor, cluster_radius, cluster_base_angle)
 	var marker_lead: float = maxf(float(game.WAVE_PRESPAWN_MARKER_LEAD), 0.0)
 	var first_spawn_delay: float = maxf(float(game.CRYSTAL_PRESSURE_WARNING_DURATION), 0.0) + marker_lead
+	var per_enemy_interval: float = spawn_stagger_interval(game, "crystal_pressure")
 	game.rooms[room_coord]["warning_timer_left"] = maxf(float(game.rooms[room_coord].get("warning_timer_left", 0.0)), first_spawn_delay)
 	game.pending_enemy_spawns.append({
 		"room": room_coord,
 		"spawn_source": "crystal_pressure",
 		"remaining": spawn_plan.size(),
 		"delay_left": first_spawn_delay,
-		"interval": game.WAVE_STAGGER_ENEMY_INTERVAL,
+		"interval": per_enemy_interval,
 		"total_count": spawn_plan.size(),
 		"spawned": 0,
 		"plan": spawn_plan,

@@ -4,11 +4,17 @@ const GAME_INVENTORY_ITEM_FLOW: GDScript = preload("res://scripts/world/inventor
 const GAME_ENEMY_DEFS: GDScript = preload("res://scripts/content/game_enemy_defs.gd")
 const OPENED_DOOR_EVENT_BONUS_MIN: int = 7
 const OPENED_DOOR_EVENT_BONUS_MAX: int = 9
+const ROOM_OPENING_HUD_UPDATE_INTERVAL: float = 0.12
+const ROOM_OPENING_HUD_PERCENT_STEP: int = 5
+const ROOM_OPENING_LAST_HUD_UPDATE_META: StringName = &"room_opening_last_hud_update"
+const ROOM_OPENING_LAST_HUD_PERCENT_META: StringName = &"room_opening_last_hud_percent"
 
 static func start_room_opening(game: Node, room_coord: Vector2i, from_room: Vector2i) -> void:
 	game.opening_room = room_coord
 	game.opening_origin_room = from_room
 	game.opening_timer_left = game.DOOR_OPEN_DURATION
+	game.set_meta(ROOM_OPENING_LAST_HUD_UPDATE_META, 0.0)
+	game.set_meta(ROOM_OPENING_LAST_HUD_PERCENT_META, -1)
 	game.opening_heroes.clear()
 	if game.opening_hero != null and is_instance_valid(game.opening_hero):
 		game.opening_heroes.append(game.opening_hero)
@@ -32,8 +38,21 @@ static func advance_room_opening(game: Node, delta: float) -> void:
 		finish_room_opening(game)
 		return
 	var progress_ratio: float = 1.0 - (game.opening_timer_left / game.DOOR_OPEN_DURATION)
-	game.status_message = "Opening %s from %s. %d%%" % [game.room_title(game.opening_room), game.room_title(game.opening_origin_room), int(progress_ratio * 100.0)]
+	var progress_percent: int = clampi(int(progress_ratio * 100.0), 0, 99)
+	var last_hud_update_age: float = float(game.get_meta(ROOM_OPENING_LAST_HUD_UPDATE_META, 0.0)) + delta
+	var last_hud_percent: int = int(game.get_meta(ROOM_OPENING_LAST_HUD_PERCENT_META, -1))
+	var should_refresh_hud: bool = last_hud_update_age >= ROOM_OPENING_HUD_UPDATE_INTERVAL
+	if last_hud_percent < 0:
+		should_refresh_hud = true
+	elif progress_percent - last_hud_percent >= ROOM_OPENING_HUD_PERCENT_STEP:
+		should_refresh_hud = true
+	if not should_refresh_hud:
+		game.set_meta(ROOM_OPENING_LAST_HUD_UPDATE_META, last_hud_update_age)
+		return
+	game.status_message = "Opening %s from %s. %d%%" % [game.room_title(game.opening_room), game.room_title(game.opening_origin_room), progress_percent]
 	game.update_hud()
+	game.set_meta(ROOM_OPENING_LAST_HUD_UPDATE_META, 0.0)
+	game.set_meta(ROOM_OPENING_LAST_HUD_PERCENT_META, progress_percent)
 
 static func finish_room_opening(game: Node) -> void:
 	var breached_room: Vector2i = game.opening_room
@@ -43,6 +62,10 @@ static func finish_room_opening(game: Node) -> void:
 	game.opening_origin_room = game.INVALID_ROOM
 	game.opening_hero = null
 	game.opening_timer_left = 0.0
+	if game.has_meta(ROOM_OPENING_LAST_HUD_UPDATE_META):
+		game.remove_meta(ROOM_OPENING_LAST_HUD_UPDATE_META)
+	if game.has_meta(ROOM_OPENING_LAST_HUD_PERCENT_META):
+		game.remove_meta(ROOM_OPENING_LAST_HUD_PERCENT_META)
 	game.opening_heroes.clear()
 	for hero_variant in game.heroes:
 		var hero: Variant = hero_variant
@@ -582,6 +605,7 @@ static func open_room(game: Node, room_coord: Vector2i) -> void:
 	if room_coord != game.crystal_room:
 		game.spawn_ground_loot(room_coord)
 	game.refresh_camera_bounds()
+	game.queue_adjacent_room_prewarm(room_coord)
 	game.invalidate_static_dungeon_layer()
 	game.status_message = "Opened %s. Immediate reward +%d dust. Food/materials/arcana payout flagged for wave clear." % [
 		game.room_title(room_coord),

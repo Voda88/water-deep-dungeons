@@ -29,6 +29,8 @@ const OVERKILL_KNOCKBACK_FORCE_PER_DAMAGE: float = 18.0
 const OVERKILL_KNOCKBACK_MAX_FORCE: float = 620.0
 const OVERKILL_KNOCKBACK_DURATION_PER_DAMAGE: float = 0.008
 const OVERKILL_KNOCKBACK_MAX_DURATION: float = 0.34
+const OVERLAY_REDRAW_INTERVAL_DESKTOP: float = 1.0 / 30.0
+const OVERLAY_REDRAW_INTERVAL_MOBILE: float = 1.0 / 15.0
 
 static var enemy_sprite_frames_cache: Dictionary = {}
 
@@ -93,6 +95,7 @@ var familiar_swoop_direction: Vector2 = Vector2.RIGHT
 var familiar_swoop_bank_sign: float = 1.0
 var familiar_swoop_distance: float = FAMILIAR_ATTACK_SWOOP_DISTANCE
 var familiar_swoop_target_position: Vector2 = Vector2.ZERO
+var overlay_redraw_time_left: float = 0.0
 
 func _ready() -> void:
 	current_health = max_health
@@ -412,6 +415,39 @@ func set_destination(world_position: Vector2) -> void:
 		return
 	destination = world_position
 
+func overlay_redraw_interval() -> float:
+	var mobile_profile: bool = OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")
+	return OVERLAY_REDRAW_INTERVAL_MOBILE if mobile_profile else OVERLAY_REDRAW_INTERVAL_DESKTOP
+
+func has_dynamic_overlay_visuals() -> bool:
+	if enemy_role == TYPE_SPIRITUAL_WEAPON or bool(get_meta("temporary_summon", false)):
+		return true
+	if hold_person_time_left > 0.0:
+		return true
+	if fear_time_left > 0.0:
+		return true
+	if rooted_time_left > 0.0:
+		return true
+	if recovering_slow_time_left > 0.0:
+		return true
+	if flatfooted_time_left > 0.0:
+		return true
+	if converted_time_left > 0.0:
+		return true
+	return false
+
+func advance_overlay_redraw(delta: float, had_dynamic_before: bool) -> void:
+	var has_dynamic_now: bool = has_dynamic_overlay_visuals()
+	if not has_dynamic_now:
+		overlay_redraw_time_left = 0.0
+		if had_dynamic_before:
+			queue_redraw()
+		return
+	overlay_redraw_time_left = maxf(overlay_redraw_time_left - delta, 0.0)
+	if overlay_redraw_time_left <= 0.0:
+		overlay_redraw_time_left = overlay_redraw_interval()
+		queue_redraw()
+
 func melee_impact_delay() -> float:
 	var attack_frames: SpriteFrames = animated_sprite.sprite_frames if animated_sprite != null else null
 	var attack_fps: float = MELEE_ATTACK_FPS
@@ -719,6 +755,7 @@ func take_damage(amount: float, hit_direction: Vector2 = Vector2.ZERO) -> bool:
 	return false
 
 func _physics_process(delta: float) -> void:
+	var had_dynamic_overlay_before: bool = has_dynamic_overlay_visuals()
 	if death_started:
 		var corpse_impulse: Vector2 = advance_knockback(delta)
 		velocity = corpse_impulse
@@ -727,7 +764,7 @@ func _physics_process(delta: float) -> void:
 		if animated_sprite != null and animated_sprite.animation != "death":
 			animated_sprite.speed_scale = 1.0
 			animated_sprite.play("death")
-		queue_redraw()
+		advance_overlay_redraw(delta, had_dynamic_overlay_before)
 		return
 	attack_effect_left = maxf(attack_effect_left - delta, 0.0)
 	hurt_effect_left = maxf(hurt_effect_left - delta, 0.0)
@@ -748,7 +785,7 @@ func _physics_process(delta: float) -> void:
 			animated_sprite.position = Vector2.ZERO
 		var facing_offset: Vector2 = familiar_swoop_direction if familiar_swoop_time_left > 0.0 else Vector2.ZERO
 		update_sprite_state(facing_offset)
-		queue_redraw()
+		advance_overlay_redraw(delta, had_dynamic_overlay_before)
 		return
 	if recovering_slow_time_left <= 0.0 and recovering_slow_duration > 0.0:
 		recovering_slow_duration = 0.0
@@ -778,7 +815,7 @@ func _physics_process(delta: float) -> void:
 	if animated_sprite != null:
 		animated_sprite.position = Vector2.ZERO
 	update_sprite_state(offset if offset.length() > 0.0 else knockback_impulse)
-	queue_redraw()
+	advance_overlay_redraw(delta, had_dynamic_overlay_before)
 
 func summon_particle_primary_color() -> Color:
 	if has_meta("summon_particle_primary_color"):

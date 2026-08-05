@@ -5,6 +5,8 @@ const ROOM_TARGET_LOCK_ROOM_META: StringName = &"room_target_lock_room"
 const ROOM_TARGET_LOCK_ROOM_TARGETS_META: StringName = &"room_target_lock_room_targets"
 const ENEMY_AI_THINK_TIMER_META: StringName = &"enemy_ai_think_timer_left"
 const CONVERTED_TARGET_LOCK_ENEMY_UID_META: StringName = &"converted_target_lock_enemy_uid"
+const RANGED_TARGET_CACHE_FRAME_META: StringName = &"ranged_target_cache_frame"
+const RANGED_TARGET_CACHE_ACTOR_META: StringName = &"ranged_target_cache_actor"
 const FEAR_FLEE_DISTANCE: float = 240.0
 const TARGET_CATEGORY_RANGED: String = "ranged_target"
 const TARGET_CATEGORY_MELEE: String = "melee_target"
@@ -766,6 +768,23 @@ static func priority_hunter_target_hero(game: Node, enemy: Variant) -> Variant:
 		return choose_target_from_actor_candidates(game, enemy, room_heroes, priority_table)
 	return choose_path_target_from_actor_candidates(game, enemy, enemy_targetable_actor_candidates(game), priority_table)
 
+static func cached_ranged_target_hero(enemy: Variant) -> Variant:
+	if enemy == null or not is_instance_valid(enemy):
+		return null
+	var cached_frame: int = int(enemy.get_meta(RANGED_TARGET_CACHE_FRAME_META, -1))
+	if cached_frame != Engine.get_physics_frames():
+		return null
+	var cached_target: Variant = enemy.get_meta(RANGED_TARGET_CACHE_ACTOR_META, null)
+	if cached_target == null or not is_instance_valid(cached_target):
+		return null
+	return cached_target
+
+static func set_cached_ranged_target_hero(enemy: Variant, target: Variant) -> void:
+	if enemy == null or not is_instance_valid(enemy):
+		return
+	enemy.set_meta(RANGED_TARGET_CACHE_FRAME_META, Engine.get_physics_frames())
+	enemy.set_meta(RANGED_TARGET_CACHE_ACTOR_META, target if target != null and is_instance_valid(target) else null)
+
 static func orc_rider_target_hero(game: Node, enemy: Variant) -> Variant:
 	var room_target: Variant = locked_room_target_hero(game, enemy)
 	if room_target != null:
@@ -809,11 +828,18 @@ static func enemy_situational_speed_multiplier(game: Node, enemy: Variant) -> fl
 	return multiplier
 
 static func skeleton_archer_target_hero(game: Node, enemy: Variant) -> Variant:
+	var cached_target: Variant = cached_ranged_target_hero(enemy)
+	if hero_is_enemy_targetable(game, cached_target):
+		return cached_target
 	var room_heroes: Array = enemy_room_hero_candidates(game, enemy)
 	var priority_table: Dictionary = enemy_target_category_priority_for_role(game, String(enemy.enemy_role))
+	var resolved_target: Variant = null
 	if not room_heroes.is_empty():
-		return choose_target_from_actor_candidates(game, enemy, room_heroes, priority_table)
-	return choose_path_target_from_actor_candidates(game, enemy, enemy_targetable_actor_candidates(game), priority_table)
+		resolved_target = choose_target_from_actor_candidates(game, enemy, room_heroes, priority_table)
+	else:
+		resolved_target = choose_path_target_from_actor_candidates(game, enemy, enemy_targetable_actor_candidates(game), priority_table)
+	set_cached_ranged_target_hero(enemy, resolved_target)
+	return resolved_target
 
 static func skeleton_archer_goal_position(game: Node, enemy: Variant) -> Vector2:
 	var archer_target: Variant = skeleton_archer_target_hero(game, enemy)

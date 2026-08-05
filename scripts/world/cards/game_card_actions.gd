@@ -2190,6 +2190,19 @@ static func append_timed_effect_projectile(game: Node, effect_kind: String, worl
 		"width": 3.0,
 	})
 
+static func active_enemy_count_for_vfx_load(game: Node) -> int:
+	var active_count: int = 0
+	for enemy in game.enemies:
+		if game.enemy_is_active(enemy):
+			active_count += 1
+	return active_count
+
+static func use_light_enemy_blast_vfx(game: Node) -> bool:
+	var mobile_profile: bool = OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")
+	if mobile_profile:
+		return true
+	return active_enemy_count_for_vfx_load(game) >= 16
+
 static func explode_fireball_projectile(game: Node, projectile: Dictionary) -> void:
 	var room_coord: Vector2i = projectile.get("room", game.INVALID_ROOM)
 	var target_position: Vector2 = projectile.get("target_position", projectile.get("position", Vector2.ZERO))
@@ -2271,6 +2284,7 @@ static func explode_enemy_fireball(game: Node, room_coord: Vector2i, target_posi
 	var defeated_heroes: Array[String] = []
 	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
 		return defeated_heroes
+	var lightweight_vfx: bool = use_light_enemy_blast_vfx(game)
 	var hit_any: bool = false
 	for hero in game.heroes_in_room(room_coord):
 		if hero == null or not is_instance_valid(hero):
@@ -2303,12 +2317,15 @@ static func explode_enemy_fireball(game: Node, room_coord: Vector2i, target_posi
 		"color": Color("ff8558"),
 		"radius": impact_radius,
 		"impact_radius": impact_radius,
-		"lifetime_left": 0.22,
-		"blast_duration": 0.22,
-		"width": 5.0,
+		"lifetime_left": 0.14 if lightweight_vfx else 0.22,
+		"blast_duration": 0.14 if lightweight_vfx else 0.22,
+		"width": 3.6 if lightweight_vfx else 5.0,
 	})
-	append_timed_effect_projectile(game, "necromancer_attack_effect", target_position, Color("ff8558"), 0.34, 0.34)
-	game.add_resource_floating_text(target_position, "Blast" if hit_any else "Miss", Color("ff8558"))
+	if not lightweight_vfx:
+		append_timed_effect_projectile(game, "necromancer_attack_effect", target_position, Color("ff8558"), 0.34, 0.34)
+		game.add_resource_floating_text(target_position, "Blast" if hit_any else "Miss", Color("ff8558"))
+	elif game.rng.randf() < 0.2:
+		game.add_resource_floating_text(target_position, "Blast" if hit_any else "Miss", Color("ff8558"))
 	return defeated_heroes
 
 static func spawn_axe_card_projectile(game: Node, hero: Variant, target_world_position: Vector2, hand_card: Dictionary) -> void:

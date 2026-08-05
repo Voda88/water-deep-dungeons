@@ -251,6 +251,12 @@ static func draw_effect_strip(surface: CanvasItem, texture: Texture2D, frame_ind
 static func draw_room_spawn_warning_effects(game: Node, room_coord: Vector2i, view_rect: Rect2) -> void:
 	if NECROMANCER_ATTACK_EFFECT == null:
 		return
+	var active_enemy_total: int = 0
+	for enemy_variant in game.enemies:
+		if game.enemy_is_active(enemy_variant):
+			active_enemy_total += 1
+	if active_enemy_total >= maxi(1, int(game.ENEMY_ACTIVE_CAP)):
+		return
 	var marker_lead: float = maxf(float(game.WAVE_PRESPAWN_MARKER_LEAD), 0.0)
 	var effect_frame: int = animated_effect_frame_index(NECROMANCER_ATTACK_EFFECT, 0.052)
 	for pending_spawn_variant in game.pending_enemy_spawns:
@@ -260,6 +266,8 @@ static func draw_room_spawn_warning_effects(game: Node, room_coord: Vector2i, vi
 		var positions: Array = Array(pending_spawn.get("positions", []))
 		var spawned_count: int = int(pending_spawn.get("spawned", 0))
 		var delay_left: float = float(pending_spawn.get("delay_left", 0.0))
+		if delay_left > 0.0:
+			continue
 		var interval: float = maxf(float(pending_spawn.get("interval", game.WAVE_STAGGER_ENEMY_INTERVAL)), 0.0)
 		for spawn_index in range(spawned_count, positions.size()):
 			var index_offset: int = spawn_index - spawned_count
