@@ -112,7 +112,7 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 		"silver_gauntlet_toss_card":
 			return {
 				"id": "silver_gauntlet_toss_card",
-				"name": "Rage Throw",
+				"name": "Thrash Around",
 				"spell_level": 0,
 				"target_scope": "same_room",
 				"phase": "combat",
@@ -660,9 +660,9 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"radius": 17.0,
 				"pierce": 2,
 				"max_pierce": 3,
-				"knockback_force": 220.0,
-				"knockback_duration": 0.18,
-				"final_hit_knockback_multiplier": 1.9,
+				"knockback_force": 420.0,
+				"knockback_duration": 0.22,
+				"final_hit_knockback_multiplier": 2.15,
 				"combo_flatfooted_level_3_threshold": 3,
 				"combo_flatfooted_duration_level_3": 4.0,
 				"combo_flatfooted_damage_taken_multiplier_level_3": 1.55,

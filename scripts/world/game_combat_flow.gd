@@ -288,7 +288,7 @@ static func apply_fighter_rage_throw_buff_hit(game: Node, hero: Variant, enemy: 
 	hero.fighter_rage_throw_hits_left = maxi(hits_left - 1, 0)
 	if hero.fighter_rage_throw_hits_left <= 0:
 		hero.fighter_rage_throw_level = 0
-		game.add_resource_floating_text(hero.global_position + Vector2(0.0, -ROGUE_COMBO_POPUP_Y_OFFSET), "Rage Throw End", FIGHTER_RAGE_POPUP_COLOR)
+		game.add_resource_floating_text(hero.global_position + Vector2(0.0, -ROGUE_COMBO_POPUP_Y_OFFSET), "Thrash Around End", FIGHTER_RAGE_POPUP_COLOR)
 
 static func register_hero_enemy_hit(game: Node, hero: Variant, enemy: Variant, impact_direction: Vector2 = Vector2.RIGHT) -> void:
 	if hero == null or not is_instance_valid(hero) or enemy == null or not is_instance_valid(enemy):
@@ -1199,6 +1199,11 @@ static func apply_projectile_final_hit_bonus(game: Node, projectile: Dictionary,
 		var label_color: Color = Color(projectile.get("final_hit_label_color", projectile.get("color", Color("ffd27a"))))
 		game.add_resource_floating_text(impact_position + Vector2(0.0, -14.0), final_hit_label, label_color.lightened(0.18))
 
+static func projectile_total_knockback_force(projectile: Dictionary) -> float:
+	var base_knockback_force: float = maxf(float(projectile.get("knockback_force", 0.0)), 0.0)
+	var rage_bonus_knockback_force: float = maxf(float(projectile.get("mod_rage_knockback_force", 0.0)), 0.0)
+	return base_knockback_force + rage_bonus_knockback_force
+
 static func apply_card_projectile_hits(game: Node, projectile: Dictionary) -> void:
 	var projectile_kind: String = String(projectile.get("kind", ""))
 	var pierced_count: int = int(projectile.get("pierced_count", 0))
@@ -1294,12 +1299,11 @@ static func apply_card_projectile_hits(game: Node, projectile: Dictionary) -> vo
 			break
 		already_hit.append(int(enemy.enemy_uid))
 		pierced_count += 1
-		var base_knockback_force: float = maxf(float(projectile.get("knockback_force", 0.0)), 0.0)
-		var rage_bonus_knockback_force: float = maxf(float(projectile.get("mod_rage_knockback_force", 0.0)), 0.0)
+		var total_knockback_force: float = projectile_total_knockback_force(projectile)
 		var final_hit_knockback_multiplier: float = maxf(float(projectile.get("final_hit_knockback_multiplier", 1.0)), 1.0)
 		var base_knockback_duration: float = clampf(float(projectile.get("knockback_duration", 0.18)), 0.08, 0.5)
 		var final_hit: bool = pierced_count >= max_hits
-		var knockback_force: float = (base_knockback_force + rage_bonus_knockback_force) * (final_hit_knockback_multiplier if final_hit else 1.0)
+		var knockback_force: float = total_knockback_force * (final_hit_knockback_multiplier if final_hit else 1.0)
 		var knockback_duration: float = base_knockback_duration * (1.2 if final_hit else 1.0)
 		if knockback_force > 0.0:
 			game.knockback_actor(enemy, impact_direction, knockback_force, knockback_duration, enemy.current_room)
@@ -1936,7 +1940,7 @@ static func advance_projectiles(game: Node, delta: float) -> void:
 				if impact_direction_simple == Vector2.ZERO:
 					impact_direction_simple = Vector2.RIGHT
 				target.take_damage(float(projectile["damage"]), impact_direction_simple)
-				var direct_hit_knockback_force: float = maxf(float(projectile.get("knockback_force", 0.0)), 0.0)
+				var direct_hit_knockback_force: float = projectile_total_knockback_force(projectile)
 				if direct_hit_knockback_force > 0.0:
 					var direct_hit_knockback_duration: float = clampf(float(projectile.get("knockback_duration", 0.16)), 0.08, 0.5)
 					game.knockback_actor(target, impact_direction_simple, direct_hit_knockback_force, direct_hit_knockback_duration, target.current_room)

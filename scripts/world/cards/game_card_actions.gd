@@ -718,7 +718,7 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			return true
 		"silver_gauntlet_toss_card":
 			if not game.wave_in_progress():
-				game.status_message = "Rage Throw can only be used in combat."
+				game.status_message = "Thrash Around can only be used in combat."
 				return false
 			var toss_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
 			if toss_room == game.INVALID_ROOM or not game.rooms.has(toss_room):
@@ -1552,12 +1552,12 @@ static func cast_silver_gauntlet_toss(game: Node, hero: Variant, target_world_po
 	if hero == null or not is_instance_valid(hero):
 		return false
 	if target_room != hero.current_room:
-		game.status_message = "Rage Throw can only be used in your current room."
+		game.status_message = "Thrash Around can only be used in your current room."
 		return false
 	var rage_max: int = maxi(int(hero.fighter_rage_max), 1)
 	var rage_value: int = clampi(int(hero.fighter_rage), 0, rage_max)
 	if rage_value <= 0:
-		game.status_message = "%s needs Rage to use Rage Throw." % hero.hero_name
+		game.status_message = "%s needs Rage to use Thrash Around." % hero.hero_name
 		return false
 	var buff_hits: int = maxi(1, int(hand_card.get("rage_throw_buff_hits", 6)))
 	hero.fighter_rage_throw_level = rage_value
@@ -1566,8 +1566,8 @@ static func cast_silver_gauntlet_toss(game: Node, hero: Variant, target_world_po
 	hero.fighter_rage_hit_progress = 0
 	hero.trigger_attack(target_world_position, "melee")
 	append_timed_effect_projectile(game, "shield_flash", hero.global_position, Color(hand_card.get("color", Color("c5d4df"))), 0.2, 0.2)
-	game.add_resource_floating_text(hero.global_position, "Rage Throw x%d" % buff_hits, Color(hand_card.get("color", Color("c5d4df"))))
-	game.status_message = "%s primed Rage Throw: next %d hits use Rage %d throw knockback." % [hero.hero_name, buff_hits, rage_value]
+	game.add_resource_floating_text(hero.global_position, "Thrash Around x%d" % buff_hits, Color(hand_card.get("color", Color("c5d4df"))))
+	game.status_message = "%s primed Thrash Around: next %d hits use Rage %d throw knockback." % [hero.hero_name, buff_hits, rage_value]
 	return true
 
 static func cast_shield_bash(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary, card_modifiers: Dictionary = {}) -> bool:

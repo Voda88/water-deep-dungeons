@@ -110,7 +110,7 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 					{
 						"level": 1,
 						"name": "Rage",
-						"detail": "Gain 1 Rage whenever you are hit. Rage caps at 6. Your next physical card gains +5 damage per Rage, while Silver Gauntlets still use their own Rage throw scaling.",
+						"detail": "Gain 1 Rage whenever you are hit. Rage caps at 6. Your next physical card gains +5 damage per Rage, while Silver Gauntlets still use their own Thrash Around scaling.",
 					},
 				],
 			}
