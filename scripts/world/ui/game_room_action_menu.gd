@@ -677,26 +677,23 @@ static func draw_room_action_menu(game: Node) -> void:
 	if game.room_action_menu.is_empty():
 		return
 	var menu_center_screen: Vector2 = room_action_menu_screen_center(game)
-	var menu_center_world: Vector2 = game.screen_to_world(menu_center_screen)
 	var pointer_screen: Vector2 = room_action_menu_virtual_pointer_screen_position(game)
-	var pointer_world: Vector2 = game.screen_to_world(pointer_screen)
 	var hovered_action_id: String = room_action_button_at_screen_position(game, pointer_screen) if game.room_action_menu_hold_selection_active else ""
 	var overlay_scale: float = room_action_overlay_scale(game)
-	var menu_radius_world: float = game.ROOM_ACTION_MENU_RADIUS * overlay_scale * game.camera.zoom.x
-	var center_radius_world: float = game.ROOM_ACTION_DEADZONE_RADIUS * overlay_scale * game.camera.zoom.x
-	var sector_inner_radius_world: float = maxf(center_radius_world + 12.0 * overlay_scale * game.camera.zoom.x, 28.0 * overlay_scale * game.camera.zoom.x)
-	var sector_outer_radius_world: float = game.ROOM_ACTION_SECTOR_OUTER_RADIUS * overlay_scale * game.camera.zoom.x
-	game.draw_circle(menu_center_world, center_radius_world, Color("132129"))
-	game.draw_circle(menu_center_world, center_radius_world * 1.9, Color(0.07, 0.14, 0.17, 0.12))
-	game.draw_arc(menu_center_world, menu_radius_world * 0.68, 0.0, TAU, 58, Color("476775"), 2.8 * game.camera.zoom.x, true)
+	var menu_radius_screen: float = game.ROOM_ACTION_MENU_RADIUS * overlay_scale
+	var center_radius_screen: float = game.ROOM_ACTION_DEADZONE_RADIUS * overlay_scale
+	var sector_inner_radius_screen: float = maxf(center_radius_screen + 12.0 * overlay_scale, 28.0 * overlay_scale)
+	var sector_outer_radius_screen: float = game.ROOM_ACTION_SECTOR_OUTER_RADIUS * overlay_scale
+	game.draw_circle(menu_center_screen, center_radius_screen, Color("132129"))
+	game.draw_circle(menu_center_screen, center_radius_screen * 1.9, Color(0.07, 0.14, 0.17, 0.12))
+	game.draw_arc(menu_center_screen, menu_radius_screen * 0.68, 0.0, TAU, 58, Color("476775"), 2.8 * overlay_scale, true)
 	if game.room_action_menu_hold_selection_active:
-		game.draw_line(menu_center_world, pointer_world, Color("8fe7ff"), 3.6 * game.camera.zoom.x, true)
-		game.draw_circle(pointer_world, 12.0 * overlay_scale * game.camera.zoom.x, Color("eefbff"))
-		game.draw_circle(pointer_world, 20.0 * overlay_scale * game.camera.zoom.x, Color(0.72, 0.94, 1.0, 0.12))
+		game.draw_line(menu_center_screen, pointer_screen, Color("8fe7ff"), 3.6 * overlay_scale, true)
+		game.draw_circle(pointer_screen, 12.0 * overlay_scale, Color("eefbff"))
+		game.draw_circle(pointer_screen, 20.0 * overlay_scale, Color(0.72, 0.94, 1.0, 0.12))
 	for sector_data_variant in room_action_sector_layout(game):
 		var sector_data: Dictionary = sector_data_variant
 		var button_center_screen: Vector2 = room_action_button_screen_center(game, sector_data)
-		var button_center_world: Vector2 = game.screen_to_world(button_center_screen)
 		var action_id: String = String(sector_data.get("id", ""))
 		var enabled: bool = game.room_action_enabled(game.room_action_menu.get("room", game.INVALID_ROOM), action_id)
 		var fill: Color = sector_data.get("fill", Color("9ed4ff"))
@@ -705,36 +702,36 @@ static func draw_room_action_menu(game: Node) -> void:
 			fill = fill.darkened(0.5)
 		var highlighted: bool = hovered_action_id == action_id
 		var outline_color: Color = fill.lightened(0.18) if highlighted else fill
-		var outline_width: float = (4.8 if highlighted else 3.2) * game.camera.zoom.x
+		var outline_width: float = (4.8 if highlighted else 3.2) * overlay_scale
 		if not enabled:
 			outline_color = Color("8ea9b6") if highlighted else Color("5e6d75")
 		var start_angle: float = float(sector_data.get("start_angle", 0.0))
 		var end_angle: float = float(sector_data.get("end_angle", 0.0))
 		var fill_alpha: float = clampf(float(sector_data.get("fill_alpha", 0.24)), 0.0, 1.0)
 		var highlight_fill_alpha: float = clampf(float(sector_data.get("highlight_fill_alpha", fill_alpha + 0.04)), 0.0, 1.0)
-		var sector_points: PackedVector2Array = room_action_sector_points(game, menu_center_world, sector_inner_radius_world, sector_outer_radius_world, start_angle, end_angle)
+		var sector_points: PackedVector2Array = room_action_sector_points(game, menu_center_screen, sector_inner_radius_screen, sector_outer_radius_screen, start_angle, end_angle)
 		game.draw_colored_polygon(sector_points, Color(fill, fill_alpha if enabled else 0.12))
 		if highlighted:
-			var highlighted_points: PackedVector2Array = room_action_sector_points(game, menu_center_world, sector_inner_radius_world + 10.0 * overlay_scale * game.camera.zoom.x, sector_outer_radius_world - 10.0 * overlay_scale * game.camera.zoom.x, start_angle, end_angle)
+			var highlighted_points: PackedVector2Array = room_action_sector_points(game, menu_center_screen, sector_inner_radius_screen + 10.0 * overlay_scale, sector_outer_radius_screen - 10.0 * overlay_scale, start_angle, end_angle)
 			var highlight_tint: Color = (base_fill if enabled else Color("8ea9b6")).lightened(0.14)
 			game.draw_colored_polygon(highlighted_points, Color(highlight_tint, highlight_fill_alpha if enabled else 0.18))
-		game.draw_arc(menu_center_world, sector_outer_radius_world, start_angle, end_angle, 18, outline_color, outline_width, true)
-		game.draw_arc(menu_center_world, sector_inner_radius_world, start_angle, end_angle, 18, outline_color, outline_width * 0.85, true)
-		game.draw_line(menu_center_world + Vector2(cos(start_angle), sin(start_angle)) * sector_inner_radius_world, menu_center_world + Vector2(cos(start_angle), sin(start_angle)) * sector_outer_radius_world, outline_color, outline_width * 0.8, true)
-		game.draw_line(menu_center_world + Vector2(cos(end_angle), sin(end_angle)) * sector_inner_radius_world, menu_center_world + Vector2(cos(end_angle), sin(end_angle)) * sector_outer_radius_world, outline_color, outline_width * 0.8, true)
+		game.draw_arc(menu_center_screen, sector_outer_radius_screen, start_angle, end_angle, 18, outline_color, outline_width, true)
+		game.draw_arc(menu_center_screen, sector_inner_radius_screen, start_angle, end_angle, 18, outline_color, outline_width * 0.85, true)
+		game.draw_line(menu_center_screen + Vector2(cos(start_angle), sin(start_angle)) * sector_inner_radius_screen, menu_center_screen + Vector2(cos(start_angle), sin(start_angle)) * sector_outer_radius_screen, outline_color, outline_width * 0.8, true)
+		game.draw_line(menu_center_screen + Vector2(cos(end_angle), sin(end_angle)) * sector_inner_radius_screen, menu_center_screen + Vector2(cos(end_angle), sin(end_angle)) * sector_outer_radius_screen, outline_color, outline_width * 0.8, true)
 		var label_text: String = String(sector_data.get("label", ""))
 		var label_rows: PackedStringArray = label_text.split("\n", false)
-		var single_line_width: float = 148.0 * overlay_scale * game.camera.zoom.x
-		var multiline_row_width: float = 160.0 * overlay_scale * game.camera.zoom.x
+		var single_line_width: float = 148.0 * overlay_scale
+		var multiline_row_width: float = 160.0 * overlay_scale
 		if label_rows.size() <= 1:
-			var single_position: Vector2 = Vector2(button_center_world.x - single_line_width * 0.5, button_center_world.y + 8.0 * overlay_scale * game.camera.zoom.x)
-			game.draw_string(ThemeDB.fallback_font, single_position, label_text, HORIZONTAL_ALIGNMENT_CENTER, single_line_width, int(round(22.0 * overlay_scale * game.camera.zoom.x)), Color("eef8ff"))
+			var single_position: Vector2 = Vector2(button_center_screen.x - single_line_width * 0.5, button_center_screen.y + 8.0 * overlay_scale)
+			game.draw_string(ThemeDB.fallback_font, single_position, label_text, HORIZONTAL_ALIGNMENT_CENTER, single_line_width, int(round(22.0 * overlay_scale)), Color("eef8ff"))
 			continue
-		var row_spacing: float = 14.0 * overlay_scale * game.camera.zoom.x
-		var row_anchor_y: float = button_center_world.y + 4.0 * overlay_scale * game.camera.zoom.x
+		var row_spacing: float = 14.0 * overlay_scale
+		var row_anchor_y: float = button_center_screen.y + 4.0 * overlay_scale
 		var row_start_y: float = row_anchor_y - row_spacing * float(label_rows.size() - 1) * 0.5
 		for row_index in range(label_rows.size()):
 			var row_text: String = String(label_rows[row_index])
-			var row_font_size: int = int(round((18.0 if row_index == 0 else 16.0) * overlay_scale * game.camera.zoom.x))
-			var row_position: Vector2 = Vector2(button_center_world.x - multiline_row_width * 0.5, row_start_y + row_spacing * float(row_index))
+			var row_font_size: int = int(round((18.0 if row_index == 0 else 16.0) * overlay_scale))
+			var row_position: Vector2 = Vector2(button_center_screen.x - multiline_row_width * 0.5, row_start_y + row_spacing * float(row_index))
 			game.draw_string(ThemeDB.fallback_font, row_position, row_text, HORIZONTAL_ALIGNMENT_CENTER, multiline_row_width, row_font_size, Color("eef8ff"))
