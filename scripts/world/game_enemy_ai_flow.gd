@@ -7,6 +7,8 @@ const ENEMY_AI_THINK_TIMER_META: StringName = &"enemy_ai_think_timer_left"
 const CONVERTED_TARGET_LOCK_ENEMY_UID_META: StringName = &"converted_target_lock_enemy_uid"
 const RANGED_TARGET_CACHE_FRAME_META: StringName = &"ranged_target_cache_frame"
 const RANGED_TARGET_CACHE_ACTOR_META: StringName = &"ranged_target_cache_actor"
+const MELEE_TARGET_CACHE_FRAME_META: StringName = &"melee_target_cache_frame"
+const MELEE_TARGET_CACHE_ACTOR_META: StringName = &"melee_target_cache_actor"
 const FEAR_FLEE_DISTANCE: float = 240.0
 const TARGET_CATEGORY_RANGED: String = "ranged_target"
 const TARGET_CATEGORY_MELEE: String = "melee_target"
@@ -16,12 +18,9 @@ const TARGET_CATEGORY_GENERATOR_CRYSTAL: String = "generator_crystal"
 
 static func adaptive_enemy_ai_think_interval(game: Node, active_enemy_count: int) -> float:
 	if active_enemy_count < int(game.ENEMY_AI_THINK_THRESHOLD):
-		return 0.0
+		return float(game.ENEMY_AI_THINK_INTERVAL_BASE)
 	var heavy_load: bool = active_enemy_count >= int(game.ENEMY_AI_THINK_HEAVY_THRESHOLD)
-	var mobile_profile: bool = OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")
-	if mobile_profile:
-		return float(game.ENEMY_AI_THINK_INTERVAL_HEAVY_MOBILE) if heavy_load else float(game.ENEMY_AI_THINK_INTERVAL_MOBILE)
-	return float(game.ENEMY_AI_THINK_INTERVAL_HEAVY_DESKTOP) if heavy_load else float(game.ENEMY_AI_THINK_INTERVAL_DESKTOP)
+	return float(game.ENEMY_AI_THINK_INTERVAL_HEAVY) if heavy_load else float(game.ENEMY_AI_THINK_INTERVAL)
 
 static func room_has_active_major_module(game: Node, room_coord: Vector2i) -> bool:
 	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
@@ -785,19 +784,48 @@ static func set_cached_ranged_target_hero(enemy: Variant, target: Variant) -> vo
 	enemy.set_meta(RANGED_TARGET_CACHE_FRAME_META, Engine.get_physics_frames())
 	enemy.set_meta(RANGED_TARGET_CACHE_ACTOR_META, target if target != null and is_instance_valid(target) else null)
 
+static func cached_melee_target_hero(enemy: Variant) -> Variant:
+	if enemy == null or not is_instance_valid(enemy):
+		return null
+	var cached_frame: int = int(enemy.get_meta(MELEE_TARGET_CACHE_FRAME_META, -1))
+	if cached_frame != Engine.get_physics_frames():
+		return null
+	var cached_target: Variant = enemy.get_meta(MELEE_TARGET_CACHE_ACTOR_META, null)
+	if cached_target == null or not is_instance_valid(cached_target):
+		return null
+	return cached_target
+
+static func set_cached_melee_target_hero(enemy: Variant, target: Variant) -> void:
+	if enemy == null or not is_instance_valid(enemy):
+		return
+	enemy.set_meta(MELEE_TARGET_CACHE_FRAME_META, Engine.get_physics_frames())
+	enemy.set_meta(MELEE_TARGET_CACHE_ACTOR_META, target if target != null and is_instance_valid(target) else null)
+
 static func orc_rider_target_hero(game: Node, enemy: Variant) -> Variant:
+	var cached_target: Variant = cached_melee_target_hero(enemy)
+	if hero_is_enemy_targetable(game, cached_target):
+		return cached_target
 	var room_target: Variant = locked_room_target_hero(game, enemy)
 	if room_target != null:
+		set_cached_melee_target_hero(enemy, room_target)
 		return room_target
 	var priority_table: Dictionary = enemy_target_category_priority_for_role(game, String(enemy.enemy_role))
-	return choose_path_target_from_actor_candidates(game, enemy, enemy_targetable_actor_candidates(game), priority_table)
+	var resolved_target: Variant = choose_path_target_from_actor_candidates(game, enemy, enemy_targetable_actor_candidates(game), priority_table)
+	set_cached_melee_target_hero(enemy, resolved_target)
+	return resolved_target
 
 static func orc_target_hero(game: Node, enemy: Variant) -> Variant:
+	var cached_target: Variant = cached_melee_target_hero(enemy)
+	if hero_is_enemy_targetable(game, cached_target):
+		return cached_target
 	var room_target: Variant = locked_room_target_hero(game, enemy)
 	if room_target != null:
+		set_cached_melee_target_hero(enemy, room_target)
 		return room_target
 	var priority_table: Dictionary = enemy_target_category_priority_for_role(game, String(enemy.enemy_role))
-	return choose_path_target_from_actor_candidates(game, enemy, enemy_targetable_actor_candidates(game), priority_table)
+	var resolved_target: Variant = choose_path_target_from_actor_candidates(game, enemy, enemy_targetable_actor_candidates(game), priority_table)
+	set_cached_melee_target_hero(enemy, resolved_target)
+	return resolved_target
 
 static func wraith_target_hero(game: Node, enemy: Variant) -> Variant:
 	return skeleton_archer_target_hero(game, enemy)
@@ -814,9 +842,12 @@ static func enemy_situational_speed_multiplier(game: Node, enemy: Variant) -> fl
 	if enemy == null or not is_instance_valid(enemy):
 		return 1.0
 	var room_coord: Vector2i = enemy.current_room
-	var has_heroes: bool = room_coord != game.INVALID_ROOM and not enemy_targetable_heroes_in_room(game, room_coord).is_empty()
+	var role: String = String(enemy.enemy_role)
+	var has_heroes: bool = false
+	if role == game.ENEMY_TYPE_ORC or role == game.ENEMY_TYPE_BAT:
+		has_heroes = room_coord != game.INVALID_ROOM and not enemy_targetable_heroes_in_room(game, room_coord).is_empty()
 	var multiplier: float = 1.0
-	match String(enemy.enemy_role):
+	match role:
 		game.ENEMY_TYPE_ORC:
 			multiplier = 0.72 if has_heroes else 1.0
 		game.ENEMY_TYPE_BAT:

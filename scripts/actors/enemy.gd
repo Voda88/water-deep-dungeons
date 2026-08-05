@@ -205,6 +205,10 @@ func apply_role_visuals() -> void:
 		animated_sprite.modulate = Color.WHITE.lerp(body_color, 0.16)
 	animated_sprite.scale = Vector2.ONE * role_scale()
 
+func should_reduce_animations() -> bool:
+	var host: Node = get_parent()
+	return host != null and host.has_method("animations_reduced_mode_active") and bool(host.call("animations_reduced_mode_active"))
+
 func is_find_familiar_summon() -> bool:
 	if not bool(get_meta("temporary_summon", false)):
 		return false
@@ -271,6 +275,13 @@ func update_sprite_state(move_offset: Vector2) -> void:
 		return
 	update_visual_facing(move_offset)
 	var animation_name: String = desired_sprite_animation(move_offset)
+	if should_reduce_animations() and animation_name != "death":
+		if animated_sprite.animation != animation_name:
+			animated_sprite.animation = animation_name
+		animated_sprite.speed_scale = 1.0
+		animated_sprite.stop()
+		animated_sprite.frame = 0
+		return
 	if animated_sprite.animation != animation_name:
 		animated_sprite.play(animation_name)
 	elif not animated_sprite.is_playing():
@@ -864,12 +875,15 @@ func draw_summon_particles(primary_color: Color, secondary_color: Color) -> void
 
 func _draw() -> void:
 	var has_summon_particles: bool = enemy_role == TYPE_SPIRITUAL_WEAPON or bool(get_meta("temporary_summon", false))
+	var reduced_animations: bool = should_reduce_animations()
 	if enemy_role != TYPE_SPIRITUAL_WEAPON:
 		var health_ratio: float = clampf(current_health / maxf(max_health, 0.001), 0.0, 1.0)
 		draw_rect(Rect2(Vector2(-18.0, -31.0), Vector2(36.0, 4.0)), Color(0.08, 0.1, 0.11, 0.9), true)
 		draw_rect(Rect2(Vector2(-18.0, -31.0), Vector2(36.0 * health_ratio, 4.0)), Color(0.98, 0.48, 0.42, 0.95), true)
-	if has_summon_particles:
+	if has_summon_particles and not reduced_animations:
 		draw_summon_particles(summon_particle_primary_color(), summon_particle_secondary_color())
+	elif has_summon_particles:
+		draw_arc(Vector2.ZERO, 16.0, 0.0, TAU, 18, Color(0.88, 0.96, 1.0, 0.55), 1.4, true)
 	if rooted_time_left > 0.0:
 		draw_circle(Vector2(0.0, 2.0), 22.0, Color(0.84, 0.92, 1.0, 0.08))
 		draw_arc(Vector2(0.0, 2.0), 19.0, 0.0, TAU, 20, Color(0.92, 0.98, 1.0, 0.7), 1.8, true)
@@ -881,25 +895,29 @@ func _draw() -> void:
 		draw_arc(Vector2.ZERO, 25.0, PI * 0.2, PI * 1.8, 24, Color(1.0, 0.88, 0.55, 0.86), 2.2, true)
 		draw_circle(Vector2.ZERO, 16.5, Color(1.0, 0.84, 0.38, 0.07 + 0.12 * flatfooted_strength()))
 	if hold_person_time_left > 0.0:
-		var hold_ratio: float = hold_person_strength()
-		var hold_time: float = float(Time.get_ticks_msec()) / 1000.0
-		var hold_pulse: float = 0.5 + 0.5 * sin(hold_time * 8.4)
-		var outer_radius: float = 27.0 + hold_pulse * 2.6
-		var inner_radius: float = 17.5 + hold_pulse * 1.8
-		draw_circle(Vector2.ZERO, 22.0 + hold_pulse * 1.8, Color(0.83, 0.68, 1.0, 0.12 + 0.16 * hold_ratio))
-		draw_arc(Vector2.ZERO, outer_radius, hold_time * 2.1, hold_time * 2.1 + PI * 1.32, 30, Color(0.92, 0.82, 1.0, 0.9), 2.5, true)
-		draw_arc(Vector2.ZERO, outer_radius, hold_time * -2.4 + PI, hold_time * -2.4 + PI + PI * 1.32, 30, Color(0.79, 0.63, 1.0, 0.86), 2.0, true)
-		draw_arc(Vector2.ZERO, inner_radius, hold_time * 3.2 + PI * 0.1, hold_time * 3.2 + PI * 1.7, 26, Color(0.95, 0.91, 1.0, 0.76), 1.5, true)
-		for sigil_index in range(8):
-			var sigil_seed: float = float(sigil_index)
-			var sigil_angle: float = hold_time * (2.4 + sigil_seed * 0.04) + sigil_seed * (TAU / 8.0)
-			var sigil_radius: float = 19.0 + 4.0 * sin(hold_time * 4.2 + sigil_seed * 1.13)
-			var sigil_position: Vector2 = Vector2(cos(sigil_angle), sin(sigil_angle)) * sigil_radius
-			sigil_position.y *= 0.78
-			var sigil_alpha: float = 0.34 + 0.28 * (0.5 + 0.5 * sin(hold_time * 6.8 + sigil_seed * 1.77))
-			draw_circle(sigil_position, 1.6 + hold_pulse * 0.9, Color(0.96, 0.89, 1.0, sigil_alpha))
-			var tangent: Vector2 = Vector2(-sin(sigil_angle), cos(sigil_angle))
-			draw_line(sigil_position - tangent * 2.3, sigil_position + tangent * 2.3, Color(0.84, 0.72, 1.0, sigil_alpha * 0.7), 1.2, true)
+		if reduced_animations:
+			draw_circle(Vector2.ZERO, 21.0, Color(0.84, 0.70, 1.0, 0.16))
+			draw_arc(Vector2.ZERO, 25.0, 0.0, TAU, 22, Color(0.92, 0.82, 1.0, 0.84), 2.2, true)
+		else:
+			var hold_ratio: float = hold_person_strength()
+			var hold_time: float = float(Time.get_ticks_msec()) / 1000.0
+			var hold_pulse: float = 0.5 + 0.5 * sin(hold_time * 8.4)
+			var outer_radius: float = 27.0 + hold_pulse * 2.6
+			var inner_radius: float = 17.5 + hold_pulse * 1.8
+			draw_circle(Vector2.ZERO, 22.0 + hold_pulse * 1.8, Color(0.83, 0.68, 1.0, 0.12 + 0.16 * hold_ratio))
+			draw_arc(Vector2.ZERO, outer_radius, hold_time * 2.1, hold_time * 2.1 + PI * 1.32, 30, Color(0.92, 0.82, 1.0, 0.9), 2.5, true)
+			draw_arc(Vector2.ZERO, outer_radius, hold_time * -2.4 + PI, hold_time * -2.4 + PI + PI * 1.32, 30, Color(0.79, 0.63, 1.0, 0.86), 2.0, true)
+			draw_arc(Vector2.ZERO, inner_radius, hold_time * 3.2 + PI * 0.1, hold_time * 3.2 + PI * 1.7, 26, Color(0.95, 0.91, 1.0, 0.76), 1.5, true)
+			for sigil_index in range(8):
+				var sigil_seed: float = float(sigil_index)
+				var sigil_angle: float = hold_time * (2.4 + sigil_seed * 0.04) + sigil_seed * (TAU / 8.0)
+				var sigil_radius: float = 19.0 + 4.0 * sin(hold_time * 4.2 + sigil_seed * 1.13)
+				var sigil_position: Vector2 = Vector2(cos(sigil_angle), sin(sigil_angle)) * sigil_radius
+				sigil_position.y *= 0.78
+				var sigil_alpha: float = 0.34 + 0.28 * (0.5 + 0.5 * sin(hold_time * 6.8 + sigil_seed * 1.77))
+				draw_circle(sigil_position, 1.6 + hold_pulse * 0.9, Color(0.96, 0.89, 1.0, sigil_alpha))
+				var tangent: Vector2 = Vector2(-sin(sigil_angle), cos(sigil_angle))
+				draw_line(sigil_position - tangent * 2.3, sigil_position + tangent * 2.3, Color(0.84, 0.72, 1.0, sigil_alpha * 0.7), 1.2, true)
 	if fear_time_left > 0.0:
 		var fear_ratio: float = fear_strength()
 		draw_arc(Vector2.ZERO, 30.0, -PI * 0.85, PI * 0.85, 26, Color(0.86, 0.64, 1.0, 0.88), 2.0, true)

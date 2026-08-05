@@ -157,11 +157,14 @@ const ENEMY_SPAWN_FRAME_GAP: int = 5
 const ENEMY_ACTIVE_CAP: int = 20
 const ENEMY_AI_THINK_THRESHOLD: int = 20
 const ENEMY_AI_THINK_HEAVY_THRESHOLD: int = 32
-const ENEMY_AI_THINK_INTERVAL_DESKTOP: float = 0.035
-const ENEMY_AI_THINK_INTERVAL_HEAVY_DESKTOP: float = 0.06
-const ENEMY_AI_THINK_INTERVAL_MOBILE: float = 0.075
-const ENEMY_AI_THINK_INTERVAL_HEAVY_MOBILE: float = 0.12
+const ENEMY_AI_THINK_INTERVAL_BASE: float = 0.02
+const ENEMY_AI_THINK_INTERVAL: float = 0.055
+const ENEMY_AI_THINK_INTERVAL_HEAVY: float = 0.1
 const MOBILE_WORLD_REDRAW_INTERVAL: float = 1.0 / 30.0
+const LOW_FPS_ANIMATION_DISABLE_THRESHOLD: float = 26.0
+const LOW_FPS_ANIMATION_RESTORE_THRESHOLD: float = 34.0
+const LOW_FPS_ANIMATION_DISABLE_HOLD: float = 0.45
+const LOW_FPS_ANIMATION_RESTORE_HOLD: float = 1.2
 const CRYSTAL_DUST_DAMAGE_BASE_HIT: float = 0.25
 const CRYSTAL_PRESSURE_PICKUP_DELAY: float = 2.0
 const CRYSTAL_PRESSURE_INTERVAL: float = 4.0
@@ -208,8 +211,6 @@ const CAMERA_PAN_DRAG_MULTIPLIER: float = 1.52
 const CAMERA_SOFT_FOLLOW_OFFSET: Vector2 = Vector2(0.0, -70.0)
 const CAMERA_BOUNDS_PADDING: Vector2 = Vector2(360.0, 320.0)
 const CAMERA_DISCOVERED_PAN_SLACK: Vector2 = Vector2(220.0, 180.0)
-const CAMERA_LIGHTWEIGHT_OVERLAY_SPEED_THRESHOLD: float = 150.0
-const CAMERA_LIGHTWEIGHT_OVERLAY_HOLD: float = 0.14
 const HERO_SELECTION_RADIUS: float = 72.0
 const CALM_SPEED_OPTIONS: Array = [1, 2, 5, 10]
 const CARD_HAND_CARD_SIZE: Vector2 = Vector2(64.0, 88.0)
@@ -341,8 +342,9 @@ var lobby_peer_ready: Dictionary = {}
 var lobby_game_started: bool = false
 var network_snapshot_timer: float = 0.0
 var mobile_world_redraw_time_left: float = 0.0
-var camera_last_global_position: Vector2 = Vector2.INF
-var camera_overlay_lightweight_time_left: float = 0.0
+var low_fps_animation_mode_enabled: bool = false
+var low_fps_below_threshold_time: float = 0.0
+var low_fps_above_threshold_time: float = 0.0
 var calm_speed_bar: HBoxContainer = null
 var calm_speed_buttons: Array = []
 var calm_speed_option_index: int = 1
@@ -493,32 +495,49 @@ func _process(delta: float) -> void:
 	advance_ui_button_hold(delta)
 	advance_hand_card_return_animations(delta)
 	advance_camera(delta)
-	update_camera_overlay_quality_mode(delta)
+	update_low_fps_animation_mode(delta)
 	if should_queue_world_redraw(delta):
 		queue_redraw()
 
-func update_camera_overlay_quality_mode(delta: float) -> void:
-	var mobile_profile: bool = OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")
-	if camera == null:
-		camera_last_global_position = Vector2.INF
-		camera_overlay_lightweight_time_left = 0.0
+func update_low_fps_animation_mode(delta: float) -> void:
+	if delta <= 0.0:
 		return
-	if not mobile_profile:
-		camera_last_global_position = camera.global_position
-		camera_overlay_lightweight_time_left = 0.0
+	var fps: float = Engine.get_frames_per_second()
+	if fps <= 0.0:
 		return
-	var move_speed: float = 0.0
-	if camera_last_global_position != Vector2.INF and delta > 0.0001:
-		move_speed = camera.global_position.distance_to(camera_last_global_position) / delta
-	camera_last_global_position = camera.global_position
-	var interaction_moving: bool = touch_dragging or mouse_dragging or pinch_active or room_action_camera_target_active or not room_action_menu.is_empty()
-	if interaction_moving or move_speed >= CAMERA_LIGHTWEIGHT_OVERLAY_SPEED_THRESHOLD:
-		camera_overlay_lightweight_time_left = CAMERA_LIGHTWEIGHT_OVERLAY_HOLD
+	if low_fps_animation_mode_enabled:
+		if fps >= LOW_FPS_ANIMATION_RESTORE_THRESHOLD:
+			low_fps_above_threshold_time += delta
+			if low_fps_above_threshold_time >= LOW_FPS_ANIMATION_RESTORE_HOLD:
+				low_fps_animation_mode_enabled = false
+				low_fps_above_threshold_time = 0.0
+				low_fps_below_threshold_time = 0.0
+		else:
+			low_fps_above_threshold_time = 0.0
 		return
-	camera_overlay_lightweight_time_left = maxf(camera_overlay_lightweight_time_left - delta, 0.0)
+	if fps <= LOW_FPS_ANIMATION_DISABLE_THRESHOLD:
+		low_fps_below_threshold_time += delta
+		if low_fps_below_threshold_time >= LOW_FPS_ANIMATION_DISABLE_HOLD:
+			low_fps_animation_mode_enabled = true
+			low_fps_below_threshold_time = 0.0
+			low_fps_above_threshold_time = 0.0
+	else:
+		low_fps_below_threshold_time = 0.0
 
-func camera_overlay_lightweight_mode_active() -> bool:
-	return camera_overlay_lightweight_time_left > 0.0
+func animations_reduced_mode_active() -> bool:
+	return low_fps_animation_mode_enabled
+
+func active_enemy_runtime_count() -> int:
+	var count: int = 0
+	for enemy_variant in enemies:
+		if enemy_is_active(enemy_variant):
+			count += 1
+	return count
+
+func performance_overlay_text() -> String:
+	var fps: int = int(round(Engine.get_frames_per_second()))
+	var animation_mode_label: String = "FX:REDUCED" if animations_reduced_mode_active() else "FX:FULL"
+	return "FPS %d | %s | EN %d/%d" % [fps, animation_mode_label, active_enemy_runtime_count(), ENEMY_ACTIVE_CAP]
 
 func should_queue_world_redraw(delta: float) -> bool:
 	var mobile_profile: bool = OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")

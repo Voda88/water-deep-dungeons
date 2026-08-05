@@ -258,6 +258,10 @@ func apply_sprite_tint() -> void:
 	var buff_tint: Color = active_food_buff_tint()
 	animated_sprite.modulate = Color(base_tint.r * buff_tint.r, base_tint.g * buff_tint.g, base_tint.b * buff_tint.b, base_tint.a)
 
+func should_reduce_animations() -> bool:
+	var host: Node = get_parent()
+	return host != null and host.has_method("animations_reduced_mode_active") and bool(host.call("animations_reduced_mode_active"))
+
 func desired_sprite_animation(move_offset: Vector2) -> String:
 	if dead_started:
 		return "death"
@@ -312,6 +316,13 @@ func should_play_attack_animation_backwards(animation_name: String) -> bool:
 
 func play_animation_with_current_mode(animation_name: String) -> void:
 	if animated_sprite == null:
+		return
+	if should_reduce_animations() and animation_name != "death":
+		animated_sprite.speed_scale = 1.0
+		if animated_sprite.animation != animation_name:
+			animated_sprite.animation = animation_name
+		animated_sprite.stop()
+		animated_sprite.frame = 0
 		return
 	var speed_value: float = animation_speed_scale_for(animation_name)
 	if should_play_attack_animation_backwards(animation_name):
@@ -831,12 +842,24 @@ func _physics_process(delta: float) -> void:
 func _draw() -> void:
 	if permanently_hidden_dead:
 		return
+	var reduced_animations: bool = should_reduce_animations()
 	# Keep class-based names like "Fighter 1" visible and centered under the sprite.
 	var name_max_width: float = 140.0
 	draw_string(ThemeDB.fallback_font, Vector2(-name_max_width * 0.5, 34.0), hero_name, HORIZONTAL_ALIGNMENT_CENTER, name_max_width, 15, Color("f4fbff"))
 	var health_ratio: float = current_health / maxf(max_health, 0.001)
 	draw_rect(Rect2(Vector2(-22.0, -38.0), Vector2(44.0, 6.0)), Color("1a2225"), true)
 	draw_rect(Rect2(Vector2(-22.0, -38.0), Vector2(44.0 * health_ratio, 6.0)), Color("8df4b2"), true)
+	if carrying_crystal:
+		draw_colored_polygon(PackedVector2Array([
+			Vector2(0.0, -52.0),
+			Vector2(12.0, -36.0),
+			Vector2(0.0, -20.0),
+			Vector2(-12.0, -36.0),
+		]), Color("ffe7a1"))
+	if selected:
+		draw_arc(Vector2.ZERO, 28.0, 0.0, TAU, 48, Color("f8ff7a"), 4.0, true)
+	if reduced_animations:
+		return
 	if evasive_roll_time_left > 0.0 and absf(evasive_roll_spin_speed) <= 0.001:
 		var dash_pulse: float = 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.026)
 		var dash_radius: float = 26.0 + 4.0 * dash_pulse
@@ -884,13 +907,6 @@ func _draw() -> void:
 			var charge_outer: float = 8.0 + 1.4 * pulse
 			draw_circle(head_center, charge_outer + 3.0, Color(0.92, 0.83, 0.56, 0.16 + 0.08 * pulse))
 			draw_arc(head_center, charge_outer, 0.0, TAU, 24, Color(1.0, 0.92, 0.66, 0.74), 1.6, true)
-	if carrying_crystal:
-		draw_colored_polygon(PackedVector2Array([
-			Vector2(0.0, -52.0),
-			Vector2(12.0, -36.0),
-			Vector2(0.0, -20.0),
-			Vector2(-12.0, -36.0),
-		]), Color("ffe7a1"))
 	if attack_effect_left > 0.0:
 		var pulse: float = attack_effect_left / 0.32
 		match attack_style:
@@ -899,5 +915,3 @@ func _draw() -> void:
 				draw_circle(attack_direction * 18.0, 4.0 + 3.0 * pulse, Color("fff1a8"))
 			_:
 				draw_arc(Vector2.ZERO, 30.0, attack_direction.angle() - 0.45, attack_direction.angle() + 0.45, 16, Color("fff1a8"), 4.0, true)
-	if selected:
-		draw_arc(Vector2.ZERO, 28.0, 0.0, TAU, 48, Color("f8ff7a"), 4.0, true)

@@ -19,14 +19,34 @@ const PROJECTILE_AIM_PREVIEW_CARD_IDS: Dictionary = {
 }
 
 static func _draw(game: Node) -> void:
-	var lightweight_camera_mode: bool = game.has_method("camera_overlay_lightweight_mode_active") and bool(game.camera_overlay_lightweight_mode_active())
-	draw_room_overlays(game, lightweight_camera_mode)
+	var reduce_animations: bool = game.has_method("animations_reduced_mode_active") and bool(game.animations_reduced_mode_active())
+	draw_room_overlays(game, reduce_animations)
 	draw_active_hand_card_target_preview(game)
-	if not lightweight_camera_mode:
+	if not reduce_animations:
 		draw_floating_resource_texts(game)
 	game.draw_room_action_hold()
 	game.draw_room_action_menu()
 	game.draw_combat_hand()
+	draw_performance_overlay(game, reduce_animations)
+
+static func draw_performance_overlay(game: Node, reduce_animations: bool) -> void:
+	if not game.has_method("performance_overlay_text"):
+		return
+	var perf_text: String = String(game.performance_overlay_text())
+	if perf_text == "":
+		return
+	var top_left: Vector2 = screen_to_world(game, Vector2(10.0, 10.0))
+	var bottom_right: Vector2 = screen_to_world(game, Vector2(252.0, 38.0))
+	var panel_rect: Rect2 = Rect2(top_left, bottom_right - top_left)
+	var panel_color: Color = Color(0.07, 0.12, 0.14, 0.62)
+	if reduce_animations:
+		panel_color = Color(0.22, 0.10, 0.10, 0.68)
+	game.draw_rect(panel_rect, panel_color, true)
+	game.draw_rect(panel_rect, Color(0.82, 0.92, 0.95, 0.72), false, 1.5)
+	var text_color: Color = Color(0.93, 0.98, 1.0, 0.96)
+	if reduce_animations:
+		text_color = Color(1.0, 0.89, 0.86, 0.98)
+	game.draw_string(ThemeDB.fallback_font, top_left + Vector2(8.0, 19.0), perf_text, HORIZONTAL_ALIGNMENT_LEFT, panel_rect.size.x - 12.0, 14, text_color)
 
 static func active_hand_drag_target_preview(game: Node) -> Dictionary:
 	if game.active_hand_drag.is_empty():
@@ -250,7 +270,7 @@ static func draw_effect_strip(surface: CanvasItem, texture: Texture2D, frame_ind
 	var draw_rect: Rect2 = Rect2(world_position - draw_size * 0.5, draw_size)
 	surface.draw_texture_rect_region(texture, draw_rect, source_rect, modulate, false, true)
 
-static func draw_room_spawn_warning_effects(game: Node, room_coord: Vector2i, view_rect: Rect2) -> void:
+static func draw_room_spawn_warning_effects(game: Node, room_coord: Vector2i, view_rect: Rect2, animate_effect: bool = true) -> void:
 	if NECROMANCER_ATTACK_EFFECT == null:
 		return
 	var active_enemy_total: int = 0
@@ -260,7 +280,7 @@ static func draw_room_spawn_warning_effects(game: Node, room_coord: Vector2i, vi
 	if active_enemy_total >= maxi(1, int(game.ENEMY_ACTIVE_CAP)):
 		return
 	var marker_lead: float = maxf(float(game.WAVE_PRESPAWN_MARKER_LEAD), 0.0)
-	var effect_frame: int = animated_effect_frame_index(NECROMANCER_ATTACK_EFFECT, 0.052)
+	var effect_frame: int = animated_effect_frame_index(NECROMANCER_ATTACK_EFFECT, 0.052) if animate_effect else 0
 	for pending_spawn_variant in game.pending_enemy_spawns:
 		var pending_spawn: Dictionary = pending_spawn_variant
 		if Vector2i(pending_spawn.get("room", game.INVALID_ROOM)) != room_coord:
@@ -278,7 +298,7 @@ static func draw_room_spawn_warning_effects(game: Node, room_coord: Vector2i, vi
 			if not view_rect.has_point(spawn_position):
 				continue
 			var pulse_alpha: float = clampf(0.94 - float(index_offset) * 0.08, 0.72, 0.94)
-			var pulse_wave: float = 0.9 + 0.1 * sin(float(Time.get_ticks_msec()) / 95.0 + float(index_offset) * 0.55)
+			var pulse_wave: float = (0.9 + 0.1 * sin(float(Time.get_ticks_msec()) / 95.0 + float(index_offset) * 0.55)) if animate_effect else 1.0
 			draw_effect_strip(game, NECROMANCER_ATTACK_EFFECT, effect_frame, spawn_position + Vector2(0.0, -4.0), Vector2(124.0, 124.0), Color(1.0, 0.95, 0.86, minf(pulse_alpha * pulse_wave, 1.0)))
 
 static func draw_floating_resource_texts(game: Node) -> void:
@@ -376,13 +396,13 @@ static func room_loot_chest_position(game: Node, room_coord: Vector2i, room: Dic
 		return game.clamp_point_to_room(Vector2(first_ground_item.get("position", game.room_center(room_coord))), room_coord)
 	return game.room_walkable_center(room_coord)
 
-static func draw_room_loot_chest(game: Node, room_coord: Vector2i, room: Dictionary, lit: bool) -> void:
+static func draw_room_loot_chest(game: Node, room_coord: Vector2i, room: Dictionary, lit: bool, animate_effect: bool = true) -> void:
 	var item_count: int = int(Array(room.get("ground_items", [])).size())
 	if item_count <= 0:
 		return
 	var chest_position: Vector2 = room_loot_chest_position(game, room_coord, room)
 	if LOOT_CHEST_TEXTURE != null:
-		var chest_frame_index: int = int(floor(float(Time.get_ticks_msec()) / 135.0)) % LOOT_CHEST_ANIM_FRAME_COUNT
+		var chest_frame_index: int = int(floor(float(Time.get_ticks_msec()) / 135.0)) % LOOT_CHEST_ANIM_FRAME_COUNT if animate_effect else 0
 		var source_rect: Rect2 = Rect2(
 			float(LOOT_CHEST_FRAME_ORIGIN.x + chest_frame_index * LOOT_CHEST_FRAME_SIZE.x),
 			float(LOOT_CHEST_FRAME_ORIGIN.y),
@@ -396,7 +416,7 @@ static func draw_room_loot_chest(game: Node, room_coord: Vector2i, room: Diction
 		game.draw_rect(Rect2(chest_position + Vector2(-12.0, -2.0), Vector2(24.0, 16.0)), Color("f3d79e"), false, 2.0)
 	game.draw_string(ThemeDB.fallback_font, chest_position + Vector2(-14.0, 32.0), "Loot x%d" % item_count, HORIZONTAL_ALIGNMENT_LEFT, 52.0, 12, Color("fff0c7" if lit else "d7be8d"))
 
-static func draw_room_merchant_visual(game: Node, room_coord: Vector2i, room: Dictionary, lit: bool) -> void:
+static func draw_room_merchant_visual(game: Node, room_coord: Vector2i, room: Dictionary, lit: bool, animate_effect: bool = true) -> void:
 	if String(room.get("merchant_theme", "")) == "":
 		return
 	if MERCHANT_DEMONESS_IDLE_TEXTURE == null:
@@ -404,7 +424,7 @@ static func draw_room_merchant_visual(game: Node, room_coord: Vector2i, room: Di
 	var merchant_position: Vector2 = game.merchant_world_position(room_coord)
 	var frame_count: int = maxi(int(MERCHANT_DEMONESS_IDLE_TEXTURE.get_width() / maxf(float(MERCHANT_FRAME_SIZE.x), 1.0)), 1)
 	var frame_index: int = 0
-	if frame_count > 1:
+	if animate_effect and frame_count > 1:
 		frame_index = int(floor(float(Time.get_ticks_msec()) / 120.0)) % frame_count
 	var source_rect: Rect2 = Rect2(float(frame_index * MERCHANT_FRAME_SIZE.x), 0.0, float(MERCHANT_FRAME_SIZE.x), float(MERCHANT_FRAME_SIZE.y))
 	var draw_rect: Rect2 = Rect2(merchant_position + Vector2(-MERCHANT_DRAW_SIZE.x * 0.5, -MERCHANT_DRAW_SIZE.y + 30.0), MERCHANT_DRAW_SIZE)
@@ -572,7 +592,7 @@ static func room_theme_palette(game: Node, theme_id: String, lit: bool, crystal_
 		palette["growth_edge"] = Color("a7864f")
 	return palette
 
-static func draw_room_overlays(game: Node, lightweight_camera_mode: bool = false) -> void:
+static func draw_room_overlays(game: Node, reduce_animations: bool = false) -> void:
 	var view_rect: Rect2 = current_view_world_rect(game, 160.0)
 	for room_coord_variant in game.rooms.keys():
 		var room_coord: Vector2i = room_coord_variant
@@ -585,7 +605,9 @@ static func draw_room_overlays(game: Node, lightweight_camera_mode: bool = false
 		if not view_rect.intersects(rect):
 			continue
 		if scry_revealed and not opened:
-			var pulse: float = 0.5 + 0.5 * sin(float(Time.get_ticks_msec()) / 210.0 + float(room_coord.x + room_coord.y) * 0.2)
+			var pulse: float = 0.5
+			if not reduce_animations:
+				pulse = 0.5 + 0.5 * sin(float(Time.get_ticks_msec()) / 210.0 + float(room_coord.x + room_coord.y) * 0.2)
 			var scry_fill: Color = Color(0.30, 0.68, 0.92, 0.12 + 0.05 * pulse)
 			var scry_outline: Color = Color(0.68, 0.90, 1.0, 0.74)
 			game.draw_rect(rect.grow(-8.0), scry_fill, true)
@@ -597,8 +619,10 @@ static func draw_room_overlays(game: Node, lightweight_camera_mode: bool = false
 			continue
 		var warning_ratio: float = clampf(float(room.get("warning_timer_left", 0.0)) / maxf(game.WAVE_WARNING_DURATION, 0.001), 0.0, 1.0)
 		var sanctuary_ratio: float = clampf(float(room.get("sanctuary_time_left", 0.0)) / maxf(float(room.get("sanctuary_duration", room.get("sanctuary_time_left", 1.0))), 0.001), 0.0, 1.0)
-		if not lightweight_camera_mode and float(room.get("sanctuary_time_left", 0.0)) > 0.0:
-			var aura_pulse: float = 0.5 + 0.5 * sin(float(Time.get_ticks_msec()) / 150.0 + float(room_coord.x - room_coord.y) * 0.33)
+		if float(room.get("sanctuary_time_left", 0.0)) > 0.0:
+			var aura_pulse: float = 0.5
+			if not reduce_animations:
+				aura_pulse = 0.5 + 0.5 * sin(float(Time.get_ticks_msec()) / 150.0 + float(room_coord.x - room_coord.y) * 0.33)
 			var aura_inset: float = 10.0 + 5.0 * aura_pulse
 			game.draw_rect(rect.grow(-aura_inset), Color(0.88, 1.0, 0.72, 0.08 + 0.05 * aura_pulse), false, 3.0)
 			var sanctuary_label: String = "Sanctuary %ds" % int(ceil(float(room.get("sanctuary_time_left", 0.0))))
@@ -622,9 +646,8 @@ static func draw_room_overlays(game: Node, lightweight_camera_mode: bool = false
 			game.draw_circle(marker_center, 10.0, Color(marker_color.r, marker_color.g, marker_color.b, 0.18))
 			game.draw_arc(marker_center, 10.0, 0.0, TAU, 24, marker_color, 2.2, true)
 			game.draw_circle(marker_center, 4.0, marker_color)
-		if not lightweight_camera_mode:
-			draw_room_light_marker(game, room_coord, room)
-		if not lightweight_camera_mode and room["major_slots"] > 0 and room_coord != game.crystal_room:
+		draw_room_light_marker(game, room_coord, room)
+		if room["major_slots"] > 0 and room_coord != game.crystal_room:
 			var major_position: Vector2 = game.major_slot_position(room_coord)
 			var pending_major: Dictionary = game.pending_major_construction_for_room(room_coord)
 			var show_major_slot: bool = game.should_show_room_slot_guides(room_coord) or game.should_highlight_major_slot(room_coord) or (room["major_module_type"] != "" and float(room["major_health"]) > 0.0) or not pending_major.is_empty()
@@ -663,7 +686,7 @@ static func draw_room_overlays(game: Node, lightweight_camera_mode: bool = false
 					major_position + Vector2(-14.0, 0.0),
 				]), Color("87c9ff"))
 				game.draw_arc(major_position, 18.0, 0.0, TAU, 28, Color("d9f4ff"), 2.2, true)
-				if game.room_has_active_research(room_coord):
+				if game.room_has_active_research(room_coord) and not reduce_animations:
 					var shimmer: float = 0.5 + 0.5 * sin(float(Time.get_ticks_msec()) / 140.0)
 					game.draw_circle(major_position, 26.0 + 3.0 * shimmer, Color(0.54, 0.85, 1.0, 0.16 + 0.08 * shimmer))
 					game.draw_circle(major_position, 18.0 + 2.0 * shimmer, Color(0.68, 0.93, 1.0, 0.22 + 0.10 * shimmer))
@@ -678,67 +701,64 @@ static func draw_room_overlays(game: Node, lightweight_camera_mode: bool = false
 				game.draw_arc(major_position, 19.0, -PI * 0.5, -PI * 0.5 + TAU * pending_ratio, 24, Color("ffe39b"), 3.0, true)
 				game.draw_rect(Rect2(major_position + Vector2(-20.0, 30.0), Vector2(40.0, 5.0)), Color("1b1610"), true)
 				game.draw_rect(Rect2(major_position + Vector2(-20.0, 30.0), Vector2(40.0 * pending_ratio, 5.0)), Color("ffe39b"), true)
-		if not lightweight_camera_mode:
-			var slot_positions: Array = game.minor_slot_positions(room_coord)
-			for slot_index in range(slot_positions.size()):
-				var slot_position: Vector2 = slot_positions[slot_index]
-				var module_index: int = game.minor_module_index_for_slot(room_coord, slot_index)
-				var pending_minor: Dictionary = game.pending_minor_construction_for_slot(room_coord, slot_index)
-				var show_minor_slot: bool = game.should_show_room_slot_guides(room_coord) or game.should_highlight_minor_slot(room_coord, slot_index) or module_index >= 0 or not pending_minor.is_empty()
-				if show_minor_slot:
-					var slot_fill: Color = Color(0.08, 0.12, 0.15, 0.44)
-					var slot_outline: Color = Color(0.68, 0.84, 0.92, 0.82)
-					if game.should_show_room_slot_guides(room_coord) and not game.should_highlight_minor_slot(room_coord, slot_index):
-						slot_fill = Color(0.10, 0.14, 0.16, 0.24)
-						slot_outline = Color(0.82, 0.88, 0.92, 0.78)
-					if game.should_highlight_minor_slot(room_coord, slot_index):
-						slot_fill = Color("23323a")
-						slot_outline = Color("8df6ff")
-					game.draw_circle(slot_position, 10.0, slot_fill)
-					game.draw_arc(slot_position, 11.0, 0.0, TAU, 24, slot_outline, 2.0, true)
-				if module_index >= 0:
-					var module_data: Dictionary = room["minor_modules"][module_index]
-					if float(module_data["health"]) > 0.0:
-						var module_type: String = String(module_data.get("type", game.MINOR_MODULE_TURRET))
-						module_type = game.canonical_minor_module_type(module_type)
-						var module_color: Color = game.minor_module_color(module_type)
-						match module_type:
-							game.MINOR_MODULE_PULSE:
-								game.draw_circle(slot_position, 8.0, Color(module_color.r, module_color.g, module_color.b, 0.26))
-								game.draw_arc(slot_position, 11.0, 0.0, TAU, 20, module_color.lightened(0.12), 2.0, true)
-							game.MINOR_MODULE_CANNON:
-								game.draw_circle(slot_position, 7.0, module_color)
-								game.draw_arc(slot_position, 14.0, 0.0, TAU, 24, module_color.lightened(0.2), 2.0, true)
-							game.MINOR_MODULE_KIP:
-								game.draw_rect(Rect2(slot_position - Vector2(8.0, 6.0), Vector2(16.0, 12.0)), module_color, true)
-								game.draw_line(slot_position + Vector2(0.0, -6.0), slot_position + Vector2(0.0, -18.0), module_color.lightened(0.25), 3.0)
-							_:
-								game.draw_circle(slot_position, 7.5, module_color)
-								game.draw_line(slot_position + Vector2(0.0, -10.0), slot_position + Vector2(0.0, -18.0), module_color.lightened(0.25), 2.0)
-						game.draw_string(ThemeDB.fallback_font, slot_position + Vector2(-8.0, -16.0), str(clampi(game.minor_module_level(module_type), 1, 4)), HORIZONTAL_ALIGNMENT_LEFT, 18.0, 12, Color("f5f8fb"))
-						if bool(module_data.get("under_construction", false)) or float(module_data["health"]) < game.MINOR_MODULE_MAX_HEALTH:
-							var turret_ratio: float = float(module_data["health"]) / game.MINOR_MODULE_MAX_HEALTH
-							game.draw_rect(Rect2(slot_position + Vector2(-12.0, 14.0), Vector2(24.0, 4.0)), Color("142026"), true)
-							game.draw_rect(Rect2(slot_position + Vector2(-12.0, 14.0), Vector2(24.0 * turret_ratio, 4.0)), module_color, true)
-						if bool(module_data.get("under_construction", false)):
-							game.draw_string(ThemeDB.fallback_font, slot_position + Vector2(-12.0, -15.0), "B", HORIZONTAL_ALIGNMENT_LEFT, 18.0, 12, Color("fff1b7"))
-				if not pending_minor.is_empty():
-					var pending_ratio_minor: float = 1.0 - (float(pending_minor.get("timer_left", 0.0)) / maxf(float(pending_minor.get("duration", 1.0)), 0.001))
-					game.draw_circle(slot_position, 8.0, Color("b3efff", 0.18))
-					game.draw_arc(slot_position, 14.0, -PI * 0.5, -PI * 0.5 + TAU * pending_ratio_minor, 24, Color("8df6ff"), 2.5, true)
-		if not lightweight_camera_mode:
-			draw_room_loot_chest(game, room_coord, room, bool(room.get("lit", false)))
-			draw_room_merchant_visual(game, room_coord, room, bool(room.get("lit", false)))
+		var slot_positions: Array = game.minor_slot_positions(room_coord)
+		for slot_index in range(slot_positions.size()):
+			var slot_position: Vector2 = slot_positions[slot_index]
+			var module_index: int = game.minor_module_index_for_slot(room_coord, slot_index)
+			var pending_minor: Dictionary = game.pending_minor_construction_for_slot(room_coord, slot_index)
+			var show_minor_slot: bool = game.should_show_room_slot_guides(room_coord) or game.should_highlight_minor_slot(room_coord, slot_index) or module_index >= 0 or not pending_minor.is_empty()
+			if show_minor_slot:
+				var slot_fill: Color = Color(0.08, 0.12, 0.15, 0.44)
+				var slot_outline: Color = Color(0.68, 0.84, 0.92, 0.82)
+				if game.should_show_room_slot_guides(room_coord) and not game.should_highlight_minor_slot(room_coord, slot_index):
+					slot_fill = Color(0.10, 0.14, 0.16, 0.24)
+					slot_outline = Color(0.82, 0.88, 0.92, 0.78)
+				if game.should_highlight_minor_slot(room_coord, slot_index):
+					slot_fill = Color("23323a")
+					slot_outline = Color("8df6ff")
+				game.draw_circle(slot_position, 10.0, slot_fill)
+				game.draw_arc(slot_position, 11.0, 0.0, TAU, 24, slot_outline, 2.0, true)
+			if module_index >= 0:
+				var module_data: Dictionary = room["minor_modules"][module_index]
+				if float(module_data["health"]) > 0.0:
+					var module_type: String = String(module_data.get("type", game.MINOR_MODULE_TURRET))
+					module_type = game.canonical_minor_module_type(module_type)
+					var module_color: Color = game.minor_module_color(module_type)
+					match module_type:
+						game.MINOR_MODULE_PULSE:
+							game.draw_circle(slot_position, 8.0, Color(module_color.r, module_color.g, module_color.b, 0.26))
+							game.draw_arc(slot_position, 11.0, 0.0, TAU, 20, module_color.lightened(0.12), 2.0, true)
+						game.MINOR_MODULE_CANNON:
+							game.draw_circle(slot_position, 7.0, module_color)
+							game.draw_arc(slot_position, 14.0, 0.0, TAU, 24, module_color.lightened(0.2), 2.0, true)
+						game.MINOR_MODULE_KIP:
+							game.draw_rect(Rect2(slot_position - Vector2(8.0, 6.0), Vector2(16.0, 12.0)), module_color, true)
+							game.draw_line(slot_position + Vector2(0.0, -6.0), slot_position + Vector2(0.0, -18.0), module_color.lightened(0.25), 3.0)
+						_:
+							game.draw_circle(slot_position, 7.5, module_color)
+							game.draw_line(slot_position + Vector2(0.0, -10.0), slot_position + Vector2(0.0, -18.0), module_color.lightened(0.25), 2.0)
+					game.draw_string(ThemeDB.fallback_font, slot_position + Vector2(-8.0, -16.0), str(clampi(game.minor_module_level(module_type), 1, 4)), HORIZONTAL_ALIGNMENT_LEFT, 18.0, 12, Color("f5f8fb"))
+					if bool(module_data.get("under_construction", false)) or float(module_data["health"]) < game.MINOR_MODULE_MAX_HEALTH:
+						var turret_ratio: float = float(module_data["health"]) / game.MINOR_MODULE_MAX_HEALTH
+						game.draw_rect(Rect2(slot_position + Vector2(-12.0, 14.0), Vector2(24.0, 4.0)), Color("142026"), true)
+						game.draw_rect(Rect2(slot_position + Vector2(-12.0, 14.0), Vector2(24.0 * turret_ratio, 4.0)), module_color, true)
+					if bool(module_data.get("under_construction", false)):
+						game.draw_string(ThemeDB.fallback_font, slot_position + Vector2(-12.0, -15.0), "B", HORIZONTAL_ALIGNMENT_LEFT, 18.0, 12, Color("fff1b7"))
+			if not pending_minor.is_empty():
+				var pending_ratio_minor: float = 1.0 - (float(pending_minor.get("timer_left", 0.0)) / maxf(float(pending_minor.get("duration", 1.0)), 0.001))
+				game.draw_circle(slot_position, 8.0, Color("b3efff", 0.18))
+				game.draw_arc(slot_position, 14.0, -PI * 0.5, -PI * 0.5 + TAU * pending_ratio_minor, 24, Color("8df6ff"), 2.5, true)
+		draw_room_loot_chest(game, room_coord, room, bool(room.get("lit", false)), not reduce_animations)
+		draw_room_merchant_visual(game, room_coord, room, bool(room.get("lit", false)), not reduce_animations)
 		if room_coord == game.opening_origin_room:
 			var progress_ratio: float = 1.0 - (game.opening_timer_left / game.DOOR_OPEN_DURATION)
 			game.draw_rect(rect, Color(1.0, 1.0, 1.0, 0.08), true)
 			game.draw_rect(Rect2(rect.position + Vector2(18.0, rect.size.y - 20.0), Vector2(rect.size.x - 36.0, 8.0)), Color("1d2630"), true)
 			game.draw_rect(Rect2(rect.position + Vector2(18.0, rect.size.y - 20.0), Vector2((rect.size.x - 36.0) * progress_ratio, 8.0)), Color("f3dfa2"), true)
-		if not lightweight_camera_mode and warning_ratio > 0.0:
+		if warning_ratio > 0.0:
 			var inset: float = 12.0 + 8.0 * (1.0 - warning_ratio)
 			game.draw_rect(rect.grow(-inset), Color(1.0, 0.66, 0.52, 0.10 + 0.12 * warning_ratio), false, 4.0)
-		if not lightweight_camera_mode:
-			draw_room_spawn_warning_effects(game, room_coord, view_rect)
+		draw_room_spawn_warning_effects(game, room_coord, view_rect, not reduce_animations)
 		if room["exit"]:
 			var exit_center: Vector2 = rect.get_center() + Vector2(0.0, -12.0)
 			game.draw_circle(exit_center, 18.0, Color("203846"))
