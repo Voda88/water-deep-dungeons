@@ -681,51 +681,51 @@ static func draw_room_overlays(game: Node, lightweight_camera_mode: bool = false
 		if not lightweight_camera_mode:
 			var slot_positions: Array = game.minor_slot_positions(room_coord)
 			for slot_index in range(slot_positions.size()):
-			var slot_position: Vector2 = slot_positions[slot_index]
-			var module_index: int = game.minor_module_index_for_slot(room_coord, slot_index)
-			var pending_minor: Dictionary = game.pending_minor_construction_for_slot(room_coord, slot_index)
-			var show_minor_slot: bool = game.should_show_room_slot_guides(room_coord) or game.should_highlight_minor_slot(room_coord, slot_index) or module_index >= 0 or not pending_minor.is_empty()
-			if show_minor_slot:
-				var slot_fill: Color = Color(0.08, 0.12, 0.15, 0.44)
-				var slot_outline: Color = Color(0.68, 0.84, 0.92, 0.82)
-				if game.should_show_room_slot_guides(room_coord) and not game.should_highlight_minor_slot(room_coord, slot_index):
-					slot_fill = Color(0.10, 0.14, 0.16, 0.24)
-					slot_outline = Color(0.82, 0.88, 0.92, 0.78)
-				if game.should_highlight_minor_slot(room_coord, slot_index):
-					slot_fill = Color("23323a")
-					slot_outline = Color("8df6ff")
-				game.draw_circle(slot_position, 10.0, slot_fill)
-				game.draw_arc(slot_position, 11.0, 0.0, TAU, 24, slot_outline, 2.0, true)
-			if module_index >= 0:
-				var module_data: Dictionary = room["minor_modules"][module_index]
-				if float(module_data["health"]) > 0.0:
-					var module_type: String = String(module_data.get("type", game.MINOR_MODULE_TURRET))
-					module_type = game.canonical_minor_module_type(module_type)
-					var module_color: Color = game.minor_module_color(module_type)
-					match module_type:
-						game.MINOR_MODULE_PULSE:
-							game.draw_circle(slot_position, 8.0, Color(module_color.r, module_color.g, module_color.b, 0.26))
-							game.draw_arc(slot_position, 11.0, 0.0, TAU, 20, module_color.lightened(0.12), 2.0, true)
-						game.MINOR_MODULE_CANNON:
-							game.draw_circle(slot_position, 7.0, module_color)
-							game.draw_arc(slot_position, 14.0, 0.0, TAU, 24, module_color.lightened(0.2), 2.0, true)
-						game.MINOR_MODULE_KIP:
-							game.draw_rect(Rect2(slot_position - Vector2(8.0, 6.0), Vector2(16.0, 12.0)), module_color, true)
-							game.draw_line(slot_position + Vector2(0.0, -6.0), slot_position + Vector2(0.0, -18.0), module_color.lightened(0.25), 3.0)
-						_:
-							game.draw_circle(slot_position, 7.5, module_color)
-							game.draw_line(slot_position + Vector2(0.0, -10.0), slot_position + Vector2(0.0, -18.0), module_color.lightened(0.25), 2.0)
-					game.draw_string(ThemeDB.fallback_font, slot_position + Vector2(-8.0, -16.0), str(clampi(game.minor_module_level(module_type), 1, 4)), HORIZONTAL_ALIGNMENT_LEFT, 18.0, 12, Color("f5f8fb"))
-					if bool(module_data.get("under_construction", false)) or float(module_data["health"]) < game.MINOR_MODULE_MAX_HEALTH:
-						var turret_ratio: float = float(module_data["health"]) / game.MINOR_MODULE_MAX_HEALTH
-						game.draw_rect(Rect2(slot_position + Vector2(-12.0, 14.0), Vector2(24.0, 4.0)), Color("142026"), true)
-						game.draw_rect(Rect2(slot_position + Vector2(-12.0, 14.0), Vector2(24.0 * turret_ratio, 4.0)), module_color, true)
-					if bool(module_data.get("under_construction", false)):
-						game.draw_string(ThemeDB.fallback_font, slot_position + Vector2(-12.0, -15.0), "B", HORIZONTAL_ALIGNMENT_LEFT, 18.0, 12, Color("fff1b7"))
-			if not pending_minor.is_empty():
-				var pending_ratio_minor: float = 1.0 - (float(pending_minor.get("timer_left", 0.0)) / maxf(float(pending_minor.get("duration", 1.0)), 0.001))
-				game.draw_circle(slot_position, 8.0, Color("b3efff", 0.18))
-				game.draw_arc(slot_position, 14.0, -PI * 0.5, -PI * 0.5 + TAU * pending_ratio_minor, 24, Color("8df6ff"), 2.5, true)
+				var slot_position: Vector2 = slot_positions[slot_index]
+				var module_index: int = game.minor_module_index_for_slot(room_coord, slot_index)
+				var pending_minor: Dictionary = game.pending_minor_construction_for_slot(room_coord, slot_index)
+				var show_minor_slot: bool = game.should_show_room_slot_guides(room_coord) or game.should_highlight_minor_slot(room_coord, slot_index) or module_index >= 0 or not pending_minor.is_empty()
+				if show_minor_slot:
+					var slot_fill: Color = Color(0.08, 0.12, 0.15, 0.44)
+					var slot_outline: Color = Color(0.68, 0.84, 0.92, 0.82)
+					if game.should_show_room_slot_guides(room_coord) and not game.should_highlight_minor_slot(room_coord, slot_index):
+						slot_fill = Color(0.10, 0.14, 0.16, 0.24)
+						slot_outline = Color(0.82, 0.88, 0.92, 0.78)
+					if game.should_highlight_minor_slot(room_coord, slot_index):
+						slot_fill = Color("23323a")
+						slot_outline = Color("8df6ff")
+					game.draw_circle(slot_position, 10.0, slot_fill)
+					game.draw_arc(slot_position, 11.0, 0.0, TAU, 24, slot_outline, 2.0, true)
+				if module_index >= 0:
+					var module_data: Dictionary = room["minor_modules"][module_index]
+					if float(module_data["health"]) > 0.0:
+						var module_type: String = String(module_data.get("type", game.MINOR_MODULE_TURRET))
+						module_type = game.canonical_minor_module_type(module_type)
+						var module_color: Color = game.minor_module_color(module_type)
+						match module_type:
+							game.MINOR_MODULE_PULSE:
+								game.draw_circle(slot_position, 8.0, Color(module_color.r, module_color.g, module_color.b, 0.26))
+								game.draw_arc(slot_position, 11.0, 0.0, TAU, 20, module_color.lightened(0.12), 2.0, true)
+							game.MINOR_MODULE_CANNON:
+								game.draw_circle(slot_position, 7.0, module_color)
+								game.draw_arc(slot_position, 14.0, 0.0, TAU, 24, module_color.lightened(0.2), 2.0, true)
+							game.MINOR_MODULE_KIP:
+								game.draw_rect(Rect2(slot_position - Vector2(8.0, 6.0), Vector2(16.0, 12.0)), module_color, true)
+								game.draw_line(slot_position + Vector2(0.0, -6.0), slot_position + Vector2(0.0, -18.0), module_color.lightened(0.25), 3.0)
+							_:
+								game.draw_circle(slot_position, 7.5, module_color)
+								game.draw_line(slot_position + Vector2(0.0, -10.0), slot_position + Vector2(0.0, -18.0), module_color.lightened(0.25), 2.0)
+						game.draw_string(ThemeDB.fallback_font, slot_position + Vector2(-8.0, -16.0), str(clampi(game.minor_module_level(module_type), 1, 4)), HORIZONTAL_ALIGNMENT_LEFT, 18.0, 12, Color("f5f8fb"))
+						if bool(module_data.get("under_construction", false)) or float(module_data["health"]) < game.MINOR_MODULE_MAX_HEALTH:
+							var turret_ratio: float = float(module_data["health"]) / game.MINOR_MODULE_MAX_HEALTH
+							game.draw_rect(Rect2(slot_position + Vector2(-12.0, 14.0), Vector2(24.0, 4.0)), Color("142026"), true)
+							game.draw_rect(Rect2(slot_position + Vector2(-12.0, 14.0), Vector2(24.0 * turret_ratio, 4.0)), module_color, true)
+						if bool(module_data.get("under_construction", false)):
+							game.draw_string(ThemeDB.fallback_font, slot_position + Vector2(-12.0, -15.0), "B", HORIZONTAL_ALIGNMENT_LEFT, 18.0, 12, Color("fff1b7"))
+				if not pending_minor.is_empty():
+					var pending_ratio_minor: float = 1.0 - (float(pending_minor.get("timer_left", 0.0)) / maxf(float(pending_minor.get("duration", 1.0)), 0.001))
+					game.draw_circle(slot_position, 8.0, Color("b3efff", 0.18))
+					game.draw_arc(slot_position, 14.0, -PI * 0.5, -PI * 0.5 + TAU * pending_ratio_minor, 24, Color("8df6ff"), 2.5, true)
 		if not lightweight_camera_mode:
 			draw_room_loot_chest(game, room_coord, room, bool(room.get("lit", false)))
 			draw_room_merchant_visual(game, room_coord, room, bool(room.get("lit", false)))
