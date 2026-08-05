@@ -20,17 +20,29 @@ const PROJECTILE_AIM_PREVIEW_CARD_IDS: Dictionary = {
 
 static func _draw(game: Node) -> void:
 	var reduce_animations: bool = game.has_method("animations_reduced_mode_active") and bool(game.animations_reduced_mode_active())
+	var trace_draw_parts: bool = bool(game.PERF_TRACE_LOG_ENABLED)
+	var draw_section_start: int = 0
+	if trace_draw_parts:
+		draw_section_start = Time.get_ticks_usec()
 	draw_room_overlays(game, reduce_animations)
+	if trace_draw_parts:
+		game.perf_trace_add_us("draw_overlays", Time.get_ticks_usec() - draw_section_start)
+		draw_section_start = Time.get_ticks_usec()
 	draw_active_hand_card_target_preview(game)
 	if not reduce_animations:
 		draw_floating_resource_texts(game)
 	game.draw_room_action_hold()
+	if trace_draw_parts:
+		game.perf_trace_add_us("draw_world_ui", Time.get_ticks_usec() - draw_section_start)
+		draw_section_start = Time.get_ticks_usec()
 	# Overlay UI (room action menu + hand cards) should remain screen-stable while camera pans.
 	var inverse_canvas: Transform2D = game.get_viewport().get_canvas_transform().affine_inverse()
 	game.draw_set_transform_matrix(inverse_canvas)
 	game.draw_room_action_menu()
 	game.draw_combat_hand()
 	game.draw_set_transform_matrix(Transform2D.IDENTITY)
+	if trace_draw_parts:
+		game.perf_trace_add_us("draw_screen_ui", Time.get_ticks_usec() - draw_section_start)
 
 static func active_hand_drag_target_preview(game: Node) -> Dictionary:
 	if game.active_hand_drag.is_empty():
@@ -254,27 +266,33 @@ static func draw_effect_strip(surface: CanvasItem, texture: Texture2D, frame_ind
 	var draw_rect: Rect2 = Rect2(world_position - draw_size * 0.5, draw_size)
 	surface.draw_texture_rect_region(texture, draw_rect, source_rect, modulate, false, true)
 
-static func draw_room_spawn_warning_effects(game: Node, room_coord: Vector2i, view_rect: Rect2, animate_effect: bool = true) -> void:
-	var warning_context: Dictionary = build_spawn_warning_draw_context(game, animate_effect)
+static func draw_room_spawn_warning_effects(game: Node, room_coord: Vector2i, view_rect: Rect2, animate_effect: bool = true, warning_context: Dictionary = {}) -> void:
+	if warning_context.is_empty():
+		warning_context = build_spawn_warning_draw_context(game, animate_effect)
 	if warning_context.is_empty() or Vector2i(warning_context.get("room", game.INVALID_ROOM)) != room_coord:
 		return
 	var marker_lead: float = float(warning_context.get("marker_lead", 0.0))
+	var marker_draw_cap: int = maxi(1, int(game.SPAWN_WARNING_MARKER_DRAW_CAP))
+	var marker_drawn: int = 0
 	var effect_frame: int = int(warning_context.get("effect_frame", 0))
 	var positions: Array = Array(warning_context.get("positions", []))
 	var spawned_count: int = int(warning_context.get("spawned", 0))
 	var delay_left: float = float(warning_context.get("delay_left", 0.0))
 	var interval: float = maxf(float(warning_context.get("interval", game.WAVE_STAGGER_ENEMY_INTERVAL)), 0.0)
 	for spawn_index in range(spawned_count, positions.size()):
+		if marker_drawn >= marker_draw_cap:
+			break
 		var index_offset: int = spawn_index - spawned_count
 		var time_until_spawn: float = maxf(delay_left, 0.0) + float(index_offset) * interval
 		if time_until_spawn > marker_lead:
-			continue
+			break
 		var spawn_position: Vector2 = Vector2(positions[spawn_index])
 		if not view_rect.has_point(spawn_position):
 			continue
 		var pulse_alpha: float = clampf(0.94 - float(index_offset) * 0.08, 0.72, 0.94)
 		var pulse_wave: float = (0.9 + 0.1 * sin(float(Time.get_ticks_msec()) / 95.0 + float(index_offset) * 0.55)) if animate_effect else 1.0
 		draw_effect_strip(game, NECROMANCER_ATTACK_EFFECT, effect_frame, spawn_position + Vector2(0.0, -4.0), Vector2(124.0, 124.0), Color(1.0, 0.95, 0.86, minf(pulse_alpha * pulse_wave, 1.0)))
+		marker_drawn += 1
 
 static func build_spawn_warning_draw_context(game: Node, animate_effect: bool = true) -> Dictionary:
 	if NECROMANCER_ATTACK_EFFECT == null:
@@ -303,6 +321,45 @@ static func build_spawn_warning_draw_context(game: Node, animate_effect: bool = 
 		"marker_lead": maxf(float(game.WAVE_PRESPAWN_MARKER_LEAD), 0.0),
 		"effect_frame": animated_effect_frame_index(NECROMANCER_ATTACK_EFFECT, 0.052) if animate_effect else 0,
 	}
+
+static func cached_spawn_warning_draw_context(game: Node, animate_effect: bool = true) -> Dictionary:
+	var refresh_interval: int = maxi(1, int(game.SPAWN_WARNING_SCAN_FRAME_INTERVAL))
+	var frame_index: int = int(game.overlay_draw_frame_counter)
+	var last_frame: int = int(game.spawn_warning_draw_context_cache_frame)
+	var cached_animated: bool = bool(game.spawn_warning_draw_context_cache_animated)
+	if frame_index - last_frame >= refresh_interval or cached_animated != animate_effect:
+		game.spawn_warning_draw_context_cache = build_spawn_warning_draw_context(game, animate_effect)
+		game.spawn_warning_draw_context_cache_frame = frame_index
+		game.spawn_warning_draw_context_cache_animated = animate_effect
+	return Dictionary(game.spawn_warning_draw_context_cache)
+
+static func cached_room_overlay_slot_status(game: Node, room_coord: Vector2i) -> Dictionary:
+	var refresh_interval: int = maxi(1, int(game.OVERLAY_SLOT_STATUS_REFRESH_FRAMES))
+	var frame_index: int = int(game.overlay_draw_frame_counter)
+	var room_cache_map: Dictionary = game.overlay_slot_status_cache
+	var cached_status: Dictionary = Dictionary(room_cache_map.get(room_coord, {}))
+	var cached_frame: int = int(cached_status.get("frame", -refresh_interval))
+	if not cached_status.is_empty() and frame_index - cached_frame < refresh_interval:
+		return cached_status
+	var slot_positions: Array = game.minor_slot_positions(room_coord)
+	var slot_entries: Array = []
+	for slot_index in range(slot_positions.size()):
+		slot_entries.append({
+			"module_index": game.minor_module_index_for_slot(room_coord, slot_index),
+			"pending_minor": game.pending_minor_construction_for_slot(room_coord, slot_index),
+			"highlight_minor": game.should_highlight_minor_slot(room_coord, slot_index),
+		})
+	cached_status = {
+		"frame": frame_index,
+		"show_slot_guides": game.should_show_room_slot_guides(room_coord),
+		"highlight_major": game.should_highlight_major_slot(room_coord),
+		"pending_major": game.pending_major_construction_for_room(room_coord),
+		"slot_positions": slot_positions,
+		"slot_entries": slot_entries,
+	}
+	room_cache_map[room_coord] = cached_status
+	game.overlay_slot_status_cache = room_cache_map
+	return cached_status
 
 static func draw_floating_resource_texts(game: Node) -> void:
 	var view_rect: Rect2 = current_view_world_rect(game, 96.0)
@@ -597,7 +654,7 @@ static func room_theme_palette(game: Node, theme_id: String, lit: bool, crystal_
 
 static func draw_room_overlays(game: Node, reduce_animations: bool = false) -> void:
 	var view_rect: Rect2 = current_view_world_rect(game, 160.0)
-	var warning_context: Dictionary = build_spawn_warning_draw_context(game, not reduce_animations)
+	var warning_context: Dictionary = cached_spawn_warning_draw_context(game, not reduce_animations)
 	var hero_room_presence: Dictionary = {}
 	var selected_hero_room_presence: Dictionary = {}
 	var selected_hero: Variant = game.selected_hero()
@@ -661,17 +718,20 @@ static func draw_room_overlays(game: Node, reduce_animations: bool = false) -> v
 			game.draw_arc(marker_center, 10.0, 0.0, TAU, 24, marker_color, 2.2, true)
 			game.draw_circle(marker_center, 4.0, marker_color)
 		draw_room_light_marker(game, room_coord, room)
+		var slot_status: Dictionary = cached_room_overlay_slot_status(game, room_coord)
+		var show_slot_guides: bool = bool(slot_status.get("show_slot_guides", false))
+		var highlight_major_slot: bool = bool(slot_status.get("highlight_major", false))
+		var pending_major: Dictionary = Dictionary(slot_status.get("pending_major", {}))
 		if room["major_slots"] > 0 and room_coord != game.crystal_room:
 			var major_position: Vector2 = game.major_slot_position(room_coord)
-			var pending_major: Dictionary = game.pending_major_construction_for_room(room_coord)
-			var show_major_slot: bool = game.should_show_room_slot_guides(room_coord) or game.should_highlight_major_slot(room_coord) or (room["major_module_type"] != "" and float(room["major_health"]) > 0.0) or not pending_major.is_empty()
+			var show_major_slot: bool = show_slot_guides or highlight_major_slot or (room["major_module_type"] != "" and float(room["major_health"]) > 0.0) or not pending_major.is_empty()
 			if show_major_slot:
 				var major_fill: Color = Color(0.08, 0.12, 0.15, 0.34)
 				var major_outline: Color = Color("182024")
-				if game.should_show_room_slot_guides(room_coord) and not game.should_highlight_major_slot(room_coord):
+				if show_slot_guides and not highlight_major_slot:
 					major_fill = Color(0.10, 0.14, 0.16, 0.24)
 					major_outline = Color(0.82, 0.88, 0.92, 0.78)
-				if game.should_highlight_major_slot(room_coord):
+				if highlight_major_slot:
 					major_fill = Color(1.0, 0.89, 0.61, 0.16)
 					major_outline = Color("ffe39b")
 				game.draw_rect(Rect2(major_position - Vector2(17.0, 17.0), Vector2(34.0, 34.0)), major_fill, true)
@@ -715,19 +775,22 @@ static func draw_room_overlays(game: Node, reduce_animations: bool = false) -> v
 				game.draw_arc(major_position, 19.0, -PI * 0.5, -PI * 0.5 + TAU * pending_ratio, 24, Color("ffe39b"), 3.0, true)
 				game.draw_rect(Rect2(major_position + Vector2(-20.0, 30.0), Vector2(40.0, 5.0)), Color("1b1610"), true)
 				game.draw_rect(Rect2(major_position + Vector2(-20.0, 30.0), Vector2(40.0 * pending_ratio, 5.0)), Color("ffe39b"), true)
-		var slot_positions: Array = game.minor_slot_positions(room_coord)
+		var slot_positions: Array = Array(slot_status.get("slot_positions", []))
+		var slot_entries: Array = Array(slot_status.get("slot_entries", []))
 		for slot_index in range(slot_positions.size()):
 			var slot_position: Vector2 = slot_positions[slot_index]
-			var module_index: int = game.minor_module_index_for_slot(room_coord, slot_index)
-			var pending_minor: Dictionary = game.pending_minor_construction_for_slot(room_coord, slot_index)
-			var show_minor_slot: bool = game.should_show_room_slot_guides(room_coord) or game.should_highlight_minor_slot(room_coord, slot_index) or module_index >= 0 or not pending_minor.is_empty()
+			var slot_entry: Dictionary = Dictionary(slot_entries[slot_index]) if slot_index < slot_entries.size() else {}
+			var module_index: int = int(slot_entry.get("module_index", -1))
+			var pending_minor: Dictionary = Dictionary(slot_entry.get("pending_minor", {}))
+			var highlight_minor_slot: bool = bool(slot_entry.get("highlight_minor", false))
+			var show_minor_slot: bool = show_slot_guides or highlight_minor_slot or module_index >= 0 or not pending_minor.is_empty()
 			if show_minor_slot:
 				var slot_fill: Color = Color(0.08, 0.12, 0.15, 0.44)
 				var slot_outline: Color = Color(0.68, 0.84, 0.92, 0.82)
-				if game.should_show_room_slot_guides(room_coord) and not game.should_highlight_minor_slot(room_coord, slot_index):
+				if show_slot_guides and not highlight_minor_slot:
 					slot_fill = Color(0.10, 0.14, 0.16, 0.24)
 					slot_outline = Color(0.82, 0.88, 0.92, 0.78)
-				if game.should_highlight_minor_slot(room_coord, slot_index):
+				if highlight_minor_slot:
 					slot_fill = Color("23323a")
 					slot_outline = Color("8df6ff")
 				game.draw_circle(slot_position, 10.0, slot_fill)
@@ -773,7 +836,7 @@ static func draw_room_overlays(game: Node, reduce_animations: bool = false) -> v
 			var inset: float = 12.0 + 8.0 * (1.0 - warning_ratio)
 			game.draw_rect(rect.grow(-inset), Color(1.0, 0.66, 0.52, 0.10 + 0.12 * warning_ratio), false, 4.0)
 		if warning_context.is_empty() or Vector2i(warning_context.get("room", game.INVALID_ROOM)) == room_coord:
-			draw_room_spawn_warning_effects(game, room_coord, view_rect, not reduce_animations)
+			draw_room_spawn_warning_effects(game, room_coord, view_rect, not reduce_animations, warning_context)
 		if room["exit"]:
 			var exit_center: Vector2 = rect.get_center() + Vector2(0.0, -12.0)
 			game.draw_circle(exit_center, 18.0, Color("203846"))

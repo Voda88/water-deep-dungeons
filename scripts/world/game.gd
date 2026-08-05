@@ -149,6 +149,7 @@ const ROOM_OPEN_DUST_MAX: int = 7
 const PRELIT_ROOM_CHANCE: float = 0.24
 const WAVE_WARNING_DURATION: float = 1.0
 const WAVE_PRESPAWN_MARKER_LEAD: float = 2.0
+const SPAWN_WARNING_MARKER_DRAW_CAP: int = 8
 const WAVE_STAGGER_ROOM_INTERVAL: float = 4.0
 const WAVE_STAGGER_ENEMY_INTERVAL: float = 0.14
 const WAVE_SPAWN_BUILD_FRAME_BUDGET: int = 1
@@ -156,6 +157,8 @@ const WAVE_SPAWN_BUILD_POSITION_BUDGET: int = 3
 const ENEMY_SPAWN_FRAME_BUDGET: int = 3
 const ENEMY_SPAWN_PREVIEW_FRAME_BUDGET: int = 5
 const ENEMY_SPAWN_FRAME_GAP: int = 5
+const SPAWN_WARNING_SCAN_FRAME_INTERVAL: int = 5
+const OVERLAY_SLOT_STATUS_REFRESH_FRAMES: int = 5
 const ENEMY_ACTIVE_CAP: int = 20
 const ENEMY_AI_THINK_INTERVAL: float = 0.3
 const ENEMY_AI_PATHFIND_PER_TICK_BUDGET: int = 6
@@ -385,6 +388,7 @@ var pending_room_loot_requests: Dictionary = {}
 var pending_room_action_requests: Dictionary = {}
 var performance_label: Label = null
 var performance_ui_refresh_time_left: float = 0.0
+var overlay_draw_frame_counter: int = 0
 var perf_trace_samples: int = 0
 var perf_trace_draw_samples: int = 0
 var perf_trace_accum_us: Dictionary = {}
@@ -397,6 +401,10 @@ var pending_room_constructions: Array = []
 var next_enemy_uid: int = 1
 var enemy_spawn_next_allowed_frame: int = 0
 var active_spawn_warning_room: Vector2i = INVALID_ROOM
+var spawn_warning_draw_context_cache: Dictionary = {}
+var spawn_warning_draw_context_cache_frame: int = -999999
+var spawn_warning_draw_context_cache_animated: bool = false
+var overlay_slot_status_cache: Dictionary = {}
 var next_item_uid: int = 1
 var next_card_uid: int = 1
 var global_item_card_states: Dictionary = {}
@@ -593,7 +601,7 @@ func advance_perf_trace_logging(delta: float) -> void:
 	var physics_samples: int = maxi(1, perf_trace_samples)
 	var draw_samples: int = maxi(1, perf_trace_draw_samples)
 	print(
-		"[PERF] en=%d/%d pend=%d rooms=%d | ai %.2fms modules %.2fms spawn %.2fms proj %.2fms combat %.2fms draw %.2fms" % [
+		"[PERF] en=%d/%d pend=%d rooms=%d | ai %.2fms modules %.2fms spawn %.2fms proj %.2fms combat %.2fms draw %.2fms (ov %.2f worldui %.2f screenui %.2f)" % [
 			active_enemy_runtime_count(),
 			ENEMY_ACTIVE_CAP,
 			pending_enemy_spawn_count(),
@@ -604,6 +612,9 @@ func advance_perf_trace_logging(delta: float) -> void:
 			perf_trace_avg_ms("projectiles", physics_samples),
 			perf_trace_avg_ms("combat", physics_samples),
 			perf_trace_avg_ms("draw_total", draw_samples),
+			perf_trace_avg_ms("draw_overlays", draw_samples),
+			perf_trace_avg_ms("draw_world_ui", draw_samples),
+			perf_trace_avg_ms("draw_screen_ui", draw_samples),
 		]
 	)
 	perf_trace_samples = 0
@@ -673,6 +684,7 @@ func update_performance_ui(delta: float) -> void:
 	performance_label.add_theme_color_override("font_color", reduced_color if animations_reduced_mode_active() else normal_color)
 
 func _draw() -> void:
+	overlay_draw_frame_counter += 1
 	if PERF_TRACE_LOG_ENABLED:
 		var draw_start_us: int = Time.get_ticks_usec()
 		GAME_WORLD_RENDER_FLOW._draw(self)
