@@ -988,6 +988,7 @@ static func advance_room_sanctuary_effects(game: Node, delta: float) -> void:
 				room_data["sanctuary_damage_multiplier"] = 1.0
 				room_data["sanctuary_regen_per_second"] = 0.0
 				room_data["sanctuary_target_hero_index"] = -1
+				room_data["sanctuary_aoe"] = false
 				game.rooms[room_coord] = room_data
 			continue
 		room_data["sanctuary_time_left"] = sanctuary_time_left
@@ -996,6 +997,15 @@ static func advance_room_sanctuary_effects(game: Node, delta: float) -> void:
 			continue
 		var regen_rate: float = maxf(float(room_data.get("sanctuary_regen_per_second", 0.0)), 0.0)
 		if regen_rate <= 0.0:
+			continue
+		var sanctuary_aoe: bool = bool(room_data.get("sanctuary_aoe", false))
+		if sanctuary_aoe:
+			for hero in game.heroes:
+				if not game.hero_is_active(hero):
+					continue
+				if Vector2i(hero.current_room) != room_coord:
+					continue
+				hero.heal(regen_rate * delta)
 			continue
 		var sanctuary_target_index: int = int(room_data.get("sanctuary_target_hero_index", -1))
 		if sanctuary_target_index < 0:
@@ -1011,6 +1021,7 @@ static func advance_room_sanctuary_effects(game: Node, delta: float) -> void:
 
 static func process_combat(game: Node, delta: float) -> void:
 	advance_room_sanctuary_effects(game, delta)
+	game.advance_scorcher_channels(delta)
 	advance_enemy_poison_effects(game, delta)
 	advance_hero_combo_decay(game, delta)
 	game.advance_pending_melee_attacks(delta)
@@ -1018,6 +1029,8 @@ static func process_combat(game: Node, delta: float) -> void:
 		if not game.hero_is_active(hero):
 			continue
 		hero.cooldown_left = maxf(hero.cooldown_left - delta, 0.0)
+		if hero.has_method("has_active_scorcher_channel") and bool(hero.has_active_scorcher_channel()):
+			continue
 		if hero.carrying_crystal or hero.pending_room != game.HERO_INVALID_ROOM or hero.cooldown_left > 0.0 or game.attacker_has_pending_melee(hero):
 			continue
 		if hero.preferred_attack_style == "melee":
@@ -1467,7 +1480,7 @@ static func advance_projectiles(game: Node, delta: float) -> void:
 				projectile["rotation_angle"] = velocity.angle()
 			active_projectiles.append(projectile)
 			continue
-		if projectile_kind == "fireball_blast" or projectile_kind == "shield_flash" or projectile_kind == "lightning_bolt" or projectile_kind == "gas_pulse" or projectile_kind == "necromancer_attack_effect" or projectile_kind == "priest_heal_effect" or projectile_kind == "priest_attack_effect" or projectile_kind == "web_field" or projectile_kind == "ghostfire_ray" or projectile_kind == "dust_burst":
+		if projectile_kind == "fireball_blast" or projectile_kind == "shield_flash" or projectile_kind == "lightning_bolt" or projectile_kind == "gas_pulse" or projectile_kind == "necromancer_attack_effect" or projectile_kind == "priest_heal_effect" or projectile_kind == "priest_attack_effect" or projectile_kind == "web_field" or projectile_kind == "ghostfire_ray" or projectile_kind == "scorcher_flame_cone" or projectile_kind == "dust_burst":
 			projectile["lifetime_left"] = maxf(float(projectile.get("lifetime_left", 0.0)) - delta, 0.0)
 			if float(projectile["lifetime_left"]) <= 0.0:
 				continue
@@ -1730,6 +1743,48 @@ static func draw_projectiles(game: Node, canvas: CanvasItem = null) -> void:
 				var spoke_angle: float = TAU * float(spoke_index) / 6.0 + web_ratio * 0.22
 				var spoke_dir: Vector2 = Vector2.RIGHT.rotated(spoke_angle)
 				surface.draw_line(current_position - spoke_dir * web_radius * 0.72, current_position + spoke_dir * web_radius * 0.72, Color(0.96, 0.99, 1.0, 0.32 * web_alpha), 1.8, true)
+			continue
+		if projectile_kind == "scorcher_flame_cone":
+			var cone_duration: float = maxf(float(projectile.get("blast_duration", 0.24)), 0.001)
+			var cone_life_ratio: float = clampf(float(projectile.get("lifetime_left", 0.0)) / cone_duration, 0.0, 1.0)
+			var cone_fade: float = pow(cone_life_ratio, 0.6)
+			var cone_origin: Vector2 = Vector2(projectile.get("cone_origin", projectile.get("previous", current_position)))
+			var cone_direction: Vector2 = Vector2(projectile.get("cone_direction", (current_position - cone_origin).normalized())).normalized()
+			if cone_direction == Vector2.ZERO:
+				cone_direction = Vector2.RIGHT
+			var cone_range: float = maxf(float(projectile.get("cone_range", cone_origin.distance_to(current_position))), 16.0)
+			var cone_arc_degrees: float = clampf(float(projectile.get("cone_arc_degrees", 70.0)), 10.0, 180.0)
+			var half_arc: float = deg_to_rad(cone_arc_degrees * 0.5)
+			var left_dir: Vector2 = cone_direction.rotated(-half_arc)
+			var right_dir: Vector2 = cone_direction.rotated(half_arc)
+			var cone_polygon: PackedVector2Array = PackedVector2Array([cone_origin])
+			var cone_segments: int = 9
+			for segment_index in range(cone_segments + 1):
+				var segment_ratio: float = float(segment_index) / float(cone_segments)
+				var segment_angle: float = lerpf(-half_arc, half_arc, segment_ratio)
+				cone_polygon.append(cone_origin + cone_direction.rotated(segment_angle) * cone_range)
+			surface.draw_colored_polygon(cone_polygon, Color(color.r, color.g, color.b, 0.26 * cone_fade))
+			surface.draw_line(cone_origin, cone_origin + left_dir * cone_range, Color(1.0, 0.69, 0.36, 0.56 * cone_fade), 2.4, true)
+			surface.draw_line(cone_origin, cone_origin + right_dir * cone_range, Color(1.0, 0.69, 0.36, 0.56 * cone_fade), 2.4, true)
+			surface.draw_line(cone_origin, cone_origin + cone_direction * cone_range, Color(1.0, 0.88, 0.58, 0.72 * cone_fade), 2.8, true)
+			var core_position: Vector2 = cone_origin + cone_direction * minf(cone_range * 0.18, 22.0)
+			surface.draw_circle(core_position, 9.0, Color(1.0, 0.82, 0.42, 0.64 * cone_fade))
+			surface.draw_circle(core_position, 4.6, Color(1.0, 0.97, 0.82, 0.92 * cone_fade))
+			var flame_time: float = float(Time.get_ticks_msec()) / 1000.0
+			var flame_particle_count: int = 24
+			for particle_index in range(flame_particle_count):
+				var seed: float = float(particle_index) * 1.6180339
+				var cycle: float = fposmod(flame_time * 2.35 + seed * 0.43, 1.0)
+				var distance_ratio: float = 0.12 + 0.88 * cycle
+				var distance_from_origin: float = cone_range * distance_ratio
+				var spread_scale: float = 0.3 + 0.7 * distance_ratio
+				var spread_angle: float = sin(flame_time * 6.0 + seed * 4.9) * half_arc * spread_scale
+				var ember_direction: Vector2 = cone_direction.rotated(spread_angle)
+				var ember_position: Vector2 = cone_origin + ember_direction * distance_from_origin
+				var ember_radius: float = lerpf(4.8, 1.2, cycle)
+				var ember_alpha: float = (0.42 + 0.58 * (1.0 - cycle)) * cone_fade
+				surface.draw_circle(ember_position, ember_radius, Color(1.0, 0.44 + 0.28 * (1.0 - cycle), 0.15, ember_alpha))
+				surface.draw_circle(ember_position - ember_direction * 3.2, ember_radius * 0.56, Color(1.0, 0.9, 0.62, ember_alpha * 0.86))
 			continue
 		if projectile_kind == "ghostfire_ray":
 			var ray_duration: float = maxf(float(projectile.get("blast_duration", 0.22)), 0.001)

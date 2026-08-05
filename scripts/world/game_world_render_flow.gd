@@ -12,7 +12,6 @@ const MERCHANT_DRAW_SIZE: Vector2 = Vector2(124.0, 124.0)
 const PROJECTILE_AIM_PREVIEW_CARD_IDS: Dictionary = {
 	"fireball_card": true,
 	"magic_missile_card": true,
-	"scorching_ray_card": true,
 	"dagger_card": true,
 	"rogue_combo_dagger_card": true,
 	"ricochet_dagger_card": true,
@@ -121,7 +120,7 @@ static func draw_projectile_target_indicator(game: Node, preview: Dictionary, ta
 			var spread_end: Vector2 = origin + spread_direction * guide_length
 			game.draw_line(origin, spread_end, Color(preview_color.r, preview_color.g, preview_color.b, 0.5 if valid_preview else 0.22), 2.0, true)
 
-	if card_id == "magic_missile_card" or card_id == "scorching_ray_card":
+	if card_id == "magic_missile_card":
 		var shot_count: int = clampi(maxi(1, int(card_preview.get("projectile_count", 3))), 1, 8)
 		var ring_radius: float = 10.0 + float(shot_count) * 1.8
 		for shot_index in range(shot_count):
@@ -168,7 +167,7 @@ static func draw_active_hand_card_target_preview(game: Node) -> void:
 		var target_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
 		if target_room != game.INVALID_ROOM and game.rooms.has(target_room):
 			var projectile_card_preview: bool = card_uses_projectile_target_indicator(card_id)
-			var cone_sector_preview: bool = card_id == "shield_bash_card" or card_id == "fear_card"
+			var cone_sector_preview: bool = card_id == "shield_bash_card" or card_id == "fear_card" or card_id == "scorcher_card"
 			var room_highlight_rect: Rect2 = game.room_rect(target_room).grow(-8.0)
 			game.draw_rect(room_highlight_rect, fill_color, true)
 			game.draw_rect(room_highlight_rect, outline_color, false, 4.0)

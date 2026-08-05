@@ -13,7 +13,7 @@ const TYPE_DEMON_D: String = "demon_d"
 const TYPE_ORC_SHAMAN: String = "orc_shaman"
 const TYPE_SKELETON_ARCHER: String = "skeleton_archer"
 const TYPE_SPIRITUAL_WEAPON: String = "spiritual_weapon"
-const FAMILIAR_SUMMON_CARD_ID: String = "summon_arcane_sentinel_card"
+const FAMILIAR_SUMMON_CARD_ID: String = "find_familiar_card"
 const FAMILIAR_ATTACK_SWOOP_DURATION: float = 0.34
 const FAMILIAR_ATTACK_SWOOP_DISTANCE: float = 58.0
 const FAMILIAR_ATTACK_DIVE_RATIO: float = 0.34
@@ -70,6 +70,8 @@ var fear_time_left: float = 0.0
 var fear_duration: float = 0.0
 var fear_move_speed_multiplier: float = 1.2
 var fear_source_position: Vector2 = Vector2.ZERO
+var calm_emotions_time_left: float = 0.0
+var calm_emotions_duration: float = 0.0
 var attack_effect_left: float = 0.0
 var hurt_effect_left: float = 0.0
 var visual_facing_left: bool = false
@@ -203,7 +205,7 @@ func is_find_familiar_summon() -> bool:
 	if not bool(get_meta("temporary_summon", false)):
 		return false
 	var summon_card_id: String = String(get_meta("summon_card_id", ""))
-	return summon_card_id == FAMILIAR_SUMMON_CARD_ID or summon_card_id == "find_familiar_card"
+	return summon_card_id == FAMILIAR_SUMMON_CARD_ID
 
 func start_familiar_attack_swoop(target_position: Vector2) -> void:
 	if not is_find_familiar_summon():
@@ -272,6 +274,8 @@ func update_sprite_state(move_offset: Vector2) -> void:
 	animated_sprite.speed_scale = animation_speed_scale_for(animation_name)
 
 func effective_move_speed() -> float:
+	if is_calm_emotions_neutralized():
+		return 0.0
 	if rooted_time_left > 0.0:
 		return 0.0
 	var resolved_speed: float = move_speed * situational_speed_multiplier * current_recovering_slow_move_multiplier()
@@ -362,6 +366,25 @@ func apply_fear_debuff(duration: float, source_position: Vector2, move_speed_mul
 	fear_time_left = maxf(fear_time_left, duration)
 	fear_move_speed_multiplier = maxf(fear_move_speed_multiplier, move_speed_multiplier)
 	fear_source_position = source_position
+	queue_redraw()
+
+func is_calm_emotions_neutralized() -> bool:
+	return calm_emotions_time_left > 0.0 and not death_started
+
+func apply_calm_emotions(duration: float) -> void:
+	if duration <= 0.0 or death_started:
+		return
+	calm_emotions_duration = maxf(calm_emotions_duration, duration)
+	calm_emotions_time_left = maxf(calm_emotions_time_left, duration)
+	velocity = Vector2.ZERO
+	move_steps.clear()
+	queue_redraw()
+
+func clear_calm_emotions() -> void:
+	if calm_emotions_time_left <= 0.0 and calm_emotions_duration <= 0.0:
+		return
+	calm_emotions_time_left = 0.0
+	calm_emotions_duration = 0.0
 	queue_redraw()
 
 func set_situational_speed_multiplier(multiplier: float) -> void:
@@ -488,6 +511,8 @@ func deactivate_for_pool() -> void:
 	fear_duration = 0.0
 	fear_move_speed_multiplier = 1.2
 	fear_source_position = Vector2.ZERO
+	calm_emotions_time_left = 0.0
+	calm_emotions_duration = 0.0
 	knockback_velocity = Vector2.ZERO
 	knockback_time_left = 0.0
 	knockback_duration = 0.0
@@ -630,6 +655,8 @@ func set_role(role_name: String) -> void:
 	fear_duration = 0.0
 	fear_move_speed_multiplier = 1.2
 	fear_source_position = Vector2.ZERO
+	calm_emotions_time_left = 0.0
+	calm_emotions_duration = 0.0
 	converted_time_left = 0.0
 	current_health = max_health
 	if collision_shape != null:
@@ -680,6 +707,7 @@ func take_damage(amount: float, hit_direction: Vector2 = Vector2.ZERO) -> bool:
 	var applied_damage: float = maxf(amount, 0.0) * current_flatfooted_damage_taken_multiplier()
 	var health_before: float = current_health
 	current_health = maxf(current_health - applied_damage, 0.0)
+	clear_calm_emotions()
 	hurt_effect_left = maxf(hurt_effect_left, 0.22)
 	if current_health <= 0.0:
 		begin_death()
@@ -708,6 +736,7 @@ func _physics_process(delta: float) -> void:
 	flatfooted_time_left = maxf(flatfooted_time_left - delta, 0.0)
 	hold_person_time_left = maxf(hold_person_time_left - delta, 0.0)
 	fear_time_left = maxf(fear_time_left - delta, 0.0)
+	calm_emotions_time_left = maxf(calm_emotions_time_left - delta, 0.0)
 	familiar_swoop_time_left = maxf(familiar_swoop_time_left - delta, 0.0)
 	if is_find_familiar_summon() and knockback_time_left <= 0.0:
 		var familiar_anchor: Vector2 = Vector2(get_meta("summon_anchor_position", global_position))
@@ -732,6 +761,8 @@ func _physics_process(delta: float) -> void:
 	if fear_time_left <= 0.0 and fear_duration > 0.0:
 		fear_duration = 0.0
 		fear_move_speed_multiplier = 1.2
+	if calm_emotions_time_left <= 0.0 and calm_emotions_duration > 0.0:
+		calm_emotions_duration = 0.0
 	var offset: Vector2 = destination - global_position
 	var desired_velocity: Vector2 = Vector2.ZERO
 	if offset.length() < 4.0:

@@ -109,6 +109,17 @@ var food_defence_bonus: float = 0.0
 var food_defence_time_left: float = 0.0
 var food_move_speed_multiplier: float = 1.0
 var food_move_speed_time_left: float = 0.0
+var haste_move_speed_multiplier: float = 1.0
+var haste_attack_cooldown_multiplier: float = 1.0
+var haste_time_left: float = 0.0
+var scorcher_channel_active: bool = false
+var scorcher_channel_room: Vector2i = INVALID_ROOM
+var scorcher_channel_direction: Vector2 = Vector2.RIGHT
+var scorcher_channel_range: float = 220.0
+var scorcher_channel_arc_degrees: float = 70.0
+var scorcher_dot_damage_per_second: float = 0.0
+var scorcher_channel_tick_interval: float = 0.25
+var scorcher_channel_tick_time_left: float = 0.0
 var temporary_skulker_until_doors_opened: int = 0
 var skulking_visual_active: bool = false
 var operate_room: Vector2i = INVALID_ROOM
@@ -334,6 +345,7 @@ func begin_death() -> void:
 	if dead_started:
 		return
 	dead_started = true
+	end_scorcher_channel()
 	end_evasive_roll()
 	current_health = 0.0
 	attack_effect_left = 0.0
@@ -453,7 +465,11 @@ func mitigated_damage_by_defence(attack_power: float) -> float:
 	return safe_attack_power * (1.0 - mitigation_ratio)
 
 func current_attack_cooldown() -> float:
-	var cooldown_multiplier: float = food_attack_cooldown_multiplier if food_attack_speed_time_left > 0.0 else 1.0
+	var cooldown_multiplier: float = 1.0
+	if food_attack_speed_time_left > 0.0:
+		cooldown_multiplier *= maxf(food_attack_cooldown_multiplier, 0.1)
+	if haste_time_left > 0.0:
+		cooldown_multiplier *= maxf(haste_attack_cooldown_multiplier, 0.1)
 	return maxf(attack_cooldown * maxf(cooldown_multiplier, 0.1), 0.08)
 
 func apply_food_attack_speed_buff(cooldown_multiplier: float, duration: float) -> void:
@@ -477,6 +493,23 @@ func apply_food_move_speed_buff(speed_multiplier: float, duration: float) -> voi
 		return
 	food_move_speed_multiplier = maxf(food_move_speed_multiplier, speed_multiplier)
 	food_move_speed_time_left = maxf(food_move_speed_time_left, duration)
+	apply_sprite_tint()
+	queue_redraw()
+
+func apply_haste_buff(duration: float, move_speed_multiplier: float = 2.0, attack_speed_multiplier: float = 2.0) -> void:
+	if duration <= 0.0:
+		return
+	haste_time_left = maxf(haste_time_left, duration)
+	haste_move_speed_multiplier = maxf(haste_move_speed_multiplier, move_speed_multiplier)
+	var cooldown_multiplier: float = 1.0 / maxf(attack_speed_multiplier, 0.1)
+	haste_attack_cooldown_multiplier = minf(haste_attack_cooldown_multiplier, cooldown_multiplier)
+	apply_sprite_tint()
+	queue_redraw()
+
+func clear_haste_buff() -> void:
+	haste_time_left = 0.0
+	haste_move_speed_multiplier = 1.0
+	haste_attack_cooldown_multiplier = 1.0
 	apply_sprite_tint()
 	queue_redraw()
 
@@ -566,6 +599,36 @@ func end_evasive_roll() -> void:
 	if animated_sprite != null:
 		animated_sprite.rotation = 0.0
 
+func has_active_scorcher_channel() -> bool:
+	return scorcher_channel_active and scorcher_channel_room != INVALID_ROOM and scorcher_dot_damage_per_second > 0.0
+
+func begin_scorcher_channel(room_coord: Vector2i, direction: Vector2, range_value: float, arc_degrees: float, damage_per_second: float, tick_interval: float) -> void:
+	if dead_started:
+		return
+	scorcher_channel_active = true
+	scorcher_channel_room = room_coord
+	scorcher_channel_direction = direction.normalized()
+	if scorcher_channel_direction == Vector2.ZERO:
+		scorcher_channel_direction = Vector2.LEFT if visual_facing_left else Vector2.RIGHT
+	scorcher_channel_range = maxf(range_value, 12.0)
+	scorcher_channel_arc_degrees = clampf(arc_degrees, 10.0, 180.0)
+	scorcher_dot_damage_per_second = maxf(damage_per_second, 0.0)
+	scorcher_channel_tick_interval = maxf(tick_interval, 0.05)
+	scorcher_channel_tick_time_left = 0.0
+	move_steps.clear()
+	set_destination(global_position)
+	player_command_locked = true
+
+func end_scorcher_channel() -> void:
+	scorcher_channel_active = false
+	scorcher_channel_room = INVALID_ROOM
+	scorcher_channel_direction = Vector2.RIGHT
+	scorcher_channel_range = 220.0
+	scorcher_channel_arc_degrees = 70.0
+	scorcher_dot_damage_per_second = 0.0
+	scorcher_channel_tick_interval = 0.25
+	scorcher_channel_tick_time_left = 0.0
+
 func clear_invulnerability() -> void:
 	invulnerability_time_left = 0.0
 	queue_redraw()
@@ -619,6 +682,7 @@ func apply_inventory_stats(move_bonus: float, health_bonus: float, attack_bonus:
 	food_attack_speed_time_left = maxf(food_attack_speed_time_left, 0.0)
 	food_defence_time_left = maxf(food_defence_time_left, 0.0)
 	food_move_speed_time_left = maxf(food_move_speed_time_left, 0.0)
+	haste_time_left = maxf(haste_time_left, 0.0)
 	if operate_attuned and operate_room == INVALID_ROOM:
 		operate_attuned = false
 	operate_started_at_door = maxi(operate_started_at_door, -1)
@@ -669,6 +733,8 @@ func configure_archetype(class_id: String, display_name: String, next_move_speed
 	base_attack_cooldown = next_attack_cooldown
 	base_max_hand_size = max_hand_size
 	basic_attack_knockback = 0.0
+	clear_haste_buff()
+	end_scorcher_channel()
 	current_health = clampf(current_health if current_health > 0.0 else max_health, 1.0, max_health)
 	ensure_sprite_setup()
 	apply_sprite_tint()
@@ -685,6 +751,8 @@ func movement_speed() -> float:
 	var speed: float = move_speed * (combat_move_speed_multiplier if combat_movement_mode else calm_move_speed_multiplier)
 	if food_move_speed_time_left > 0.0:
 		speed *= maxf(food_move_speed_multiplier, 1.0)
+	if haste_time_left > 0.0:
+		speed *= maxf(haste_move_speed_multiplier, 1.0)
 	if evasive_roll_time_left > 0.0:
 		speed *= maxf(evasive_roll_speed_multiplier, 1.0)
 	if carrying_crystal:
@@ -740,6 +808,12 @@ func _physics_process(delta: float) -> void:
 			animated_sprite.rotation += evasive_roll_spin_speed * delta
 		if evasive_roll_time_left <= 0.0:
 			end_evasive_roll()
+	if haste_time_left > 0.0:
+		haste_time_left = maxf(haste_time_left - delta, 0.0)
+		if haste_time_left <= 0.0:
+			haste_move_speed_multiplier = 1.0
+			haste_attack_cooldown_multiplier = 1.0
+			apply_sprite_tint()
 	var offset: Vector2 = destination - global_position
 	var desired_velocity: Vector2 = Vector2.ZERO
 	if offset.length() < 4.0:

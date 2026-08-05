@@ -49,22 +49,21 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"color": Color("fff1a8"),
 				"reusable": true,
 			}
-		"misty_step_card":
+		"scorcher_card":
 			return {
-				"id": "misty_step_card",
-				"name": "Misty Step",
+				"id": "scorcher_card",
+				"name": "Scorcher",
 				"spell_class": game.HERO_CLASS_WIZARD,
 				"spell_level": 2,
-				"target_scope": "opened_room",
-				"requires_line_of_effect": true,
-				"phase": "any",
-				"description_lines": ["Reaction: on fatal hit, step one room toward the crystal", "Play on an adjacent room to teleport there", "Recharges after 2 opened rooms from a slotted spell"],
-				"cast_adjacent_hops": 0,
-				"requires_adjacent_room_target": true,
-				"reaction_trigger": "fatal_damage",
-				"reaction_default_enabled": true,
+				"target_scope": "same_room",
+				"phase": "combat",
+				"description_lines": ["Channel a cone of flame from your current room", "Deals damage over time while channeling", "Can be interrupted by giving another command", "The flames also hit allies", "Recharges after 2 opened rooms from a slotted spell"],
+				"impact_radius": 220.0,
+				"arc_angle_deg": 70.0,
+				"dot_damage_per_second": 28.0,
+				"channel_tick_interval": 0.25,
 				"door_interval": 2,
-				"color": Color("b89cff"),
+				"color": Color("ff9b63"),
 			}
 		"evasive_roll_card":
 			return {
@@ -174,25 +173,26 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"door_interval": 3,
 				"color": Color("8bd9ff"),
 			}
-		"scorching_ray_card":
+		"haste_card":
 			return {
-				"id": "scorching_ray_card",
-				"name": "Scorching Ray",
+				"id": "haste_card",
+				"name": "Haste",
 				"spell_class": game.HERO_CLASS_WIZARD,
-				"spell_level": 2,
+				"spell_level": 3,
 				"target_scope": "opened_room",
 				"requires_line_of_effect": true,
 				"phase": "combat",
-				"description_lines": ["Target one opened room", "Fires three ghostfire rays", "Recharges after 2 opened rooms from a slotted spell"],
-				"base_damage": 22.0,
-				"projectile_count": 3,
+				"description_lines": ["Target one opened room", "Buffs the highest-damage ally in that room", "Double move speed and attack speed for 12s", "Recharges after 3 opened rooms from a slotted spell"],
 				"cast_adjacent_hops": 1,
-				"door_interval": 2,
-				"color": Color("ffb366"),
+				"haste_duration": 12.0,
+				"haste_move_speed_multiplier": 2.0,
+				"haste_attack_speed_multiplier": 2.0,
+				"door_interval": 3,
+				"color": Color("ffd56e"),
 			}
-		"summon_arcane_sentinel_card":
+		"find_familiar_card":
 			return {
-				"id": "summon_arcane_sentinel_card",
+				"id": "find_familiar_card",
 				"name": "Find Familiar",
 				"spell_class": game.HERO_CLASS_WIZARD,
 				"spell_level": 1,
@@ -290,6 +290,38 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"door_interval": 2,
 				"color": Color("cda3ff"),
 			}
+		"calm_emotions_card":
+			return {
+				"id": "calm_emotions_card",
+				"name": "Calm Emotions",
+				"spell_class": game.HERO_CLASS_CLERIC,
+				"spell_level": 2,
+				"target_scope": "opened_room",
+				"requires_line_of_effect": true,
+				"phase": "combat",
+				"description_lines": ["Target one opened room", "Enemies there become neutral for 12s", "Neutral enemies do not move or attack", "Effect ends immediately when they take damage"],
+				"cast_adjacent_hops": 1,
+				"calm_duration": 12.0,
+				"door_interval": 2,
+				"color": Color("b7e8ff"),
+			}
+		"beacon_of_hope_card":
+			return {
+				"id": "beacon_of_hope_card",
+				"name": "Beacon of Hope",
+				"spell_class": game.HERO_CLASS_CLERIC,
+				"spell_level": 3,
+				"target_scope": "opened_room",
+				"phase": "combat",
+				"description_lines": ["Target one opened room", "Blesses all allies there", "All allies gain damage reduction and regeneration", "Recharges after 3 opened rooms from a prepared prayer"],
+				"cast_adjacent_hops": 1,
+				"sanctuary_duration": 10.0,
+				"sanctuary_damage_multiplier": 0.78,
+				"sanctuary_regen_per_second": 3.0,
+				"sanctuary_aoe": true,
+				"door_interval": 3,
+				"color": Color("d4ff9f"),
+			}
 		"turn_undead_card":
 			return {
 				"id": "turn_undead_card",
@@ -323,9 +355,9 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"door_interval": 2,
 				"color": Color("f0f1ff"),
 			}
-		"summon_warden_spirit_card":
+		"animate_dead_card":
 			return {
-				"id": "summon_warden_spirit_card",
+				"id": "animate_dead_card",
 				"name": "Animate Dead",
 				"spell_class": game.HERO_CLASS_CLERIC,
 				"spell_classes": [game.HERO_CLASS_CLERIC, game.HERO_CLASS_WIZARD],

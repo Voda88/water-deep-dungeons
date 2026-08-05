@@ -304,14 +304,14 @@ static func build_item_defs() -> Dictionary:
 			"tags": ["scroll", "magical"],
 			"hand_card": {"card_id": "magic_missile_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Magic Missile Scroll", "description_lines_override": ["Launch seeking missiles once", "Wizard can study it in calm mode"]},
 		},
-		"scroll_misty_step": {
-			"name": "Scroll of Misty Step",
-			"short": "SMS",
+		"scroll_scorcher": {
+			"name": "Scroll of Scorcher",
+			"short": "SSC",
 			"size": Vector2i(1, 2),
-			"color": Color("b89cff"),
+			"color": Color("ff9b63"),
 			"description_lines": ["Single-use spell scroll", "Cast once or study in calm as a wizard"],
 			"tags": ["scroll", "magical"],
-			"hand_card": {"card_id": "misty_step_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Misty Step Scroll", "description_lines_override": ["Fatal reaction: step one room toward crystal", "Or play on an adjacent room to teleport"]},
+			"hand_card": {"card_id": "scorcher_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Scorcher Scroll", "description_lines_override": ["Channel flames in a cone", "Damage over time continues until interrupted", "The flame cone also hits allies"]},
 		},
 		"scroll_web": {
 			"name": "Scroll of Web",
@@ -331,14 +331,14 @@ static func build_item_defs() -> Dictionary:
 			"tags": ["scroll", "magical"],
 			"hand_card": {"card_id": "shield_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Shield Scroll", "description_lines_override": ["Gain a temporary arcane barrier", "Wizard can study it in calm mode"]},
 		},
-		"scroll_scorching_ray": {
-			"name": "Scroll of Animate Dead",
-			"short": "SAD",
+		"scroll_haste": {
+			"name": "Scroll of Haste",
+			"short": "SHS",
 			"size": Vector2i(1, 2),
-			"color": Color("d9f4e2"),
-			"description_lines": ["Single-use spell scroll", "Wizard can study in calm; cleric can prepare when level allows"],
+			"color": Color("ffd56e"),
+			"description_lines": ["Single-use spell scroll", "Cast once or study in calm as a wizard"],
 			"tags": ["scroll", "magical"],
-			"hand_card": {"card_id": "summon_warden_spirit_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Animate Dead Scroll", "description_lines_override": ["Summon three temporary skeleton allies", "Cleric prepares by level; wizard can study in calm mode"]},
+			"hand_card": {"card_id": "haste_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Haste Scroll", "description_lines_override": ["Buff the highest-damage ally in a room", "Double move speed and attack speed for 12s"]},
 		},
 		"scroll_lightning_bolt": {
 			"name": "Scroll of Lightning Bolt",
@@ -367,14 +367,14 @@ static func build_item_defs() -> Dictionary:
 			"tags": ["scroll", "magical"],
 			"hand_card": {"card_id": "scry_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Scry Scroll", "description_lines_override": ["Reveal adjacent sealed rooms once", "Wizard can study it in calm mode"]},
 		},
-		"scroll_summon_arcane_sentinel": {
+		"scroll_find_familiar": {
 			"name": "Scroll of Find Familiar",
 			"short": "SFF",
 			"size": Vector2i(1, 2),
 			"color": Color("b8d1ff"),
 			"description_lines": ["Single-use spell scroll", "Cast once or study in calm as a wizard"],
 			"tags": ["scroll", "magical"],
-			"hand_card": {"card_id": "summon_arcane_sentinel_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Find Familiar Scroll", "description_lines_override": ["Summon an allied familiar once", "Wizard can study it in calm mode"]},
+			"hand_card": {"card_id": "find_familiar_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Find Familiar Scroll", "description_lines_override": ["Summon an allied familiar once", "Wizard can study it in calm mode"]},
 		},
 		"scroll_cure_light_wounds": {
 			"name": "Scroll of Cure Light Wounds",
@@ -412,6 +412,24 @@ static func build_item_defs() -> Dictionary:
 			"tags": ["scroll", "magical"],
 			"hand_card": {"card_id": "fear_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Fear Scroll", "description_lines_override": ["Terrify enemies in a long cone for 6s", "Feared enemies flee and take 2x damage"]},
 		},
+		"scroll_calm_emotions": {
+			"name": "Scroll of Calm Emotions",
+			"short": "SCE",
+			"size": Vector2i(1, 2),
+			"color": Color("b7e8ff"),
+			"description_lines": ["Single-use prayer scroll", "Cast once or study in calm as a cleric"],
+			"tags": ["scroll", "magical"],
+			"hand_card": {"card_id": "calm_emotions_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Calm Emotions Scroll", "description_lines_override": ["Pacify enemies in one opened room for 12s", "Effect ends early when enemies take damage"]},
+		},
+		"scroll_beacon_of_hope": {
+			"name": "Scroll of Beacon of Hope",
+			"short": "SBH",
+			"size": Vector2i(1, 2),
+			"color": Color("d4ff9f"),
+			"description_lines": ["Single-use prayer scroll", "Cast once or study in calm as a cleric"],
+			"tags": ["scroll", "magical"],
+			"hand_card": {"card_id": "beacon_of_hope_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Beacon of Hope Scroll", "description_lines_override": ["Bless all allies in one room", "Adds mitigation and regeneration"]},
+		},
 		"scroll_spiritual_weapon": {
 			"name": "Scroll of Spiritual Weapon",
 			"short": "SSW",
@@ -421,13 +439,13 @@ static func build_item_defs() -> Dictionary:
 			"tags": ["scroll", "magical"],
 			"hand_card": {"card_id": "spiritual_weapon_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Spiritual Weapon Scroll", "description_lines_override": ["Summon an invulnerable spectral blade once", "No study required for clerics"]},
 		},
-		"scroll_summon_warden_spirit": {
+		"scroll_animate_dead": {
 			"name": "Scroll of Animate Dead",
-			"short": "SWS",
+			"short": "ADS",
 			"size": Vector2i(1, 2),
 			"color": Color("d0ffbe"),
 			"description_lines": ["Single-use prayer scroll", "Cast once or study in calm as a cleric"],
 			"tags": ["scroll", "magical"],
-			"hand_card": {"card_id": "summon_warden_spirit_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Animate Dead Scroll", "description_lines_override": ["Summon three temporary skeleton allies", "Cleric prepares by level; wizard can study in calm mode"]},
+			"hand_card": {"card_id": "animate_dead_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Animate Dead Scroll", "description_lines_override": ["Summon three temporary skeleton allies", "Cleric prepares by level; wizard can study in calm mode"]},
 		},
 	}

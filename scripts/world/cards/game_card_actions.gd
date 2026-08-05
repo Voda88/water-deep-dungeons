@@ -2,7 +2,6 @@ extends RefCounted
 
 const GAME_ENEMY_DEFS: GDScript = preload("res://scripts/content/game_enemy_defs.gd")
 const GAME_DUNGEON_BUILDER: GDScript = preload("res://scripts/world/rooms/game_dungeon_builder.gd")
-const SCORCHING_RAY_EFFECT_DURATION: float = 0.5
 
 static func hero_hand_card_index(_game: Node, hero: Variant, card_uid: int) -> int:
 	if hero == null or not is_instance_valid(hero):
@@ -509,24 +508,6 @@ static func adjacent_target_valid_for_card(game: Node, hero: Variant, hand_card:
 		return true
 	return room_has_neighbor(game, cast_room, target_room)
 
-static func misty_step_escape_room_toward_crystal(game: Node, hero: Variant) -> Vector2i:
-	if hero == null or not is_instance_valid(hero):
-		return game.INVALID_ROOM
-	var origin_room: Vector2i = hero.current_room
-	if origin_room == game.INVALID_ROOM or not game.rooms.has(origin_room):
-		return game.INVALID_ROOM
-	var best_room: Vector2i = origin_room
-	var best_distance: int = game.room_path_distance(origin_room, game.crystal_room)
-	for neighbor_variant in Array(game.rooms[origin_room].get("neighbors", [])):
-		var neighbor_room: Vector2i = neighbor_variant
-		if not game.rooms.has(neighbor_room) or not bool(game.rooms[neighbor_room].get("opened", false)):
-			continue
-		var distance_to_crystal: int = game.room_path_distance(neighbor_room, game.crystal_room)
-		if distance_to_crystal < best_distance:
-			best_distance = distance_to_crystal
-			best_room = neighbor_room
-	return best_room
-
 static func travel_distance_for_steps(start_position: Vector2, steps: Array) -> float:
 	var total_distance: float = 0.0
 	var previous_position: Vector2 = start_position
@@ -649,10 +630,13 @@ static func hand_card_phase_allows_play(game: Node, hand_card: Dictionary) -> bo
 static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Dictionary, target_data: Dictionary) -> bool:
 	if hero == null or not is_instance_valid(hero) or hero.carrying_crystal:
 		return false
+	var card_id: String = String(hand_card.get("card_id", ""))
+	if card_id != "scorcher_card":
+		cancel_hero_channel_spell(game, hero)
 	var target_world_position: Vector2 = Vector2(target_data.get("world_position", hero.global_position))
 	if hand_card_starts_spell_study(game, hero, hand_card, target_data):
 		return game.begin_spell_scroll_study(hero, String(hand_card.get("learn_spell_id", "")))
-	match String(hand_card.get("card_id", "")):
+	match card_id:
 		"fireball_card":
 			var room_coord: Vector2i = target_data.get("room", game.INVALID_ROOM)
 			if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
@@ -673,24 +657,19 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			hero.trigger_attack(hero.global_position + Vector2(0.0, -18.0), "laser")
 			game.status_message = "%s invoked Light." % hero.hero_name
 			return true
-		"misty_step_card":
-			var reaction_trigger: String = String(target_data.get("reaction_trigger", ""))
-			if reaction_trigger == "fatal_damage":
-				var crystalward_room: Vector2i = misty_step_escape_room_toward_crystal(game, hero)
-				if crystalward_room == game.INVALID_ROOM or not game.rooms.has(crystalward_room):
-					return false
-				var crystalward_landing: Vector2 = game.room_walkable_center(crystalward_room)
-				cast_misty_step_spell(game, hero, crystalward_landing, crystalward_room, hand_card)
-				game.status_message = "%s reflexively stepped toward the crystal." % hero.hero_name
-				return true
-			var teleport_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
-			if teleport_room == game.INVALID_ROOM or not game.rooms.has(teleport_room):
+		"scorcher_card":
+			if not game.wave_in_progress():
+				game.status_message = "Scorcher can only be cast during combat."
 				return false
-			if not adjacent_target_valid_for_card(game, hero, hand_card, teleport_room):
-				game.status_message = "Misty Step needs an adjacent opened room."
+			var scorcher_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
+			if scorcher_room == game.INVALID_ROOM or not game.rooms.has(scorcher_room):
 				return false
-			cast_misty_step_spell(game, hero, target_world_position, teleport_room, hand_card)
-			game.status_message = "%s cast Misty Step." % hero.hero_name
+			if scorcher_room != hero.current_room:
+				game.status_message = "Scorcher can only be channeled in your current room."
+				return false
+			if not cast_scorcher_spell(game, hero, target_world_position, scorcher_room, hand_card):
+				return false
+			game.status_message = "%s began channeling Scorcher." % hero.hero_name
 			return true
 		"evasive_roll_card":
 			if not game.wave_in_progress():
@@ -771,6 +750,9 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			if not game.wave_in_progress():
 				game.status_message = "Turn Undead can only be cast during combat."
 				return false
+			if String(hero.hero_class_id) != String(game.HERO_CLASS_CLERIC):
+				game.status_message = "Only clerics can invoke Turn Undead."
+				return false
 			var turn_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
 			if turn_room == game.INVALID_ROOM or not game.rooms.has(turn_room):
 				return false
@@ -779,6 +761,27 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 				game.status_message = "%s invoked Turn Undead, but no undead were affected." % hero.hero_name
 				return false
 			game.status_message = "%s invoked Turn Undead on %d undead." % [hero.hero_name, turned_count]
+			return true
+		"calm_emotions_card":
+			if not game.wave_in_progress():
+				game.status_message = "Calm Emotions can only be cast during combat."
+				return false
+			var calm_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
+			if calm_room == game.INVALID_ROOM or not game.rooms.has(calm_room):
+				return false
+			var calm_count: int = cast_calm_emotions_spell(game, hero, calm_room, hand_card)
+			if calm_count <= 0:
+				game.status_message = "%s cast Calm Emotions, but no enemies were affected." % hero.hero_name
+				return false
+			game.status_message = "%s calmed %d enem%s in %s." % [hero.hero_name, calm_count, "y" if calm_count == 1 else "ies", game.room_title(calm_room)]
+			return true
+		"beacon_of_hope_card":
+			var beacon_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
+			if beacon_room == game.INVALID_ROOM or not game.rooms.has(beacon_room):
+				return false
+			if not cast_beacon_of_hope_spell(game, hero, beacon_room, hand_card):
+				return false
+			game.status_message = "%s invoked Beacon of Hope in %s." % [hero.hero_name, game.room_title(beacon_room)]
 			return true
 		"web_card":
 			var web_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
@@ -797,7 +800,7 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 				return false
 			game.status_message = "%s cast Scry and revealed %d adjacent room%s." % [hero.hero_name, revealed_rooms, "" if revealed_rooms == 1 else "s"]
 			return true
-		"summon_arcane_sentinel_card", "summon_warden_spirit_card", "spiritual_weapon_card":
+		"find_familiar_card", "animate_dead_card", "spiritual_weapon_card":
 			if not game.wave_in_progress():
 				game.status_message = "%s can only be cast during combat." % String(hand_card.get("name", "That summon"))
 				return false
@@ -847,12 +850,18 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			cast_lightning_bolt_spell(game, hero, target_world_position, bolt_room, hand_card)
 			game.status_message = "%s cast Lightning Bolt." % hero.hero_name
 			return true
-		"scorching_ray_card":
-			var ray_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
-			if ray_room == game.INVALID_ROOM or not game.rooms.has(ray_room):
+		"haste_card":
+			if not game.wave_in_progress():
+				game.status_message = "Haste can only be cast during combat."
 				return false
-			cast_scorching_ray_spell(game, hero, target_world_position, ray_room, hand_card)
-			game.status_message = "%s cast Scorching Ray." % hero.hero_name
+			var haste_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
+			if haste_room == game.INVALID_ROOM or not game.rooms.has(haste_room):
+				return false
+			var haste_target: Variant = cast_haste_spell(game, hero, haste_room, hand_card)
+			if haste_target == null or not is_instance_valid(haste_target):
+				game.status_message = "%s cast Haste, but no ally could be accelerated." % hero.hero_name
+				return false
+			game.status_message = "%s cast Haste on %s in %s." % [hero.hero_name, haste_target.hero_name, game.room_title(haste_room)]
 			return true
 		"lantern_beacon_card":
 			var room_coord_torch: Vector2i = target_data.get("room", game.INVALID_ROOM)
@@ -1136,6 +1145,31 @@ static func enemies_in_cone_in_room(game: Node, room_coord: Vector2i, origin: Ve
 		resolved_targets.append(target_entry_variant.get("enemy", null))
 	return resolved_targets
 
+static func heroes_in_cone_in_room(game: Node, room_coord: Vector2i, origin: Vector2, aim_direction: Vector2, max_distance: float, arc_angle_degrees: float, exclude_hero: Variant = null) -> Array:
+	var half_arc_radians: float = deg_to_rad(clampf(arc_angle_degrees * 0.5, 5.0, 180.0))
+	var resolved_direction: Vector2 = aim_direction.normalized()
+	if resolved_direction == Vector2.ZERO:
+		resolved_direction = Vector2.RIGHT
+	var cone_targets: Array = []
+	for room_hero in game.heroes_in_room(room_coord):
+		if room_hero == null or not is_instance_valid(room_hero):
+			continue
+		if exclude_hero != null and room_hero == exclude_hero:
+			continue
+		if not game.hero_is_active(room_hero):
+			continue
+		var to_hero: Vector2 = room_hero.global_position - origin
+		var distance_to_hero: float = to_hero.length()
+		if distance_to_hero > max_distance:
+			continue
+		if distance_to_hero > 0.001:
+			var hero_direction: Vector2 = to_hero / distance_to_hero
+			var cone_dot: float = clampf(resolved_direction.dot(hero_direction), -1.0, 1.0)
+			if acos(cone_dot) > half_arc_radians:
+				continue
+		cone_targets.append(room_hero)
+	return cone_targets
+
 static func cast_magic_missile_spell(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
 	hero.trigger_attack(target_world_position, "laser")
 	var missile_targets: Array = nearest_enemies_in_room(game, target_room, target_world_position, int(hand_card.get("projectile_count", 3)))
@@ -1159,26 +1193,115 @@ static func cast_magic_missile_spell(game: Node, hero: Variant, target_world_pos
 			curve_sign * curve_scale
 		)
 
-static func cast_misty_step_spell(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
-	var landing_position: Vector2 = game.clamp_point_to_room(target_world_position, target_room)
-	hero.clear_orders()
-	game.clear_pending_room_action_request(hero.hero_index)
-	game.clear_pending_room_loot_request(hero.hero_index)
-	hero.set_room(target_room, landing_position)
-	hero.trigger_attack(landing_position, "laser")
+static func cancel_hero_channel_spell(game: Node, hero: Variant, show_feedback: bool = false) -> void:
+	if hero == null or not is_instance_valid(hero):
+		return
+	if not (hero.has_method("has_active_scorcher_channel") and bool(hero.has_active_scorcher_channel())):
+		return
+	if hero.has_method("end_scorcher_channel"):
+		hero.end_scorcher_channel()
+	if show_feedback:
+		game.status_message = "%s stopped channeling Scorcher." % hero.hero_name
+
+static func cast_scorcher_spell(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> bool:
+	if hero == null or not is_instance_valid(hero):
+		return false
+	if target_room != hero.current_room:
+		return false
+	var cast_origin: Vector2 = hero.global_position
+	var aim_direction: Vector2 = (target_world_position - cast_origin).normalized()
+	if aim_direction == Vector2.ZERO:
+		aim_direction = Vector2.LEFT if bool(hero.get("visual_facing_left")) else Vector2.RIGHT
+	var channel_range: float = maxf(float(hand_card.get("impact_radius", 220.0)), 24.0)
+	var channel_arc: float = clampf(float(hand_card.get("arc_angle_deg", 70.0)), 10.0, 180.0)
+	var dot_damage_per_second: float = maxf(float(hand_card.get("dot_damage_per_second", hand_card.get("damage", 28.0))), 0.0)
+	var tick_interval: float = maxf(float(hand_card.get("channel_tick_interval", 0.25)), 0.05)
+	if dot_damage_per_second <= 0.0:
+		return false
+	game.interrupt_hero_orders(hero)
+	if hero.has_method("begin_scorcher_channel"):
+		hero.begin_scorcher_channel(target_room, aim_direction, channel_range, channel_arc, dot_damage_per_second, tick_interval)
+	hero.set_destination(hero.global_position)
+	hero.trigger_attack(cast_origin + aim_direction * 22.0, "fire_bolt")
+	spawn_scorcher_channel_effect(game, cast_origin, aim_direction, channel_range, channel_arc, Color(hand_card.get("color", Color("ff9b63"))), maxf(tick_interval * 1.35, 0.26))
+	return true
+
+static func spawn_scorcher_channel_effect(game: Node, origin: Vector2, aim_direction: Vector2, cone_range: float, cone_arc_degrees: float, effect_color: Color, lifetime: float) -> void:
+	var resolved_direction: Vector2 = aim_direction.normalized()
+	if resolved_direction == Vector2.ZERO:
+		resolved_direction = Vector2.RIGHT
+	var resolved_range: float = maxf(cone_range, 12.0)
+	var resolved_arc: float = clampf(cone_arc_degrees, 10.0, 180.0)
+	var tip_position: Vector2 = origin + resolved_direction * resolved_range
 	game.projectiles.append({
-		"kind": "fireball_blast",
-		"position": landing_position,
-		"previous": landing_position,
-		"target_position": landing_position,
-		"color": hand_card.get("color", Color("b89cff")),
-		"radius": 18.0,
-		"impact_radius": 42.0,
-		"lifetime_left": 0.16,
-		"blast_duration": 0.16,
-		"width": 4.0,
+		"kind": "scorcher_flame_cone",
+		"position": tip_position,
+		"previous": origin,
+		"target_position": tip_position,
+		"color": effect_color,
+		"radius": 22.0,
+		"impact_radius": 22.0,
+		"lifetime_left": lifetime,
+		"blast_duration": lifetime,
+		"width": 18.0,
+		"cone_origin": origin,
+		"cone_direction": resolved_direction,
+		"cone_range": resolved_range,
+		"cone_arc_degrees": resolved_arc,
 	})
-	game.add_resource_floating_text(landing_position, "Step", Color(hand_card.get("color", Color("b89cff"))))
+
+static func advance_scorcher_channels(game: Node, delta: float) -> void:
+	if delta <= 0.0:
+		return
+	for hero in game.heroes:
+		if hero == null or not is_instance_valid(hero):
+			continue
+		if not (hero.has_method("has_active_scorcher_channel") and bool(hero.has_active_scorcher_channel())):
+			continue
+		if not game.wave_in_progress() or not game.hero_is_active(hero):
+			cancel_hero_channel_spell(game, hero)
+			continue
+		if Vector2i(hero.current_room) != Vector2i(hero.scorcher_channel_room):
+			cancel_hero_channel_spell(game, hero)
+			continue
+		hero.move_steps.clear()
+		hero.player_command_locked = true
+		hero.set_destination(hero.global_position)
+		var tick_interval: float = maxf(float(hero.scorcher_channel_tick_interval), 0.05)
+		hero.scorcher_channel_tick_time_left = float(hero.scorcher_channel_tick_time_left) - delta
+		while hero.scorcher_channel_tick_time_left <= 0.0:
+			var cast_origin: Vector2 = hero.global_position
+			var aim_direction: Vector2 = Vector2(hero.scorcher_channel_direction).normalized()
+			if aim_direction == Vector2.ZERO:
+				aim_direction = Vector2.LEFT if bool(hero.get("visual_facing_left")) else Vector2.RIGHT
+			var scorch_range: float = maxf(float(hero.scorcher_channel_range), 12.0)
+			var scorch_arc: float = clampf(float(hero.scorcher_channel_arc_degrees), 10.0, 180.0)
+			var tick_damage: float = maxf(float(hero.scorcher_dot_damage_per_second), 0.0) * tick_interval
+			if tick_damage <= 0.0:
+				cancel_hero_channel_spell(game, hero)
+				break
+			var hit_count: int = 0
+			for enemy_variant in enemies_in_cone_in_room(game, hero.current_room, cast_origin, aim_direction, scorch_range, scorch_arc):
+				var enemy: Variant = enemy_variant
+				if enemy == null or not is_instance_valid(enemy):
+					continue
+				var scorch_direction: Vector2 = (enemy.global_position - cast_origin).normalized()
+				if scorch_direction == Vector2.ZERO:
+					scorch_direction = aim_direction
+				enemy.take_damage(tick_damage, scorch_direction)
+				game.register_hero_enemy_hit(hero, enemy, scorch_direction)
+				hit_count += 1
+			for allied_hero_variant in heroes_in_cone_in_room(game, hero.current_room, cast_origin, aim_direction, scorch_range, scorch_arc, hero):
+				var allied_hero: Variant = allied_hero_variant
+				if allied_hero == null or not is_instance_valid(allied_hero):
+					continue
+				apply_spell_damage_to_hero(game, allied_hero, tick_damage, "%s's Scorcher" % hero.hero_name)
+				hit_count += 1
+			hero.trigger_attack(cast_origin + aim_direction * 26.0, "fire_bolt")
+			spawn_scorcher_channel_effect(game, cast_origin, aim_direction, scorch_range, scorch_arc, Color("ff9b63"), maxf(tick_interval * 1.35, 0.26))
+			if hit_count > 0:
+				game.add_resource_floating_text(cast_origin + aim_direction * 34.0, "Burn", Color("ffb37a"))
+			hero.scorcher_channel_tick_time_left += tick_interval
 
 static func cast_evasive_roll(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> bool:
 	var from_room: Vector2i = evasive_roll_origin_room(game, hero)
@@ -1443,6 +1566,8 @@ static func cast_turn_undead_spell(game: Node, hero: Variant, target_room: Vecto
 		return 0
 	if target_room != hero.current_room:
 		return 0
+	if String(hero.hero_class_id) != String(game.HERO_CLASS_CLERIC):
+		return 0
 	var fear_duration: float = maxf(float(hand_card.get("fear_duration", 6.0)), 0.0)
 	if fear_duration <= 0.0:
 		return 0
@@ -1470,6 +1595,28 @@ static func cast_turn_undead_spell(game: Node, hero: Variant, target_room: Vecto
 		var turn_label: String = "Turned" if turned_count == 1 else "Turned x%d" % turned_count
 		game.add_resource_floating_text(game.room_center(target_room), turn_label, Color(hand_card.get("color", Color("f0efb5"))))
 	return turned_count
+
+static func cast_calm_emotions_spell(game: Node, hero: Variant, target_room: Vector2i, hand_card: Dictionary) -> int:
+	if target_room == game.INVALID_ROOM or not game.rooms.has(target_room):
+		return 0
+	var calm_duration: float = maxf(float(hand_card.get("calm_duration", 12.0)), 0.0)
+	if calm_duration <= 0.0:
+		return 0
+	var neutralized_count: int = 0
+	for enemy in game.enemies:
+		if not game.enemy_is_active(enemy) or enemy.current_room != target_room:
+			continue
+		if enemy.has_method("is_converted") and bool(enemy.is_converted()):
+			continue
+		if enemy.has_method("apply_calm_emotions"):
+			enemy.apply_calm_emotions(calm_duration)
+		append_timed_effect_projectile(game, "shield_flash", enemy.global_position, Color(hand_card.get("color", Color("b7e8ff"))), 0.2, 0.2)
+		neutralized_count += 1
+	if neutralized_count > 0:
+		hero.trigger_attack(game.room_center(target_room), "laser")
+		var calm_label: String = "Calmed" if neutralized_count == 1 else "Calmed x%d" % neutralized_count
+		game.add_resource_floating_text(game.room_center(target_room), calm_label, Color(hand_card.get("color", Color("b7e8ff"))))
+	return neutralized_count
 
 static func cast_web_spell(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
 	var web_position: Vector2 = game.clamp_point_to_room(target_world_position, target_room)
@@ -1540,7 +1687,15 @@ static func cast_temporary_summon_spell(game: Node, hero: Variant, target_room: 
 	var summon_flatfooted_attack_speed_multiplier: float = clampf(float(hand_card.get("summon_flatfooted_attack_speed_multiplier", card_def.get("summon_flatfooted_attack_speed_multiplier", 0.0))), 0.0, 1.0)
 	var summon_flatfooted_damage_taken_multiplier: float = maxf(float(hand_card.get("summon_flatfooted_damage_taken_multiplier", card_def.get("summon_flatfooted_damage_taken_multiplier", 1.5))), 1.0)
 	var summon_source_label: String = String(hand_card.get("summon_source_label", card_def.get("summon_source_label", "A summoned ally")))
-	var is_find_familiar: bool = card_id == "summon_arcane_sentinel_card" or card_id == "find_familiar_card"
+	var is_find_familiar: bool = card_id == "find_familiar_card"
+	var is_animate_dead: bool = card_id == "animate_dead_card"
+	var orc_role_def: Dictionary = GAME_ENEMY_DEFS.enemy_role_definition(game.ENEMY_TYPE_ORC)
+	var orc_move_speed: float = float(orc_role_def.get("move_speed", 48.0))
+	var orc_max_health: float = maxf(float(orc_role_def.get("max_health", 68.0)), 1.0)
+	var orc_attack_damage: float = maxf(float(orc_role_def.get("attack_damage", 20.0)) * float(game.ENEMY_SCRIPT.ENEMY_ATTACK_DAMAGE_MULTIPLIER), 0.0)
+	var orc_attack_cooldown: float = maxf(float(orc_role_def.get("attack_cooldown", 1.0)) * float(game.ENEMY_SCRIPT.ENEMY_ATTACK_COOLDOWN_MULTIPLIER), 0.05)
+	var orc_attack_range: float = float(orc_role_def.get("attack_range", 70.0))
+	var orc_weight: float = float(orc_role_def.get("weight", 1.28))
 	var summon_particle_primary_color: Color = Color(hand_card.get("color", Color("d7efff")))
 	var summon_particle_secondary_color: Color = summon_particle_primary_color.lightened(0.34)
 	if card_id == "spiritual_weapon_card":
@@ -1549,11 +1704,11 @@ static func cast_temporary_summon_spell(game: Node, hero: Variant, target_room: 
 	elif is_find_familiar:
 		summon_particle_primary_color = Color("b289ff")
 		summon_particle_secondary_color = Color("ead8ff")
-	elif card_id == "summon_warden_spirit_card":
+	elif card_id == "animate_dead_card":
 		summon_particle_primary_color = Color("7de8c0")
 		summon_particle_secondary_color = Color("d8fff0")
 	var summon_spawn_positions: Array = []
-	if card_id == "summon_warden_spirit_card":
+	if card_id == "animate_dead_card":
 		var cluster_anchor: Vector2 = game.clamp_point_to_room(hero.global_position, target_room)
 		if hero.current_room != target_room and game.are_neighbors(target_room, hero.current_room):
 			cluster_anchor = game.doorway_navigation_position(target_room, hero.current_room)
@@ -1601,6 +1756,16 @@ static func cast_temporary_summon_spell(game: Node, hero: Variant, target_room: 
 		summoned_enemy.set_meta("summon_flatfooted_damage_taken_multiplier", summon_flatfooted_damage_taken_multiplier)
 		summoned_enemy.set_meta("summon_particle_primary_color", summon_particle_primary_color)
 		summoned_enemy.set_meta("summon_particle_secondary_color", summon_particle_secondary_color)
+		if is_animate_dead:
+			summoned_enemy.move_speed = orc_move_speed
+			summoned_enemy.base_move_speed = orc_move_speed
+			summoned_enemy.attack_range = orc_attack_range
+			summoned_enemy.weight = orc_weight
+			summoned_enemy.max_health = orc_max_health * 1.5
+			summoned_enemy.current_health = summoned_enemy.max_health
+			summoned_enemy.attack_damage = orc_attack_damage * 1.5
+			summoned_enemy.attack_cooldown = orc_attack_cooldown
+			summoned_enemy.attack_cooldown_left = maxf(float(summoned_enemy.attack_cooldown_left), summoned_enemy.attack_cooldown)
 		if is_find_familiar:
 			summoned_enemy.set_meta("summon_anchor_position", summoned_enemy.global_position)
 			var goblin_role_def: Dictionary = GAME_ENEMY_DEFS.enemy_role_definition(game.ENEMY_TYPE_ORC)
@@ -1609,11 +1774,11 @@ static func cast_temporary_summon_spell(game: Node, hero: Variant, target_room: 
 			summoned_enemy.current_health = goblin_max_health
 			summoned_enemy.attack_cooldown = maxf(float(summoned_enemy.attack_cooldown) * 1.5, 0.05)
 			summoned_enemy.attack_cooldown_left = maxf(float(summoned_enemy.attack_cooldown_left), summoned_enemy.attack_cooldown)
-		if card_id == "summon_warden_spirit_card":
-			summoned_enemy.set_meta("summon_visual_scale_multiplier", 0.8)
+		if card_id == "animate_dead_card":
+			summoned_enemy.set_meta("summon_visual_scale_multiplier", 1.04)
 			if summoned_enemy.has_method("set_visual_scale_multiplier"):
-				summoned_enemy.set_visual_scale_multiplier(0.8)
-		elif card_id == "summon_arcane_sentinel_card":
+				summoned_enemy.set_visual_scale_multiplier(1.04)
+		elif card_id == "find_familiar_card":
 			summoned_enemy.set_meta("summon_visual_scale_multiplier", 0.7)
 			if summoned_enemy.has_method("set_visual_scale_multiplier"):
 				summoned_enemy.set_visual_scale_multiplier(0.7)
@@ -1651,12 +1816,58 @@ static func cast_sanctuary_spell(game: Node, hero: Variant, target_room: Vector2
 	room_data["sanctuary_damage_multiplier"] = minf(float(room_data.get("sanctuary_damage_multiplier", 1.0)), mitigation)
 	room_data["sanctuary_regen_per_second"] = maxf(float(room_data.get("sanctuary_regen_per_second", 0.0)), regen_per_second)
 	room_data["sanctuary_target_hero_index"] = int(sanctuary_target.hero_index)
+	room_data["sanctuary_aoe"] = false
 	game.rooms[target_room] = room_data
 	var sanctuary_center: Vector2 = game.room_center(target_room)
 	hero.trigger_attack(sanctuary_center, "heal_cast")
 	append_timed_effect_projectile(game, "priest_heal_effect", sanctuary_center, Color(hand_card.get("color", Color("e3ff9f"))), 0.52, 0.52)
 	append_timed_effect_projectile(game, "shield_flash", sanctuary_target.global_position, Color(hand_card.get("color", Color("e3ff9f"))), 0.24, 0.24)
 	return sanctuary_target
+
+static func cast_beacon_of_hope_spell(game: Node, hero: Variant, target_room: Vector2i, hand_card: Dictionary) -> bool:
+	if target_room == game.INVALID_ROOM or not game.rooms.has(target_room):
+		return false
+	var room_data: Dictionary = Dictionary(game.rooms[target_room])
+	var duration: float = maxf(float(hand_card.get("sanctuary_duration", 10.0)), 0.1)
+	var mitigation: float = clampf(float(hand_card.get("sanctuary_damage_multiplier", 0.78)), 0.35, 1.0)
+	var regen_per_second: float = maxf(float(hand_card.get("sanctuary_regen_per_second", 3.0)), 0.0)
+	room_data["sanctuary_duration"] = maxf(float(room_data.get("sanctuary_duration", 0.0)), duration)
+	room_data["sanctuary_time_left"] = maxf(float(room_data.get("sanctuary_time_left", 0.0)), duration)
+	room_data["sanctuary_damage_multiplier"] = minf(float(room_data.get("sanctuary_damage_multiplier", 1.0)), mitigation)
+	room_data["sanctuary_regen_per_second"] = maxf(float(room_data.get("sanctuary_regen_per_second", 0.0)), regen_per_second)
+	room_data["sanctuary_target_hero_index"] = -1
+	room_data["sanctuary_aoe"] = true
+	game.rooms[target_room] = room_data
+	var sanctuary_center: Vector2 = game.room_center(target_room)
+	hero.trigger_attack(sanctuary_center, "heal_cast")
+	append_timed_effect_projectile(game, "priest_heal_effect", sanctuary_center, Color(hand_card.get("color", Color("d4ff9f"))), 0.56, 0.56)
+	return true
+
+static func cast_haste_spell(game: Node, hero: Variant, target_room: Vector2i, hand_card: Dictionary) -> Variant:
+	if target_room == game.INVALID_ROOM or not game.rooms.has(target_room):
+		return null
+	var haste_duration: float = maxf(float(hand_card.get("haste_duration", 12.0)), 0.1)
+	var move_speed_multiplier: float = maxf(float(hand_card.get("haste_move_speed_multiplier", 2.0)), 1.0)
+	var attack_speed_multiplier: float = maxf(float(hand_card.get("haste_attack_speed_multiplier", 2.0)), 1.0)
+	var best_target: Variant = null
+	var best_attack_damage: float = -INF
+	for room_hero in game.heroes_in_room(target_room):
+		if room_hero == null or not is_instance_valid(room_hero):
+			continue
+		if not game.hero_is_active(room_hero):
+			continue
+		var hero_attack_damage: float = float(room_hero.attack_damage)
+		if best_target == null or hero_attack_damage > best_attack_damage:
+			best_target = room_hero
+			best_attack_damage = hero_attack_damage
+	if best_target == null or not is_instance_valid(best_target):
+		return null
+	if best_target.has_method("apply_haste_buff"):
+		best_target.apply_haste_buff(haste_duration, move_speed_multiplier, attack_speed_multiplier)
+	hero.trigger_attack(best_target.global_position, "laser")
+	append_timed_effect_projectile(game, "shield_flash", best_target.global_position, Color(hand_card.get("color", Color("ffd56e"))), 0.32, 0.32)
+	append_timed_effect_projectile(game, "priest_heal_effect", best_target.global_position, Color(hand_card.get("color", Color("ffd56e"))), 0.26, 0.26)
+	return best_target
 
 static func cast_shield_spell(game: Node, hero: Variant, hand_card: Dictionary) -> void:
 	var barrier_amount: float = float(hand_card.get("shield_amount", 34.0))
@@ -1958,36 +2169,6 @@ static func cast_lightning_bolt_spell(game: Node, hero: Variant, target_world_po
 		"points": bolt_points.duplicate(true),
 	})
 	game.add_resource_floating_text(bolt_target, "Bolt", Color(hand_card.get("color", Color("8bd9ff"))))
-
-static func cast_scorching_ray_spell(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
-	var ray_targets: Array = nearest_enemies_in_room(game, target_room, target_world_position, int(hand_card.get("projectile_count", 3)))
-	if ray_targets.is_empty():
-		game.add_resource_floating_text(target_world_position, "Miss", Color(hand_card.get("color", Color("ffb366"))))
-		return
-	hero.trigger_attack(target_world_position, "laser")
-	var ray_count: int = maxi(1, int(hand_card.get("projectile_count", 3)))
-	for ray_index in range(ray_count):
-		var target_enemy: Variant = ray_targets[ray_index % ray_targets.size()]
-		if target_enemy == null or not is_instance_valid(target_enemy):
-			continue
-		var ray_impact_direction: Vector2 = (target_enemy.global_position - hero.global_position).normalized()
-		if ray_impact_direction == Vector2.ZERO:
-			ray_impact_direction = (target_world_position - hero.global_position).normalized()
-		if ray_impact_direction == Vector2.ZERO:
-			ray_impact_direction = Vector2.RIGHT
-		target_enemy.take_damage(float(hand_card.get("damage", hand_card.get("base_damage", 22.0))), ray_impact_direction)
-		game.projectiles.append({
-			"kind": "ghostfire_ray",
-			"position": target_enemy.global_position,
-			"previous": hero.global_position,
-			"target_position": target_enemy.global_position,
-			"color": hand_card.get("color", Color("ffb366")),
-			"radius": 18.0,
-			"impact_radius": 18.0,
-			"lifetime_left": SCORCHING_RAY_EFFECT_DURATION,
-			"blast_duration": SCORCHING_RAY_EFFECT_DURATION,
-			"width": 16.0,
-		})
 
 static func append_timed_effect_projectile(game: Node, effect_kind: String, world_position: Vector2, effect_color: Color, lifetime: float, blast_duration: float) -> void:
 	game.projectiles.append({

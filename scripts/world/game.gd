@@ -2115,11 +2115,14 @@ func nearest_enemies_in_room(room_coord: Vector2i, origin: Vector2, max_count: i
 func cast_magic_missile_spell(hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
 	GAME_CARD_ACTIONS.cast_magic_missile_spell(self, hero, target_world_position, target_room, hand_card)
 
-func cast_misty_step_spell(hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
-	GAME_CARD_ACTIONS.cast_misty_step_spell(self, hero, target_world_position, target_room, hand_card)
-
 func cast_web_spell(hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
 	GAME_CARD_ACTIONS.cast_web_spell(self, hero, target_world_position, target_room, hand_card)
+
+func cancel_hero_channel_spell(hero: Variant, show_feedback: bool = false) -> void:
+	GAME_CARD_ACTIONS.cancel_hero_channel_spell(self, hero, show_feedback)
+
+func advance_scorcher_channels(delta: float) -> void:
+	GAME_CARD_ACTIONS.advance_scorcher_channels(self, delta)
 
 func cast_shield_spell(hero: Variant, hand_card: Dictionary) -> void:
 	GAME_CARD_ACTIONS.cast_shield_spell(self, hero, hand_card)
@@ -2132,9 +2135,6 @@ func cast_lightning_bolt_spell(hero: Variant, target_world_position: Vector2, ta
 
 func build_lightning_bolt_points(origin: Vector2, target: Vector2, target_room: Vector2i, bounce_count: int) -> Array:
 	return GAME_CARD_ACTIONS.build_lightning_bolt_points(self, origin, target, target_room, bounce_count)
-
-func cast_scorching_ray_spell(hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
-	GAME_CARD_ACTIONS.cast_scorching_ray_spell(self, hero, target_world_position, target_room, hand_card)
 
 func explode_fireball_projectile(projectile: Dictionary) -> void:
 	GAME_CARD_ACTIONS.explode_fireball_projectile(self, projectile)
@@ -2180,6 +2180,8 @@ func hero_incoming_damage_multiplier(hero: Variant) -> float:
 	var room_data: Dictionary = rooms[room_coord]
 	if float(room_data.get("sanctuary_time_left", 0.0)) <= 0.0:
 		return 1.0
+	if bool(room_data.get("sanctuary_aoe", false)):
+		return clampf(float(room_data.get("sanctuary_damage_multiplier", 1.0)), 0.35, 1.0)
 	if int(room_data.get("sanctuary_target_hero_index", -1)) != int(hero.hero_index):
 		return 1.0
 	return clampf(float(room_data.get("sanctuary_damage_multiplier", 1.0)), 0.35, 1.0)

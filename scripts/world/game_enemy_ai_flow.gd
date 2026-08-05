@@ -37,6 +37,11 @@ static func enemy_is_feared(enemy: Variant) -> bool:
 		return false
 	return bool(enemy.is_feared())
 
+static func enemy_is_calm_neutralized(enemy: Variant) -> bool:
+	if enemy == null or not is_instance_valid(enemy) or not enemy.has_method("is_calm_emotions_neutralized"):
+		return false
+	return bool(enemy.is_calm_emotions_neutralized())
+
 static func feared_enemy_target_position(game: Node, enemy: Variant) -> Vector2:
 	if enemy == null or not is_instance_valid(enemy):
 		return Vector2.ZERO
@@ -127,7 +132,7 @@ static func converted_enemy_is_familiar(converted_enemy: Variant) -> bool:
 	if converted_enemy == null or not is_instance_valid(converted_enemy):
 		return false
 	var summon_card_id: String = String(converted_enemy.get_meta("summon_card_id", ""))
-	if summon_card_id == "summon_arcane_sentinel_card" or summon_card_id == "find_familiar_card":
+	if summon_card_id == "find_familiar_card":
 		return true
 	var summon_behavior: String = String(converted_enemy.get_meta("summon_behavior", ""))
 	return summon_behavior == "familiar_strongest" and summon_card_id != "spiritual_weapon_card"
@@ -165,6 +170,13 @@ static func advance_enemy_routes(game: Node, delta: float) -> void:
 		if enemy.has_method("attack_cooldown_tick_scale"):
 			cooldown_tick_scale = maxf(float(enemy.attack_cooldown_tick_scale()), 0.0)
 		enemy.attack_cooldown_left = maxf(enemy.attack_cooldown_left - delta * cooldown_tick_scale, 0.0)
+		if enemy_is_calm_neutralized(enemy):
+			enemy.move_steps.clear()
+			enemy.pending_room = game.INVALID_ROOM
+			enemy.next_room = enemy.current_room
+			enemy.moving_between_rooms = false
+			enemy.set_destination(enemy.global_position)
+			continue
 		if enemy.pending_room != game.INVALID_ROOM:
 			if enemy.is_idle():
 				enemy.moving_between_rooms = false
@@ -213,7 +225,7 @@ static func advance_enemy_routes(game: Node, delta: float) -> void:
 				enemy.moving_between_rooms = false
 				enemy.set_destination(target_position)
 			continue
-		if enemy.global_position.distance_to(target_position) <= attack_start_distance:
+		if enemy.current_room == target_room and enemy.global_position.distance_to(target_position) <= attack_start_distance:
 			enemy.move_steps.clear()
 			resolve_enemy_attack(game, enemy)
 			continue
@@ -907,6 +919,8 @@ static func apply_enemy_crystal_strike(game: Node, enemy: Variant) -> void:
 
 static func resolve_enemy_attack(game: Node, enemy: Variant) -> void:
 	if enemy.attack_cooldown_left > 0.0:
+		return
+	if enemy_is_calm_neutralized(enemy):
 		return
 	if enemy.has_method("is_held_person") and bool(enemy.is_held_person()):
 		return

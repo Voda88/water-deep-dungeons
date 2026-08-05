@@ -138,11 +138,13 @@ static func roll_ground_item_id(game: Node) -> String:
 		"ricochet_dagger",
 		"scroll_fireball",
 		"scroll_magic_missile",
-		"scroll_misty_step",
+		"scroll_scorcher",
 		"scroll_web",
 		"scroll_shield",
-		"scroll_scorching_ray",
+		"scroll_haste",
 		"scroll_lightning_bolt",
+		"scroll_calm_emotions",
+		"scroll_beacon_of_hope",
 	]
 	if weighted_item_ids.is_empty():
 		return ""

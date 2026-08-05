@@ -54,6 +54,17 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 			"food_defence_time_left": hero.food_defence_time_left,
 			"food_move_speed_multiplier": hero.food_move_speed_multiplier,
 			"food_move_speed_time_left": hero.food_move_speed_time_left,
+			"haste_move_speed_multiplier": hero.haste_move_speed_multiplier,
+			"haste_attack_cooldown_multiplier": hero.haste_attack_cooldown_multiplier,
+			"haste_time_left": hero.haste_time_left,
+			"scorcher_channel_active": hero.scorcher_channel_active,
+			"scorcher_channel_room": hero.scorcher_channel_room,
+			"scorcher_channel_direction": hero.scorcher_channel_direction,
+			"scorcher_channel_range": hero.scorcher_channel_range,
+			"scorcher_channel_arc_degrees": hero.scorcher_channel_arc_degrees,
+			"scorcher_dot_damage_per_second": hero.scorcher_dot_damage_per_second,
+			"scorcher_channel_tick_interval": hero.scorcher_channel_tick_interval,
+			"scorcher_channel_tick_time_left": hero.scorcher_channel_tick_time_left,
 			"temporary_skulker_until_doors_opened": hero.temporary_skulker_until_doors_opened,
 			"skulking_visual_active": hero.skulking_visual_active,
 			"operate_room": hero.operate_room,
@@ -324,6 +335,17 @@ static func apply_hero_snapshots(game: Node, hero_states: Array) -> void:
 		hero.food_defence_time_left = float(hero_state.get("food_defence_time_left", hero.food_defence_time_left))
 		hero.food_move_speed_multiplier = float(hero_state.get("food_move_speed_multiplier", hero.food_move_speed_multiplier))
 		hero.food_move_speed_time_left = float(hero_state.get("food_move_speed_time_left", hero.food_move_speed_time_left))
+		hero.haste_move_speed_multiplier = float(hero_state.get("haste_move_speed_multiplier", hero.haste_move_speed_multiplier))
+		hero.haste_attack_cooldown_multiplier = float(hero_state.get("haste_attack_cooldown_multiplier", hero.haste_attack_cooldown_multiplier))
+		hero.haste_time_left = float(hero_state.get("haste_time_left", hero.haste_time_left))
+		hero.scorcher_channel_active = bool(hero_state.get("scorcher_channel_active", hero.scorcher_channel_active))
+		hero.scorcher_channel_room = hero_state.get("scorcher_channel_room", hero.scorcher_channel_room)
+		hero.scorcher_channel_direction = Vector2(hero_state.get("scorcher_channel_direction", hero.scorcher_channel_direction))
+		hero.scorcher_channel_range = float(hero_state.get("scorcher_channel_range", hero.scorcher_channel_range))
+		hero.scorcher_channel_arc_degrees = float(hero_state.get("scorcher_channel_arc_degrees", hero.scorcher_channel_arc_degrees))
+		hero.scorcher_dot_damage_per_second = float(hero_state.get("scorcher_dot_damage_per_second", hero.scorcher_dot_damage_per_second))
+		hero.scorcher_channel_tick_interval = float(hero_state.get("scorcher_channel_tick_interval", hero.scorcher_channel_tick_interval))
+		hero.scorcher_channel_tick_time_left = float(hero_state.get("scorcher_channel_tick_time_left", hero.scorcher_channel_tick_time_left))
 		hero.temporary_skulker_until_doors_opened = int(hero_state.get("temporary_skulker_until_doors_opened", hero.temporary_skulker_until_doors_opened))
 		hero.skulking_visual_active = bool(hero_state.get("skulking_visual_active", hero.skulking_visual_active))
 		hero.operate_room = hero_state.get("operate_room", hero.operate_room)

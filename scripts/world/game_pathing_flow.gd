@@ -34,6 +34,7 @@ static func active_hero_room_for_commands(game: Node, hero: Variant) -> Vector2i
 
 static func interrupt_hero_orders(game: Node, hero: Variant) -> Vector2i:
 	var command_room: Vector2i = active_hero_room_for_commands(game, hero)
+	game.cancel_hero_channel_spell(hero)
 	game.clear_pending_room_loot_request(hero.hero_index)
 	game.clear_pending_room_action_request(hero.hero_index)
 	hero.move_steps.clear()
