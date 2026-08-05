@@ -57,6 +57,22 @@ func queue_adjacent_rooms_for_prewarm(origin_room: Vector2i) -> void:
 		var neighbor: Vector2i = Vector2i(neighbor_variant)
 		_queue_room_for_prewarm(neighbor)
 
+func sync_room_instance(room_coord: Vector2i) -> void:
+	if game == null or not game.rooms.has(room_coord):
+		return
+	_sync_single_room_instance(room_coord, game.rooms[room_coord])
+	queue_redraw()
+
+func refresh_visible_room_states() -> void:
+	if game == null:
+		return
+	for room_coord_variant in room_instances.keys():
+		var room_coord: Vector2i = room_coord_variant
+		if not game.rooms.has(room_coord):
+			continue
+		_sync_single_room_instance(room_coord, game.rooms[room_coord])
+	queue_redraw()
+
 func _queue_opened_room_neighbors_for_prewarm() -> void:
 	if game == null:
 		return

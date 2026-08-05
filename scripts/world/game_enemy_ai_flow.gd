@@ -807,10 +807,14 @@ static func priority_hunter_target_hero(game: Node, enemy: Variant) -> Variant:
 static func cached_ranged_target_hero(enemy: Variant) -> Variant:
 	if enemy == null or not is_instance_valid(enemy):
 		return null
-	var cached_frame: int = int(enemy.get_meta(RANGED_TARGET_CACHE_FRAME_META, -1))
+	if not enemy.has_meta(RANGED_TARGET_CACHE_FRAME_META):
+		return null
+	var cached_frame: int = int(enemy.get_meta(RANGED_TARGET_CACHE_FRAME_META))
 	if cached_frame != Engine.get_physics_frames():
 		return null
-	var cached_target: Variant = enemy.get_meta(RANGED_TARGET_CACHE_ACTOR_META, null)
+	if not enemy.has_meta(RANGED_TARGET_CACHE_ACTOR_META):
+		return null
+	var cached_target: Variant = enemy.get_meta(RANGED_TARGET_CACHE_ACTOR_META)
 	if cached_target == null or not is_instance_valid(cached_target):
 		return null
 	return cached_target
@@ -824,10 +828,14 @@ static func set_cached_ranged_target_hero(enemy: Variant, target: Variant) -> vo
 static func cached_melee_target_hero(enemy: Variant) -> Variant:
 	if enemy == null or not is_instance_valid(enemy):
 		return null
-	var cached_frame: int = int(enemy.get_meta(MELEE_TARGET_CACHE_FRAME_META, -1))
+	if not enemy.has_meta(MELEE_TARGET_CACHE_FRAME_META):
+		return null
+	var cached_frame: int = int(enemy.get_meta(MELEE_TARGET_CACHE_FRAME_META))
 	if cached_frame != Engine.get_physics_frames():
 		return null
-	var cached_target: Variant = enemy.get_meta(MELEE_TARGET_CACHE_ACTOR_META, null)
+	if not enemy.has_meta(MELEE_TARGET_CACHE_ACTOR_META):
+		return null
+	var cached_target: Variant = enemy.get_meta(MELEE_TARGET_CACHE_ACTOR_META)
 	if cached_target == null or not is_instance_valid(cached_target):
 		return null
 	return cached_target

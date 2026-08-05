@@ -118,7 +118,7 @@ static func refresh_room_lighting_states(game: Node) -> void:
 		if previous_lit != lit:
 			changed = true
 	if changed:
-		game.invalidate_static_dungeon_layer()
+		game.refresh_static_visible_room_states()
 
 static func apply_temporary_light_to_room(game: Node, room_coord: Vector2i, turn_count: int) -> bool:
 	if turn_count <= 0 or not game.rooms.has(room_coord):
@@ -605,8 +605,8 @@ static func open_room(game: Node, room_coord: Vector2i) -> void:
 	if room_coord != game.crystal_room:
 		game.spawn_ground_loot(room_coord)
 	game.refresh_camera_bounds()
+	game.sync_static_room_instance(room_coord)
 	game.queue_adjacent_room_prewarm(room_coord)
-	game.invalidate_static_dungeon_layer()
 	game.status_message = "Opened %s. Immediate reward +%d dust. Food/materials/arcana payout flagged for wave clear." % [
 		game.room_title(room_coord),
 		int(immediate_room_reward.get("dust", 0)),
@@ -749,6 +749,7 @@ static func active_hostile_door_wave_enemy_count_for_wave_recovery(game: Node) -
 
 static func pending_door_wave_spawn_count_for_wave_recovery(game: Node) -> int:
 	var pending_count: int = 0
+	pending_count += int(game.pending_door_wave_build_count())
 	for pending_spawn_variant in game.pending_enemy_spawns:
 		var pending_spawn: Dictionary = Dictionary(pending_spawn_variant)
 		if String(pending_spawn.get("spawn_source", "door_wave")) != "door_wave":

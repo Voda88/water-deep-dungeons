@@ -227,6 +227,7 @@ static func apply_network_snapshot(game: Node, snapshot: Dictionary) -> void:
 	game.normalize_runtime_rooms_slot_capacity()
 	game.projectiles = Array(snapshot.get("projectiles", [])).duplicate(true)
 	game.floating_resource_texts = Array(snapshot.get("floating_resource_texts", [])).duplicate(true)
+	game.pending_wave_spawn_builds.clear()
 	game.pending_enemy_spawns = Array(snapshot.get("pending_enemy_spawns", [])).duplicate(true)
 	game.pending_room_constructions = Array(snapshot.get("pending_room_constructions", [])).duplicate(true)
 	game.global_item_card_states = Dictionary(snapshot.get("global_item_card_states", game.global_item_card_states)).duplicate(true)

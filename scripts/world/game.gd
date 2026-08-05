@@ -151,6 +151,8 @@ const WAVE_WARNING_DURATION: float = 1.0
 const WAVE_PRESPAWN_MARKER_LEAD: float = 2.0
 const WAVE_STAGGER_ROOM_INTERVAL: float = 4.0
 const WAVE_STAGGER_ENEMY_INTERVAL: float = 0.14
+const WAVE_SPAWN_BUILD_FRAME_BUDGET: int = 1
+const WAVE_SPAWN_BUILD_POSITION_BUDGET: int = 3
 const ENEMY_SPAWN_FRAME_BUDGET: int = 3
 const ENEMY_SPAWN_PREVIEW_FRAME_BUDGET: int = 5
 const ENEMY_SPAWN_FRAME_GAP: int = 5
@@ -263,6 +265,7 @@ var enemy_pool_available: Array = []
 var floor_enemy_spawn_types: Array[String] = []
 var projectiles: Array = []
 var floating_resource_texts: Array = []
+var pending_wave_spawn_builds: Array = []
 var pending_enemy_spawns: Array = []
 var pending_door_open_income: Array = []
 var pending_room_open_reward_totals: Dictionary = {
@@ -442,6 +445,18 @@ func invalidate_static_dungeon_layer() -> void:
 	if static_dungeon_layer != null:
 		static_dungeon_layer.rebuild()
 
+func sync_static_room_instance(room_coord: Vector2i) -> void:
+	if static_dungeon_layer != null and static_dungeon_layer.has_method("sync_room_instance"):
+		static_dungeon_layer.call("sync_room_instance", room_coord)
+		return
+	invalidate_static_dungeon_layer()
+
+func refresh_static_visible_room_states() -> void:
+	if static_dungeon_layer != null and static_dungeon_layer.has_method("refresh_visible_room_states"):
+		static_dungeon_layer.call("refresh_visible_room_states")
+		return
+	invalidate_static_dungeon_layer()
+
 func queue_adjacent_room_prewarm(room_coord: Vector2i) -> void:
 	if static_dungeon_layer == null:
 		return
@@ -467,6 +482,7 @@ func _physics_process(delta: float) -> void:
 	sync_hero_skulking_visual_states()
 	sync_hero_operate_attunement_states()
 	advance_spell_scroll_studies()
+	advance_pending_wave_spawn_builds()
 	advance_pending_enemy_spawns(delta)
 	advance_crystal_pressure(delta)
 	advance_enemy_routes(delta)
@@ -1810,6 +1826,12 @@ func launch_wave(entered_room: Vector2i) -> void:
 
 func queue_wave_spawn(room_coord: Vector2i, wave_points: int, immediate: bool, spawn_order: int) -> void:
 	GAME_COMBAT_FLOW.queue_wave_spawn(self, room_coord, wave_points, immediate, spawn_order)
+
+func advance_pending_wave_spawn_builds() -> void:
+	GAME_COMBAT_FLOW.advance_pending_wave_spawn_builds(self)
+
+func pending_door_wave_build_count() -> int:
+	return GAME_COMBAT_FLOW.pending_door_wave_build_count(self)
 
 func advance_pending_enemy_spawns(delta: float) -> void:
 	GAME_COMBAT_FLOW.advance_pending_enemy_spawns(self, delta)

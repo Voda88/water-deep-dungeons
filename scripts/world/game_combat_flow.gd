@@ -255,7 +255,6 @@ static func launch_wave(game: Node, entered_room: Vector2i) -> void:
 		game.room_flow_status_message = "Discovered %s. No waves incoming (%s)." % [game.room_title(entered_room), no_wave_reason]
 		game.update_hud()
 		return
-	var pending_spawn_count_before: int = game.pending_enemy_spawns.size()
 	var dark_rooms: Array[Vector2i] = []
 	var priority_dark_rooms: Array[Vector2i] = []
 	for room_coord_variant in game.rooms.keys():
@@ -281,6 +280,7 @@ static func launch_wave(game: Node, entered_room: Vector2i) -> void:
 	var base_wave_points: int = game.DOOR_WAVE_POINTS
 	var chosen_rooms: Array[Vector2i] = []
 	var delayed_room_order: int = 0
+	var planned_spawn_batches: int = 0
 	if dark_rooms.has(entered_room):
 		chosen_rooms.append(entered_room)
 		dark_rooms.erase(entered_room)
@@ -292,7 +292,8 @@ static func launch_wave(game: Node, entered_room: Vector2i) -> void:
 			chosen_rooms.append(picked_room)
 			dark_rooms.erase(picked_room)
 			priority_dark_rooms.erase(picked_room)
-		queue_wave_spawn(game, entered_room, base_wave_points, true, delayed_room_order)
+		if enqueue_wave_spawn_build(game, entered_room, base_wave_points, true, delayed_room_order):
+			planned_spawn_batches += 1
 		var bonus_room_count: int = chosen_rooms.size() - 1
 		if bonus_room_count > 0:
 			var bonus_points_per_room: int = int(floor(float(wave_strength_bonus) / float(bonus_room_count)))
@@ -302,7 +303,8 @@ static func launch_wave(game: Node, entered_room: Vector2i) -> void:
 				var wave_points: int = bonus_points_per_room
 				if bonus_index < bonus_remainder:
 					wave_points += 1
-				queue_wave_spawn(game, room_coord, maxi(1, wave_points), false, delayed_room_order)
+				if enqueue_wave_spawn_build(game, room_coord, maxi(1, wave_points), false, delayed_room_order):
+					planned_spawn_batches += 1
 				delayed_room_order += 1
 	else:
 		var spawn_room_count: int = mini(1 + wave_strength_bonus, dark_room_count)
@@ -320,13 +322,118 @@ static func launch_wave(game: Node, entered_room: Vector2i) -> void:
 			if spawn_index < total_wave_points % chosen_rooms.size():
 				wave_points += 1
 			var immediate: bool = room_coord == entered_room
-			queue_wave_spawn(game, room_coord, wave_points, immediate, delayed_room_order)
+			if enqueue_wave_spawn_build(game, room_coord, wave_points, immediate, delayed_room_order):
+				planned_spawn_batches += 1
 			if not immediate:
 				delayed_room_order += 1
-	game.door_wave_spawns_incoming = game.pending_enemy_spawns.size() > pending_spawn_count_before
+	game.door_wave_spawns_incoming = planned_spawn_batches > 0 or not game.pending_wave_spawn_builds.is_empty() or not game.pending_enemy_spawns.is_empty()
 	game.status_message = "Wave %d emerged from %d dark room%s." % [game.wave_index, chosen_rooms.size(), "" if chosen_rooms.size() == 1 else "s"]
 	game.room_flow_status_message = "Discovered %s. %d wave%s incoming." % [game.room_title(entered_room), chosen_rooms.size(), "" if chosen_rooms.size() == 1 else "s"]
 	game.update_hud()
+
+static func enqueue_wave_spawn_build(game: Node, room_coord: Vector2i, wave_points: int, immediate: bool, spawn_order: int) -> bool:
+	if not game.rooms.has(room_coord):
+		return false
+	if wave_points <= 0:
+		return false
+	game.pending_wave_spawn_builds.append({
+		"phase": "plan",
+		"spawn_source": "door_wave",
+		"room": room_coord,
+		"wave_points": wave_points,
+		"immediate": immediate,
+		"spawn_order": spawn_order,
+		"spawn_plan": [],
+		"positions": [],
+		"cluster_anchor": Vector2.INF,
+		"cluster_radius": -1.0,
+		"cluster_base_angle": -1.0,
+	})
+	return true
+
+static func advance_pending_wave_spawn_builds(game: Node) -> void:
+	if game.pending_wave_spawn_builds.is_empty():
+		return
+	var build_budget: int = maxi(1, int(game.WAVE_SPAWN_BUILD_FRAME_BUDGET))
+	while build_budget > 0 and not game.pending_wave_spawn_builds.is_empty():
+		var pending_build: Dictionary = Dictionary(game.pending_wave_spawn_builds[0])
+		build_budget -= 1
+		var keep_pending: bool = advance_single_wave_spawn_build(game, pending_build)
+		if keep_pending:
+			game.pending_wave_spawn_builds[0] = pending_build
+			break
+		game.pending_wave_spawn_builds.remove_at(0)
+	if game.pending_wave_spawn_builds.is_empty() and game.pending_enemy_spawns.is_empty() and bool(game.door_wave_spawns_incoming):
+		game.door_wave_spawns_incoming = false
+
+static func advance_single_wave_spawn_build(game: Node, pending_build: Dictionary) -> bool:
+	if String(pending_build.get("spawn_source", "door_wave")) != "door_wave":
+		return false
+	var room_coord: Vector2i = Vector2i(pending_build.get("room", game.INVALID_ROOM))
+	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
+		return false
+	var phase: String = String(pending_build.get("phase", "plan"))
+	if phase == "plan":
+		var spawn_plan: Array[String] = build_enemy_spawn_plan(game, maxi(int(pending_build.get("wave_points", 0)), 1), false)
+		if spawn_plan.is_empty():
+			return false
+		pending_build["spawn_plan"] = spawn_plan
+		pending_build["positions"] = []
+		pending_build["cluster_anchor"] = centered_spawn_anchor(game, room_coord)
+		pending_build["cluster_radius"] = spawn_cluster_radius_for_room(game, room_coord, spawn_plan.size())
+		pending_build["cluster_base_angle"] = game.rng.randf() * TAU
+		pending_build["phase"] = "positions"
+		return true
+	var spawn_plan_untyped: Array = Array(pending_build.get("spawn_plan", []))
+	if spawn_plan_untyped.is_empty():
+		return false
+	var positions: Array = Array(pending_build.get("positions", []))
+	var target_count: int = spawn_plan_untyped.size()
+	var anchor: Vector2 = Vector2(pending_build.get("cluster_anchor", Vector2.INF))
+	if anchor == Vector2.INF:
+		anchor = centered_spawn_anchor(game, room_coord)
+	var radius: float = float(pending_build.get("cluster_radius", -1.0))
+	if radius <= 0.0:
+		radius = spawn_cluster_radius_for_room(game, room_coord, target_count)
+	var base_angle: float = float(pending_build.get("cluster_base_angle", -1.0))
+	if base_angle < 0.0:
+		base_angle = game.rng.randf() * TAU
+	var position_budget: int = maxi(1, int(game.WAVE_SPAWN_BUILD_POSITION_BUDGET))
+	var used_cells: Dictionary = {}
+	for position_variant in positions:
+		used_cells[spawn_cluster_cell_key(Vector2(position_variant))] = true
+	while position_budget > 0 and positions.size() < target_count:
+		positions.append(clustered_spawn_position(game, room_coord, anchor, radius, positions.size(), used_cells, base_angle))
+		position_budget -= 1
+	pending_build["positions"] = positions
+	pending_build["cluster_anchor"] = anchor
+	pending_build["cluster_radius"] = radius
+	pending_build["cluster_base_angle"] = base_angle
+	if positions.size() < target_count:
+		pending_build["phase"] = "positions"
+		return true
+	append_pending_wave_spawn_data(
+		game,
+		room_coord,
+		spawn_plan_untyped,
+		positions,
+		anchor,
+		radius,
+		base_angle,
+		bool(pending_build.get("immediate", false)),
+		maxi(int(pending_build.get("spawn_order", 0)), 0),
+		String(pending_build.get("spawn_source", "door_wave"))
+	)
+	return false
+
+static func pending_door_wave_build_count(game: Node) -> int:
+	var pending_count: int = 0
+	for pending_build_variant in Array(game.pending_wave_spawn_builds):
+		var pending_build: Dictionary = Dictionary(pending_build_variant)
+		if String(pending_build.get("spawn_source", "door_wave")) != "door_wave":
+			continue
+		pending_count += 1
+	return pending_count
 
 static func queue_wave_spawn(game: Node, room_coord: Vector2i, wave_points: int, immediate: bool, spawn_order: int) -> void:
 	if not game.rooms.has(room_coord):
@@ -338,16 +445,33 @@ static func queue_wave_spawn(game: Node, room_coord: Vector2i, wave_points: int,
 	var cluster_radius: float = spawn_cluster_radius_for_room(game, room_coord, spawn_plan.size())
 	var cluster_base_angle: float = game.rng.randf() * TAU
 	var clustered_positions: Array = build_spawn_positions(game, room_coord, spawn_plan.size(), cluster_anchor, cluster_radius, cluster_base_angle)
+	append_pending_wave_spawn_data(game, room_coord, spawn_plan, clustered_positions, cluster_anchor, cluster_radius, cluster_base_angle, immediate, spawn_order, "door_wave")
+
+static func append_pending_wave_spawn_data(
+	game: Node,
+	room_coord: Vector2i,
+	spawn_plan: Array,
+	clustered_positions: Array,
+	cluster_anchor: Vector2,
+	cluster_radius: float,
+	cluster_base_angle: float,
+	immediate: bool,
+	spawn_order: int,
+	spawn_source: String
+) -> void:
+	if spawn_plan.is_empty() or not game.rooms.has(room_coord):
+		return
 	var marker_lead: float = maxf(float(game.WAVE_PRESPAWN_MARKER_LEAD), 0.0)
 	var crystal_is_carried: bool = game.crystal_holder != null and is_instance_valid(game.crystal_holder)
 	var room_stagger_interval: float = game.WAVE_STAGGER_ROOM_INTERVAL if crystal_is_carried else 0.0
 	var room_delay: float = 0.0 if immediate else float(spawn_order + 1) * room_stagger_interval
 	var first_spawn_delay: float = room_delay + marker_lead
-	var per_enemy_interval: float = spawn_stagger_interval(game, "door_wave")
+	var resolved_spawn_source: String = "door_wave" if spawn_source == "" else spawn_source
+	var per_enemy_interval: float = spawn_stagger_interval(game, resolved_spawn_source)
 	game.rooms[room_coord]["warning_timer_left"] = first_spawn_delay
 	var pending_spawn_data: Dictionary = {
 		"room": room_coord,
-		"spawn_source": "door_wave",
+		"spawn_source": resolved_spawn_source,
 		"remaining": spawn_plan.size(),
 		"delay_left": first_spawn_delay,
 		"interval": per_enemy_interval,
@@ -468,6 +592,8 @@ static func advance_pending_enemy_spawns(game: Node, delta: float) -> void:
 
 static func advance_crystal_pressure(game: Node, delta: float) -> void:
 	if game.crystal_holder == null or not is_instance_valid(game.crystal_holder):
+		return
+	if not game.pending_wave_spawn_builds.is_empty():
 		return
 	game.crystal_pressure_timer_left = maxf(game.crystal_pressure_timer_left - delta, 0.0)
 	if game.crystal_pressure_timer_left > 0.0:

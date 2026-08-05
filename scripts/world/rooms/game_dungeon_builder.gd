@@ -38,6 +38,7 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 	game.room_nav_cache.clear()
 	game.projectiles.clear()
 	game.floating_resource_texts.clear()
+	game.pending_wave_spawn_builds.clear()
 	game.pending_enemy_spawns.clear()
 	game.pending_door_open_income.clear()
 	game.pending_room_open_reward_totals = {
