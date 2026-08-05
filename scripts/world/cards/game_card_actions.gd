@@ -1488,7 +1488,8 @@ static func apply_whirling_blade_sweep_damage(game: Node, hero: Variant, from_ro
 	var impact_radius: float = maxf(float(hand_card.get("impact_radius", 54.0)), 20.0)
 	var rage_bonus_damage: float = maxf(float(card_modifiers.get("rage_bonus_damage", 0.0)), 0.0)
 	var damage: float = float(hand_card.get("damage", hand_card.get("base_damage", 24.0))) + rage_bonus_damage
-	var knockback_force: float = maxf(float(hand_card.get("knockback_force", 360.0)), 0.0)
+	var rage_bonus_knockback: float = maxf(float(card_modifiers.get("rage_bonus_knockback_force", 0.0)), 0.0)
+	var knockback_force: float = maxf(float(hand_card.get("knockback_force", 360.0)), 0.0) + rage_bonus_knockback
 	var knockback_duration: float = clampf(float(hand_card.get("knockback_duration", 0.22)), 0.08, 0.5)
 	var hit_count: int = 0
 	for enemy in game.enemies:
@@ -1558,60 +1559,15 @@ static func cast_silver_gauntlet_toss(game: Node, hero: Variant, target_world_po
 	if rage_value <= 0:
 		game.status_message = "%s needs Rage to use Rage Throw." % hero.hero_name
 		return false
-	var pickup_radius_multiplier: float = maxf(float(hand_card.get("pickup_radius_multiplier", 2.0)), 1.0)
-	var pickup_radius: float = maxf(hero.attack_range * pickup_radius_multiplier, 24.0)
-	var throw_target: Variant = strongest_enemy_in_range(game, target_room, hero.global_position, pickup_radius)
-	if throw_target == null or not is_instance_valid(throw_target):
-		game.status_message = "%s found no enemy to grab for Rage Throw." % hero.hero_name
-		return false
-	var aim_direction: Vector2 = (target_world_position - hero.global_position).normalized()
-	if aim_direction == Vector2.ZERO:
-		aim_direction = Vector2.LEFT if bool(hero.get("visual_facing_left")) else Vector2.RIGHT
-	var rage_ratio: float = clampf(float(rage_value) / float(rage_max), 0.0, 1.0)
-	var throw_bounds: Rect2 = room_interior_rect(game, target_room, 20.0)
-	var room_span: float = maxf(maxf(throw_bounds.size.x, throw_bounds.size.y), 1.0)
-	var throw_distance_scale: float = maxf(float(hand_card.get("throw_distance_scale", 2.35)), 0.0)
-	var throw_distance_curve: float = maxf(float(hand_card.get("throw_distance_curve", 1.8)), 1.0)
-	var throw_distance: float = room_span * throw_distance_scale * pow(rage_ratio, throw_distance_curve)
-	var max_bounces: int = maxi(0, int(hand_card.get("max_bounces", 2)))
-	var allowed_bounces: int = mini(max_bounces, int(floor(float(rage_value) / 3.0)))
-	if rage_value >= rage_max:
-		allowed_bounces = mini(max_bounces, maxi(allowed_bounces, 2))
-	if allowed_bounces >= 2:
-		throw_distance = maxf(throw_distance, room_span * 2.2)
-	var bounce_damage: float = maxf(float(hand_card.get("base_bounce_damage", 8.0)) + float(rage_value) * maxf(float(hand_card.get("bounce_damage_per_rage", 9.0)), 0.0), 0.0)
-	var flatfooted_duration: float = maxf(float(hand_card.get("flatfooted_duration", 4.0)), 0.0)
-	var flatfooted_move_multiplier: float = clampf(float(hand_card.get("flatfooted_move_multiplier", 0.72)), 0.0, 1.0)
-	var flatfooted_attack_speed_multiplier: float = clampf(float(hand_card.get("flatfooted_attack_speed_multiplier", 0.78)), 0.0, 1.0)
-	var flatfooted_damage_taken_multiplier: float = maxf(float(hand_card.get("flatfooted_damage_taken_multiplier", 1.5)), 1.0)
-	var throw_duration: float = clampf(0.34 + rage_ratio * 0.5, 0.24, 1.0)
-	if allowed_bounces >= 2:
-		throw_duration = maxf(throw_duration, 0.62)
-	var launch_speed: float = clampf(throw_distance / maxf(throw_duration, 0.01), 220.0, 1650.0)
-	var launch_velocity: Vector2 = aim_direction * launch_speed
-	var throw_regions: Array = game.room_walkable_regions(target_room, game.ROOM_WALKABLE_INSET + 2.0)
-	if throw_target.has_method("begin_physics_throw"):
-		throw_target.begin_physics_throw(
-			launch_velocity,
-			throw_duration,
-			throw_bounds,
-			throw_regions,
-			allowed_bounces,
-			bounce_damage,
-			flatfooted_duration,
-			flatfooted_move_multiplier,
-			flatfooted_attack_speed_multiplier,
-			flatfooted_damage_taken_multiplier,
-			hero.hero_index,
-			Color(hand_card.get("color", Color("c5d4df")))
-		)
-	else:
-		game.knockback_actor(throw_target, aim_direction, launch_speed * 0.24, throw_duration, target_room)
+	var buff_hits: int = maxi(1, int(hand_card.get("rage_throw_buff_hits", 6)))
+	hero.fighter_rage_throw_level = rage_value
+	hero.fighter_rage_throw_hits_left = buff_hits
 	hero.fighter_rage = 0
+	hero.fighter_rage_hit_progress = 0
 	hero.trigger_attack(target_world_position, "melee")
 	append_timed_effect_projectile(game, "shield_flash", hero.global_position, Color(hand_card.get("color", Color("c5d4df"))), 0.2, 0.2)
-	game.add_resource_floating_text(hero.global_position, "Rage %d" % rage_value, Color(hand_card.get("color", Color("c5d4df"))))
-	game.status_message = "%s hurled %s with Rage %d." % [hero.hero_name, String(throw_target.enemy_role).capitalize(), rage_value]
+	game.add_resource_floating_text(hero.global_position, "Rage Throw x%d" % buff_hits, Color(hand_card.get("color", Color("c5d4df"))))
+	game.status_message = "%s primed Rage Throw: next %d hits use Rage %d throw knockback." % [hero.hero_name, buff_hits, rage_value]
 	return true
 
 static func cast_shield_bash(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary, card_modifiers: Dictionary = {}) -> bool:
@@ -1629,7 +1585,8 @@ static func cast_shield_bash(game: Node, hero: Variant, target_world_position: V
 	var half_arc_radians: float = deg_to_rad(arc_angle_degrees * 0.5)
 	var rage_bonus_damage: float = maxf(float(card_modifiers.get("rage_bonus_damage", 0.0)), 0.0)
 	var damage: float = float(hand_card.get("damage", hand_card.get("base_damage", 12.0))) + rage_bonus_damage
-	var knockback_force: float = maxf(float(hand_card.get("knockback_force", 420.0)), 0.0)
+	var rage_bonus_knockback: float = maxf(float(card_modifiers.get("rage_bonus_knockback_force", 0.0)), 0.0)
+	var knockback_force: float = maxf(float(hand_card.get("knockback_force", 420.0)), 0.0) + rage_bonus_knockback
 	var knockback_duration: float = clampf(float(hand_card.get("knockback_duration", 0.24)), 0.04, 0.65)
 	var slow_duration: float = maxf(float(hand_card.get("slow_duration", 6.0)), 0.0)
 	var slow_move_multiplier: float = clampf(float(hand_card.get("slow_move_multiplier", 0.0)), 0.0, 1.0)
@@ -2518,6 +2475,7 @@ static func spawn_axe_card_projectile(game: Node, hero: Variant, target_world_po
 	var axe_pierce: int = maxi(0, int(hand_card.get("pierce", maxi(0, int(hand_card.get("max_pierce", 3)) - 1))))
 	var axe_max_pierce: int = axe_pierce + 1
 	var rage_bonus_damage: float = maxf(float(card_modifiers.get("rage_bonus_damage", 0.0)), 0.0)
+	var rage_bonus_knockback_force: float = maxf(float(card_modifiers.get("rage_bonus_knockback_force", 0.0)), 0.0)
 	hero.trigger_attack(target_world_position, "melee")
 	game.note_hero_combo_attack(hero)
 	game.projectiles.append({
@@ -2552,6 +2510,7 @@ static func spawn_axe_card_projectile(game: Node, hero: Variant, target_world_po
 		"spin_speed": 18.0,
 		"hit_enemy_uids": [],
 		"owner_hero_index": hero.hero_index,
+		"mod_rage_knockback_force": rage_bonus_knockback_force,
 		"mod_combo_flatfooted_on_damage": bool(card_modifiers.get("combo_flatfooted_on_damage", false)),
 		"mod_combo_flatfooted_duration": float(card_modifiers.get("combo_flatfooted_duration", 4.0)),
 		"mod_combo_flatfooted_move_multiplier": float(card_modifiers.get("combo_flatfooted_move_multiplier", 0.82)),
@@ -2567,6 +2526,7 @@ static func spawn_dagger_card_projectiles(game: Node, hero: Variant, target_worl
 	var dagger_pierce: int = maxi(0, int(hand_card.get("pierce", maxi(0, int(hand_card.get("max_pierce", 99)) - 1))))
 	var dagger_max_pierce: int = dagger_pierce + 1
 	var rage_bonus_damage: float = maxf(float(card_modifiers.get("rage_bonus_damage", 0.0)), 0.0)
+	var rage_bonus_knockback_force: float = maxf(float(card_modifiers.get("rage_bonus_knockback_force", 0.0)), 0.0)
 	hero.trigger_attack(target_world_position, "laser")
 	game.note_hero_combo_attack(hero)
 	var spread: float = float(hand_card.get("spread", 0.16))
@@ -2594,6 +2554,7 @@ static func spawn_dagger_card_projectiles(game: Node, hero: Variant, target_worl
 			"spin_speed": 0.0,
 			"hit_enemy_uids": [],
 			"owner_hero_index": hero.hero_index,
+			"mod_rage_knockback_force": rage_bonus_knockback_force,
 			"backstab_multiplier": float(hand_card.get("backstab_multiplier", 2.0)),
 			"combo_damage_scale": float(hand_card.get("combo_damage_scale", 1.5)),
 			"bounce_explosion_min_bounces": int(hand_card.get("bounce_explosion_min_bounces", 0)),

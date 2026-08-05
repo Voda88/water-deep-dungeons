@@ -109,6 +109,8 @@ var combo_decay_time_left: float = 0.0
 var fighter_rage: int = 0
 var fighter_rage_max: int = 0
 var fighter_rage_hit_progress: int = 0
+var fighter_rage_throw_level: int = 0
+var fighter_rage_throw_hits_left: int = 0
 var food_attack_cooldown_multiplier: float = 1.0
 var food_attack_speed_time_left: float = 0.0
 var food_defence_bonus: float = 0.0
@@ -561,7 +563,7 @@ func take_damage(amount: float, allow_lethal_death: bool = true) -> bool:
 		return true
 	if invulnerability_time_left > 0.0:
 		return false
-	if amount > 0.0 and hero_class_id == FIGHTER_CLASS_ID and fighter_rage_max > 0:
+	if amount > 0.0 and hero_class_id == FIGHTER_CLASS_ID and fighter_rage_max > 0 and fighter_rage_throw_hits_left <= 0:
 		fighter_rage_hit_progress = maxi(fighter_rage_hit_progress, 0) + 1
 		if fighter_rage_hit_progress >= FIGHTER_RAGE_HITS_PER_POINT:
 			gain_fighter_rage(fighter_rage_hit_progress / FIGHTER_RAGE_HITS_PER_POINT)
@@ -716,6 +718,10 @@ func apply_inventory_stats(move_bonus: float, health_bonus: float, attack_bonus:
 	combo_points = maxi(combo_points, 0)
 	fighter_rage = clampi(fighter_rage, 0, fighter_rage_max)
 	fighter_rage_hit_progress = maxi(fighter_rage_hit_progress, 0)
+	fighter_rage_throw_level = clampi(fighter_rage_throw_level, 0, fighter_rage_max)
+	fighter_rage_throw_hits_left = maxi(fighter_rage_throw_hits_left, 0)
+	if fighter_rage_throw_hits_left <= 0:
+		fighter_rage_throw_level = 0
 	combo_attack_progress = maxi(combo_attack_progress, 0)
 	combo_decay_time_left = maxf(combo_decay_time_left, 0.0)
 	food_attack_speed_time_left = maxf(food_attack_speed_time_left, 0.0)
@@ -776,10 +782,14 @@ func configure_archetype(class_id: String, display_name: String, next_move_speed
 		fighter_rage_max = FIGHTER_RAGE_MAX_START
 		fighter_rage = 0
 		fighter_rage_hit_progress = 0
+		fighter_rage_throw_level = 0
+		fighter_rage_throw_hits_left = 0
 	else:
 		fighter_rage_max = 0
 		fighter_rage = 0
 		fighter_rage_hit_progress = 0
+		fighter_rage_throw_level = 0
+		fighter_rage_throw_hits_left = 0
 	clear_haste_buff()
 	end_scorcher_channel()
 	current_health = clampf(current_health if current_health > 0.0 else max_health, 1.0, max_health)

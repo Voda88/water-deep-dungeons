@@ -243,7 +243,7 @@ static func build_item_defs() -> Dictionary:
 			"item_level": 0,
 			"size": Vector2i(1, 2),
 			"color": Color("c5d4df"),
-			"description_lines": ["Fighter starter relic", "Adds Rage Throw", "Tosses the strongest nearby enemy", "Wall bounces deal damage and apply Flatfooted", "Throw force scales hard with Rage"],
+			"description_lines": ["Fighter starter relic", "Adds Rage Throw", "Consumes all Rage to prime 6 Rage Throw hits", "Each hit throws enemies with Rage-scaled force", "Wall bounces deal damage and apply Flatfooted"],
 			"tags": ["weapon", "physical"],
 			"hand_card": {
 				"card_id": "silver_gauntlet_toss_card",

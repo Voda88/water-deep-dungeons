@@ -27,6 +27,7 @@ const ROGUE_COMBO_POPUP_COLOR: Color = Color("ffd27a")
 const ROGUE_COMBO_POPUP_Y_OFFSET: float = 42.0
 const FIGHTER_RAGE_POPUP_COLOR: Color = Color("ff9a7a")
 const PHYSICAL_CARD_RAGE_DAMAGE_PER_LEVEL: float = 5.0
+const PHYSICAL_CARD_RAGE_KNOCKBACK_FORCE_PER_LEVEL: float = 120.0
 const PHYSICAL_CARD_COMBO_FLATFOOTED_DURATION: float = 4.0
 const PHYSICAL_CARD_COMBO_FLATFOOTED_MOVE_MULTIPLIER: float = 0.82
 const PHYSICAL_CARD_COMBO_FLATFOOTED_ATTACK_SPEED_MULTIPLIER: float = 0.82
@@ -90,11 +91,13 @@ static func consume_next_physical_card_modifiers(game: Node, hero: Variant, card
 		var rage_value: int = clampi(int(hero.fighter_rage), 0, maxi(int(hero.fighter_rage_max), 0))
 		if rage_value > 0:
 			var rage_bonus: float = float(rage_value) * PHYSICAL_CARD_RAGE_DAMAGE_PER_LEVEL
+			var rage_knockback_bonus: float = float(rage_value) * PHYSICAL_CARD_RAGE_KNOCKBACK_FORCE_PER_LEVEL
 			hero.fighter_rage = 0
 			modifiers["rage_bonus_damage"] = rage_bonus
+			modifiers["rage_bonus_knockback_force"] = rage_knockback_bonus
 			game.add_resource_floating_text(
 				hero.global_position + Vector2(0.0, -ROGUE_COMBO_POPUP_Y_OFFSET),
-				"Rage +%d" % int(rage_bonus),
+				"Rage +%d / KB %d" % [int(rage_bonus), rage_value],
 				FIGHTER_RAGE_POPUP_COLOR
 			)
 	return modifiers
@@ -218,6 +221,77 @@ static func apply_enemy_poison_instance_from_hit(_game: Node, enemy: Variant, po
 	}
 	enemy.set_meta("poison_instances", poison_instances)
 
+static func apply_fighter_rage_throw_buff_hit(game: Node, hero: Variant, enemy: Variant, impact_direction: Vector2) -> void:
+	if hero == null or not is_instance_valid(hero) or enemy == null or not is_instance_valid(enemy):
+		return
+	if String(hero.hero_class_id) != game.HERO_CLASS_FIGHTER:
+		return
+	if bool(enemy.get("throw_active")):
+		return
+	var hits_left: int = maxi(int(hero.fighter_rage_throw_hits_left), 0)
+	if hits_left <= 0:
+		hero.fighter_rage_throw_level = 0
+		return
+	var rage_level: int = clampi(int(hero.fighter_rage_throw_level), 0, maxi(int(hero.fighter_rage_max), 0))
+	if rage_level <= 0:
+		hero.fighter_rage_throw_hits_left = 0
+		hero.fighter_rage_throw_level = 0
+		return
+	var target_room: Vector2i = Vector2i(enemy.current_room)
+	if target_room == game.INVALID_ROOM or not game.rooms.has(target_room):
+		return
+	var throw_card_def: Dictionary = game.card_definition("silver_gauntlet_toss_card")
+	var rage_max: int = maxi(int(hero.fighter_rage_max), 1)
+	var rage_ratio: float = clampf(float(rage_level) / float(rage_max), 0.0, 1.0)
+	var throw_bounds: Rect2 = game.room_interior_rect(target_room, 20.0)
+	var room_span: float = maxf(maxf(throw_bounds.size.x, throw_bounds.size.y), 1.0)
+	var throw_distance_scale: float = maxf(float(throw_card_def.get("throw_distance_scale", 2.35)), 0.0)
+	var throw_distance_curve: float = maxf(float(throw_card_def.get("throw_distance_curve", 1.8)), 1.0)
+	var throw_distance: float = room_span * throw_distance_scale * pow(rage_ratio, throw_distance_curve)
+	var max_bounces: int = maxi(0, int(throw_card_def.get("max_bounces", 2)))
+	var allowed_bounces: int = mini(max_bounces, int(floor(float(rage_level) / 3.0)))
+	if rage_level >= rage_max:
+		allowed_bounces = mini(max_bounces, maxi(allowed_bounces, 2))
+	if allowed_bounces >= 2:
+		throw_distance = maxf(throw_distance, room_span * 2.2)
+	var bounce_damage: float = maxf(float(throw_card_def.get("base_bounce_damage", 8.0)) + float(rage_level) * maxf(float(throw_card_def.get("bounce_damage_per_rage", 9.0)), 0.0), 0.0)
+	var flatfooted_duration: float = maxf(float(throw_card_def.get("flatfooted_duration", 4.0)), 0.0)
+	var flatfooted_move_multiplier: float = clampf(float(throw_card_def.get("flatfooted_move_multiplier", 0.72)), 0.0, 1.0)
+	var flatfooted_attack_speed_multiplier: float = clampf(float(throw_card_def.get("flatfooted_attack_speed_multiplier", 0.78)), 0.0, 1.0)
+	var flatfooted_damage_taken_multiplier: float = maxf(float(throw_card_def.get("flatfooted_damage_taken_multiplier", 1.5)), 1.0)
+	var throw_duration: float = clampf(0.34 + rage_ratio * 0.5, 0.24, 1.0)
+	if allowed_bounces >= 2:
+		throw_duration = maxf(throw_duration, 0.62)
+	var launch_speed: float = clampf(throw_distance / maxf(throw_duration, 0.01), 220.0, 1650.0)
+	var launch_direction: Vector2 = impact_direction.normalized()
+	if launch_direction == Vector2.ZERO:
+		launch_direction = (enemy.global_position - hero.global_position).normalized()
+	if launch_direction == Vector2.ZERO:
+		launch_direction = Vector2.RIGHT
+	var launch_velocity: Vector2 = launch_direction * launch_speed
+	var throw_regions: Array = game.room_walkable_regions(target_room, game.ROOM_WALKABLE_INSET + 2.0)
+	if enemy.has_method("begin_physics_throw"):
+		enemy.begin_physics_throw(
+			launch_velocity,
+			throw_duration,
+			throw_bounds,
+			throw_regions,
+			allowed_bounces,
+			bounce_damage,
+			flatfooted_duration,
+			flatfooted_move_multiplier,
+			flatfooted_attack_speed_multiplier,
+			flatfooted_damage_taken_multiplier,
+			hero.hero_index,
+			Color(throw_card_def.get("color", Color("c5d4df")))
+		)
+	else:
+		game.knockback_actor(enemy, launch_direction, launch_speed * 0.24, throw_duration, target_room)
+	hero.fighter_rage_throw_hits_left = maxi(hits_left - 1, 0)
+	if hero.fighter_rage_throw_hits_left <= 0:
+		hero.fighter_rage_throw_level = 0
+		game.add_resource_floating_text(hero.global_position + Vector2(0.0, -ROGUE_COMBO_POPUP_Y_OFFSET), "Rage Throw End", FIGHTER_RAGE_POPUP_COLOR)
+
 static func register_hero_enemy_hit(game: Node, hero: Variant, enemy: Variant, impact_direction: Vector2 = Vector2.RIGHT) -> void:
 	if hero == null or not is_instance_valid(hero) or enemy == null or not is_instance_valid(enemy):
 		return
@@ -262,6 +336,7 @@ static func register_hero_enemy_hit(game: Node, hero: Variant, enemy: Variant, i
 				continue
 		updated_poisons.append(poison_state)
 	hero.applied_poisons = updated_poisons
+	apply_fighter_rage_throw_buff_hit(game, hero, enemy, resolved_impact_direction)
 	if not hero_is_combo_class(game, hero):
 		return
 	var combo_progress: int = maxi(0, int(hero.combo_attack_progress)) + 1
@@ -1222,10 +1297,11 @@ static func apply_card_projectile_hits(game: Node, projectile: Dictionary) -> vo
 		already_hit.append(int(enemy.enemy_uid))
 		pierced_count += 1
 		var base_knockback_force: float = maxf(float(projectile.get("knockback_force", 0.0)), 0.0)
+		var rage_bonus_knockback_force: float = maxf(float(projectile.get("mod_rage_knockback_force", 0.0)), 0.0)
 		var final_hit_knockback_multiplier: float = maxf(float(projectile.get("final_hit_knockback_multiplier", 1.0)), 1.0)
 		var base_knockback_duration: float = clampf(float(projectile.get("knockback_duration", 0.18)), 0.08, 0.5)
 		var final_hit: bool = pierced_count >= max_hits
-		var knockback_force: float = base_knockback_force * (final_hit_knockback_multiplier if final_hit else 1.0)
+		var knockback_force: float = (base_knockback_force + rage_bonus_knockback_force) * (final_hit_knockback_multiplier if final_hit else 1.0)
 		var knockback_duration: float = base_knockback_duration * (1.2 if final_hit else 1.0)
 		if knockback_force > 0.0:
 			game.knockback_actor(enemy, impact_direction, knockback_force, knockback_duration, enemy.current_room)
