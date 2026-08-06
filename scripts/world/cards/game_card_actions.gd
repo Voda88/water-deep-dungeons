@@ -2,6 +2,7 @@ extends RefCounted
 
 const GAME_ENEMY_DEFS: GDScript = preload("res://scripts/content/game_enemy_defs.gd")
 const GAME_DUNGEON_BUILDER: GDScript = preload("res://scripts/world/rooms/game_dungeon_builder.gd")
+const FIGHTER_RAGE_THROW_CONFIG_META: StringName = &"fighter_rage_throw_config"
 
 static func hero_hand_card_index(_game: Node, hero: Variant, card_uid: int) -> int:
 	if hero == null or not is_instance_valid(hero):
@@ -1560,8 +1561,29 @@ static func cast_silver_gauntlet_toss(game: Node, hero: Variant, target_world_po
 		game.status_message = "%s needs Rage to use Thrash Around." % hero.hero_name
 		return false
 	var buff_hits: int = maxi(1, int(hand_card.get("rage_throw_buff_hits", 6)))
+	var rage_ratio: float = clampf(float(rage_value) / float(rage_max), 0.0, 1.0)
+	var max_bounces: int = maxi(0, int(hand_card.get("max_bounces", 2)))
+	var allowed_bounces: int = mini(max_bounces, int(floor(float(rage_value) / 3.0)))
+	if rage_value >= rage_max:
+		allowed_bounces = mini(max_bounces, maxi(allowed_bounces, 2))
+	var throw_distance_scale: float = maxf(float(hand_card.get("throw_distance_scale", 2.35)), 0.0)
+	var throw_distance_curve: float = maxf(float(hand_card.get("throw_distance_curve", 1.8)), 1.0)
+	var throw_distance_room_span_multiplier: float = throw_distance_scale * pow(rage_ratio, throw_distance_curve)
+	var throw_duration: float = clampf(0.34 + rage_ratio * 0.5, 0.24, 1.0)
+	if allowed_bounces >= 2:
+		throw_duration = maxf(throw_duration, 0.62)
 	hero.fighter_rage_throw_level = rage_value
 	hero.fighter_rage_throw_hits_left = buff_hits
+	hero.set_meta(FIGHTER_RAGE_THROW_CONFIG_META, {
+		"max_wall_bounces": allowed_bounces,
+		"throw_distance_room_span_multiplier": throw_distance_room_span_multiplier,
+		"throw_duration": throw_duration,
+		"flatfooted_duration": maxf(float(hand_card.get("flatfooted_duration", 4.0)), 0.0),
+		"flatfooted_move_multiplier": clampf(float(hand_card.get("flatfooted_move_multiplier", 0.72)), 0.0, 1.0),
+		"flatfooted_attack_speed_multiplier": clampf(float(hand_card.get("flatfooted_attack_speed_multiplier", 0.78)), 0.0, 1.0),
+		"flatfooted_damage_taken_multiplier": maxf(float(hand_card.get("flatfooted_damage_taken_multiplier", 1.5)), 1.0),
+		"bounce_effect_color": hand_card.get("color", Color("c5d4df")),
+	})
 	hero.fighter_rage = 0
 	hero.fighter_rage_hit_progress = 0
 	hero.trigger_attack(target_world_position, "melee")

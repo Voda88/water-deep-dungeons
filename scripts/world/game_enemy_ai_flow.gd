@@ -322,7 +322,9 @@ static func advance_enemy_routes(game: Node, delta: float) -> void:
 	for enemy_variant in game.enemies:
 		if game.enemy_is_active(enemy_variant):
 			active_enemies.append(enemy_variant)
-	var enemy_spatial_hash: Dictionary = build_enemy_spatial_hash(active_enemies, ENEMY_SOFT_SEPARATION_CELL_SIZE)
+	var enemy_spatial_hash: Dictionary = {}
+	if active_enemies.size() > 1:
+		enemy_spatial_hash = build_enemy_spatial_hash(active_enemies, ENEMY_SOFT_SEPARATION_CELL_SIZE)
 	var think_interval: float = adaptive_enemy_ai_think_interval(game, active_enemies.size())
 	var pathfind_budget: int = maxi(1, int(game.ENEMY_AI_PATHFIND_PER_TICK_BUDGET))
 	var defer_min: float = maxf(float(game.ENEMY_AI_BUDGET_DEFER_MIN), 0.0)
@@ -373,7 +375,7 @@ static func advance_enemy_routes(game: Node, delta: float) -> void:
 		# Keep movement target anchored to the chosen room so doorway transitions
 		# cannot temporarily pull enemies back across a threshold.
 		var target_position: Vector2 = game.clamp_point_to_room(enemy_target_position(game, enemy), target_room)
-		if target_room == Vector2i(enemy.current_room):
+		if not enemy_spatial_hash.is_empty() and target_room == Vector2i(enemy.current_room):
 			target_position = game.clamp_point_to_room(target_position + enemy_soft_separation_offset(game, enemy, enemy_spatial_hash), target_room)
 		var attack_start_distance: float = enemy_attack_start_distance(game, enemy)
 		if not enemy_idle:

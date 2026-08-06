@@ -776,6 +776,14 @@ static func advance_wave_recovery(game: Node, delta: float) -> void:
 	var pending_door_wave_spawns: int = pending_door_wave_spawn_count_for_wave_recovery(game)
 	var active_door_wave_enemies: int = active_hostile_door_wave_enemy_count_for_wave_recovery(game)
 	var calm_now: bool = pending_door_wave_spawns <= 0 and active_door_wave_enemies <= 0
+	var cleared_thrash_buffs: int = 0
+	if calm_now:
+		for hero_variant in game.heroes:
+			var hero: Variant = hero_variant
+			if hero == null or not is_instance_valid(hero):
+				continue
+			if game.clear_fighter_rage_throw_buff(hero, false):
+				cleared_thrash_buffs += 1
 	var dismissed_summons: int = dismiss_temporary_summons_on_calm(game) if calm_now else 0
 	if calm_now and bool(game.door_wave_spawns_incoming):
 		game.door_wave_spawns_incoming = false
@@ -800,6 +808,8 @@ static func advance_wave_recovery(game: Node, delta: float) -> void:
 	if game.door_wave_healing_active:
 		var settled_door_reward: Dictionary = apply_room_open_rewards_on_wave_defeat(game)
 		var settled_major_reward: Dictionary = apply_major_module_wave_rewards(game)
+		if cleared_thrash_buffs > 0:
+			game.status_message += " Thrash Around fades as calm returns."
 		if dismissed_summons > 0:
 			game.status_message += " %d summoned unit%s fade as calm returns." % [dismissed_summons, "" if dismissed_summons == 1 else "s"]
 		if not settled_door_reward.is_empty():

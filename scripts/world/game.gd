@@ -2437,6 +2437,9 @@ func combo_level_for_hero(hero: Variant) -> int:
 func reset_hero_combo(hero: Variant) -> void:
 	GAME_COMBAT_FLOW.reset_hero_combo(self, hero)
 
+func clear_fighter_rage_throw_buff(hero: Variant, announce_end: bool = false) -> bool:
+	return GAME_COMBAT_FLOW.clear_fighter_rage_throw_buff(self, hero, announce_end)
+
 func consume_next_physical_card_modifiers(hero: Variant, card_id: String) -> Dictionary:
 	return GAME_COMBAT_FLOW.consume_next_physical_card_modifiers(self, hero, card_id)
 

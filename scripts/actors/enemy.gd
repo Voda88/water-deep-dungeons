@@ -32,6 +32,7 @@ const OVERKILL_KNOCKBACK_MAX_DURATION: float = 0.34
 const OVERLAY_REDRAW_INTERVAL: float = 1.0 / 30.0
 const THROW_KNOCKBACK_MIN_SPEED: float = 26.0
 const THROW_KNOCKBACK_DAMPING: float = 2.25
+const PHYSICS_SIMULATION_FRAME_INTERVAL: int = 5
 
 static var enemy_sprite_frames_cache: Dictionary = {}
 
@@ -112,10 +113,14 @@ var familiar_swoop_bank_sign: float = 1.0
 var familiar_swoop_distance: float = FAMILIAR_ATTACK_SWOOP_DISTANCE
 var familiar_swoop_target_position: Vector2 = Vector2.ZERO
 var overlay_redraw_time_left: float = 0.0
+var physics_delta_accumulator: float = 0.0
+var physics_frame_offset: int = 0
 
 func _ready() -> void:
 	current_health = max_health
 	base_move_speed = move_speed
+	physics_delta_accumulator = 0.0
+	physics_frame_offset = abs(get_instance_id()) % maxi(PHYSICS_SIMULATION_FRAME_INTERVAL, 1)
 	default_collision_layer = collision_layer
 	default_collision_mask = collision_mask
 	destination = global_position
@@ -540,14 +545,6 @@ func apply_knockback_impulse(next_velocity: Vector2, duration: float, bounds: Re
 		knockback_bounds_enabled = true
 	queue_redraw()
 
-func resolve_game_host() -> Node:
-	var host: Node = get_parent()
-	while host != null:
-		if host.has_method("find_hero_by_index") and host.has_method("register_hero_enemy_hit"):
-			return host
-		host = host.get_parent()
-	return null
-
 func clear_throw_state() -> void:
 	throw_active = false
 	throw_velocity = Vector2.ZERO
@@ -596,10 +593,6 @@ func apply_throw_wall_hit(wall_normal: Vector2) -> void:
 		hit_direction = Vector2.RIGHT
 	if throw_flatfooted_duration > 0.0:
 		apply_flatfooted_debuff(throw_flatfooted_duration, throw_flatfooted_move_multiplier, throw_flatfooted_attack_speed_multiplier, throw_flatfooted_damage_taken_multiplier)
-	var host: Node = resolve_game_host()
-	if host != null and throw_source_hero_index >= 0:
-		if host.has_method("add_resource_floating_text"):
-			host.call("add_resource_floating_text", global_position, "Wall", throw_bounce_fx_color)
 
 func advance_thrown_motion(delta: float, had_dynamic_overlay_before: bool) -> bool:
 	if not throw_active:
@@ -756,6 +749,7 @@ func deactivate_for_pool() -> void:
 	previous_room = INVALID_ROOM
 	next_room = INVALID_ROOM
 	enemy_uid = -1
+	physics_delta_accumulator = 0.0
 	velocity = Vector2.ZERO
 	destination = global_position
 	current_health = max_health
@@ -787,6 +781,8 @@ func activate_from_pool(next_enemy_uid: int, role_name: String, room_coord: Vect
 	collision_layer = default_collision_layer
 	collision_mask = default_collision_mask
 	enemy_uid = next_enemy_uid
+	physics_delta_accumulator = 0.0
+	physics_frame_offset = abs(next_enemy_uid) % maxi(PHYSICS_SIMULATION_FRAME_INTERVAL, 1)
 	global_position = spawn_position
 	reset_physics_interpolation()
 	set_role(role_name)
@@ -905,6 +901,10 @@ func set_role(role_name: String) -> void:
 func is_idle() -> bool:
 	return global_position.distance_to(destination) < 6.0
 
+func should_advance_physics_simulation_frame() -> bool:
+	var interval: int = maxi(PHYSICS_SIMULATION_FRAME_INTERVAL, 1)
+	return int(Engine.get_physics_frames() + physics_frame_offset) % interval == 0
+
 func resolve_overkill_knockback_direction(hit_direction: Vector2) -> Vector2:
 	var resolved_direction: Vector2 = hit_direction.normalized()
 	if resolved_direction != Vector2.ZERO:
@@ -950,29 +950,36 @@ func take_damage(amount: float, hit_direction: Vector2 = Vector2.ZERO) -> bool:
 	return false
 
 func _physics_process(delta: float) -> void:
+	physics_delta_accumulator += maxf(delta, 0.0)
+	if not should_advance_physics_simulation_frame():
+		return
+	var step_delta: float = maxf(physics_delta_accumulator, 0.0)
+	physics_delta_accumulator = 0.0
+	if step_delta <= 0.0:
+		return
 	var had_dynamic_overlay_before: bool = has_dynamic_overlay_visuals()
 	if death_started:
-		var corpse_impulse: Vector2 = advance_knockback(delta)
+		var corpse_impulse: Vector2 = advance_knockback(step_delta)
 		velocity = corpse_impulse
 		move_and_slide()
 		clamp_to_knockback_bounds()
 		if animated_sprite != null and animated_sprite.animation != "death":
 			animated_sprite.speed_scale = 1.0
 			animated_sprite.play("death")
-		advance_overlay_redraw(delta, had_dynamic_overlay_before)
+		advance_overlay_redraw(step_delta, had_dynamic_overlay_before)
 		return
-	attack_effect_left = maxf(attack_effect_left - delta, 0.0)
-	hurt_effect_left = maxf(hurt_effect_left - delta, 0.0)
-	rooted_time_left = maxf(rooted_time_left - delta, 0.0)
-	converted_time_left = maxf(converted_time_left - delta, 0.0)
-	recovering_slow_time_left = maxf(recovering_slow_time_left - delta, 0.0)
-	flatfooted_time_left = maxf(flatfooted_time_left - delta, 0.0)
-	hold_person_time_left = maxf(hold_person_time_left - delta, 0.0)
-	fear_time_left = maxf(fear_time_left - delta, 0.0)
-	turn_undead_time_left = maxf(turn_undead_time_left - delta, 0.0)
-	calm_emotions_time_left = maxf(calm_emotions_time_left - delta, 0.0)
-	familiar_swoop_time_left = maxf(familiar_swoop_time_left - delta, 0.0)
-	if advance_thrown_motion(delta, had_dynamic_overlay_before):
+	attack_effect_left = maxf(attack_effect_left - step_delta, 0.0)
+	hurt_effect_left = maxf(hurt_effect_left - step_delta, 0.0)
+	rooted_time_left = maxf(rooted_time_left - step_delta, 0.0)
+	converted_time_left = maxf(converted_time_left - step_delta, 0.0)
+	recovering_slow_time_left = maxf(recovering_slow_time_left - step_delta, 0.0)
+	flatfooted_time_left = maxf(flatfooted_time_left - step_delta, 0.0)
+	hold_person_time_left = maxf(hold_person_time_left - step_delta, 0.0)
+	fear_time_left = maxf(fear_time_left - step_delta, 0.0)
+	turn_undead_time_left = maxf(turn_undead_time_left - step_delta, 0.0)
+	calm_emotions_time_left = maxf(calm_emotions_time_left - step_delta, 0.0)
+	familiar_swoop_time_left = maxf(familiar_swoop_time_left - step_delta, 0.0)
+	if advance_thrown_motion(step_delta, had_dynamic_overlay_before):
 		return
 	if is_find_familiar_summon() and knockback_time_left <= 0.0:
 		var familiar_anchor: Vector2 = Vector2(get_meta("summon_anchor_position", global_position))
@@ -983,7 +990,7 @@ func _physics_process(delta: float) -> void:
 			animated_sprite.position = Vector2.ZERO
 		var facing_offset: Vector2 = familiar_swoop_direction if familiar_swoop_time_left > 0.0 else Vector2.ZERO
 		update_sprite_state(facing_offset)
-		advance_overlay_redraw(delta, had_dynamic_overlay_before)
+		advance_overlay_redraw(step_delta, had_dynamic_overlay_before)
 		return
 	if recovering_slow_time_left <= 0.0 and recovering_slow_duration > 0.0:
 		recovering_slow_duration = 0.0
@@ -1007,16 +1014,16 @@ func _physics_process(delta: float) -> void:
 	if offset.length() < 4.0:
 		global_position = destination
 	else:
-		var step: float = minf(effective_move_speed() * knockback_recovery_factor() * delta, offset.length())
-		desired_velocity = offset.normalized() * step / maxf(delta, 0.001)
-	var knockback_impulse: Vector2 = advance_knockback(delta)
+		var step: float = minf(effective_move_speed() * knockback_recovery_factor() * step_delta, offset.length())
+		desired_velocity = offset.normalized() * step / maxf(step_delta, 0.001)
+	var knockback_impulse: Vector2 = advance_knockback(step_delta)
 	velocity = desired_velocity + knockback_impulse
 	move_and_slide()
 	clamp_to_knockback_bounds()
 	if animated_sprite != null:
 		animated_sprite.position = Vector2.ZERO
 	update_sprite_state(offset if offset.length() > 0.0 else knockback_impulse)
-	advance_overlay_redraw(delta, had_dynamic_overlay_before)
+	advance_overlay_redraw(step_delta, had_dynamic_overlay_before)
 
 func summon_particle_primary_color() -> Color:
 	if has_meta("summon_particle_primary_color"):
