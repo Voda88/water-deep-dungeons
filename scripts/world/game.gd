@@ -209,7 +209,7 @@ const LEVEL_UP_PACK_SEQUENCE: Array[Vector2i] = [
 ]
 const CAMERA_MIN_ZOOM: float = 0.72
 const CAMERA_MAX_ZOOM: float = 1.2
-const CAMERA_DEFAULT_ZOOM: float = 0.86
+const CAMERA_DEFAULT_ZOOM: float = CAMERA_MAX_ZOOM
 const CAMERA_DRAG_THRESHOLD: float = 14.0
 const CAMERA_INTERACTION_COOLDOWN: float = 0.28
 const CAMERA_MANUAL_PAN_COOLDOWN: float = 1.1
@@ -221,7 +221,7 @@ const CAMERA_BOUNDS_PADDING: Vector2 = Vector2(360.0, 320.0)
 const CAMERA_DISCOVERED_PAN_SLACK: Vector2 = Vector2(220.0, 180.0)
 const HERO_SELECTION_RADIUS: float = 72.0
 const CALM_SPEED_OPTIONS: Array = [1, 2, 5, 10]
-const CARD_HAND_CARD_SIZE: Vector2 = Vector2(83.2, 114.4)
+const CARD_HAND_CARD_SIZE: Vector2 = Vector2(99.84, 137.28)
 const CARD_HAND_GAP: float = 8.0
 const CARD_HAND_BOTTOM_MARGIN: float = 4.0
 const CARD_HAND_SIDE_MARGIN: float = 12.0
