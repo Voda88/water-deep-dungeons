@@ -1722,10 +1722,13 @@ static func cast_turn_undead_spell(game: Node, hero: Variant, target_room: Vecto
 		var enemy_role: String = String(enemy.enemy_role)
 		if not GAME_ENEMY_DEFS.enemy_is_undead(enemy_role):
 			continue
-		if enemy.has_method("apply_fear_debuff"):
-			enemy.apply_fear_debuff(fear_duration, cast_origin, fear_speed_multiplier)
-		if fear_damage_taken_multiplier > 1.0 and enemy.has_method("apply_flatfooted_debuff"):
-			enemy.apply_flatfooted_debuff(fear_duration, 1.0, 1.0, fear_damage_taken_multiplier)
+		if enemy.has_method("apply_turn_undead_debuff"):
+			enemy.apply_turn_undead_debuff(fear_duration, cast_origin, fear_speed_multiplier, fear_damage_taken_multiplier)
+		else:
+			if enemy.has_method("apply_fear_debuff"):
+				enemy.apply_fear_debuff(fear_duration, cast_origin, fear_speed_multiplier)
+			if fear_damage_taken_multiplier > 1.0 and enemy.has_method("apply_flatfooted_debuff"):
+				enemy.apply_flatfooted_debuff(fear_duration, 1.0, 1.0, fear_damage_taken_multiplier)
 		append_timed_effect_projectile(game, "priest_attack_effect", enemy.global_position, Color(hand_card.get("color", Color("f0efb5"))), 0.34, 0.34)
 		append_timed_effect_projectile(game, "shield_flash", enemy.global_position, Color(hand_card.get("color", Color("f0efb5"))), 0.24, 0.24)
 		turned_count += 1

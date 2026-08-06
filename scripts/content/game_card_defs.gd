@@ -350,7 +350,7 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"name": "Turn Undead",
 				"target_scope": "same_room",
 				"phase": "combat",
-				"description_lines": ["A holy pulse fills your current room", "All undead there suffer Fear for 6s", "Turned undead run away faster and take critical damage"],
+				"description_lines": ["A holy pulse fills your current room", "All undead there are turned", "Turned undead run away faster and take critical damage", "Effect ends on first damage taken"],
 				"fear_duration": 6.0,
 				"fear_speed_multiplier": 1.2,
 				"fear_damage_taken_multiplier": 2.0,

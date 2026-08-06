@@ -74,6 +74,9 @@ var fear_time_left: float = 0.0
 var fear_duration: float = 0.0
 var fear_move_speed_multiplier: float = 1.2
 var fear_source_position: Vector2 = Vector2.ZERO
+var turn_undead_time_left: float = 0.0
+var turn_undead_duration: float = 0.0
+var turn_undead_damage_taken_multiplier: float = 1.0
 var calm_emotions_time_left: float = 0.0
 var calm_emotions_duration: float = 0.0
 var attack_effect_left: float = 0.0
@@ -349,7 +352,9 @@ func flatfooted_strength() -> float:
 	return clampf(flatfooted_time_left / flatfooted_duration, 0.0, 1.0)
 
 func current_flatfooted_damage_taken_multiplier() -> float:
-	return lerpf(1.0, flatfooted_damage_taken_multiplier, flatfooted_strength())
+	var flatfooted_multiplier: float = lerpf(1.0, flatfooted_damage_taken_multiplier, flatfooted_strength())
+	var turned_multiplier: float = lerpf(1.0, turn_undead_damage_taken_multiplier, turn_undead_strength())
+	return maxf(flatfooted_multiplier, turned_multiplier)
 
 func is_flatfooted() -> bool:
 	return flatfooted_time_left > 0.0 and not death_started
@@ -385,6 +390,11 @@ func fear_strength() -> float:
 		return 0.0
 	return clampf(fear_time_left / fear_duration, 0.0, 1.0)
 
+func turn_undead_strength() -> float:
+	if turn_undead_time_left <= 0.0 or turn_undead_duration <= 0.0:
+		return 0.0
+	return clampf(turn_undead_time_left / turn_undead_duration, 0.0, 1.0)
+
 func is_feared() -> bool:
 	return fear_time_left > 0.0 and not death_started
 
@@ -398,6 +408,28 @@ func apply_fear_debuff(duration: float, source_position: Vector2, move_speed_mul
 	fear_time_left = maxf(fear_time_left, duration)
 	fear_move_speed_multiplier = maxf(fear_move_speed_multiplier, move_speed_multiplier)
 	fear_source_position = source_position
+	queue_redraw()
+
+func apply_turn_undead_debuff(duration: float, source_position: Vector2, move_speed_multiplier: float = 1.2, damage_taken_multiplier: float = 2.0) -> void:
+	if duration <= 0.0 or death_started:
+		return
+	apply_fear_debuff(duration, source_position, move_speed_multiplier)
+	turn_undead_duration = maxf(turn_undead_duration, duration)
+	turn_undead_time_left = maxf(turn_undead_time_left, duration)
+	turn_undead_damage_taken_multiplier = maxf(turn_undead_damage_taken_multiplier, clampf(damage_taken_multiplier, 1.0, 4.0))
+	queue_redraw()
+
+func clear_turn_undead_debuff(clear_fear: bool = false) -> void:
+	if turn_undead_time_left <= 0.0 and turn_undead_duration <= 0.0:
+		return
+	var previous_turn_time_left: float = turn_undead_time_left
+	turn_undead_time_left = 0.0
+	turn_undead_duration = 0.0
+	turn_undead_damage_taken_multiplier = 1.0
+	if clear_fear and fear_time_left <= previous_turn_time_left + 0.05:
+		fear_time_left = 0.0
+		fear_duration = 0.0
+		fear_move_speed_multiplier = 1.2
 	queue_redraw()
 
 func is_calm_emotions_neutralized() -> bool:
@@ -700,6 +732,9 @@ func deactivate_for_pool() -> void:
 	fear_duration = 0.0
 	fear_move_speed_multiplier = 1.2
 	fear_source_position = Vector2.ZERO
+	turn_undead_time_left = 0.0
+	turn_undead_duration = 0.0
+	turn_undead_damage_taken_multiplier = 1.0
 	calm_emotions_time_left = 0.0
 	calm_emotions_duration = 0.0
 	knockback_velocity = Vector2.ZERO
@@ -846,6 +881,9 @@ func set_role(role_name: String) -> void:
 	fear_duration = 0.0
 	fear_move_speed_multiplier = 1.2
 	fear_source_position = Vector2.ZERO
+	turn_undead_time_left = 0.0
+	turn_undead_duration = 0.0
+	turn_undead_damage_taken_multiplier = 1.0
 	calm_emotions_time_left = 0.0
 	calm_emotions_duration = 0.0
 	converted_time_left = 0.0
@@ -899,6 +937,8 @@ func take_damage(amount: float, hit_direction: Vector2 = Vector2.ZERO) -> bool:
 	var applied_damage: float = maxf(amount, 0.0) * current_flatfooted_damage_taken_multiplier()
 	var health_before: float = current_health
 	current_health = maxf(current_health - applied_damage, 0.0)
+	if applied_damage > 0.0 and turn_undead_time_left > 0.0:
+		clear_turn_undead_debuff(true)
 	clear_calm_emotions()
 	hurt_effect_left = maxf(hurt_effect_left, 0.22)
 	if current_health <= 0.0:
@@ -929,6 +969,7 @@ func _physics_process(delta: float) -> void:
 	flatfooted_time_left = maxf(flatfooted_time_left - delta, 0.0)
 	hold_person_time_left = maxf(hold_person_time_left - delta, 0.0)
 	fear_time_left = maxf(fear_time_left - delta, 0.0)
+	turn_undead_time_left = maxf(turn_undead_time_left - delta, 0.0)
 	calm_emotions_time_left = maxf(calm_emotions_time_left - delta, 0.0)
 	familiar_swoop_time_left = maxf(familiar_swoop_time_left - delta, 0.0)
 	if advance_thrown_motion(delta, had_dynamic_overlay_before):
@@ -956,6 +997,9 @@ func _physics_process(delta: float) -> void:
 	if fear_time_left <= 0.0 and fear_duration > 0.0:
 		fear_duration = 0.0
 		fear_move_speed_multiplier = 1.2
+	if turn_undead_time_left <= 0.0 and turn_undead_duration > 0.0:
+		turn_undead_duration = 0.0
+		turn_undead_damage_taken_multiplier = 1.0
 	if calm_emotions_time_left <= 0.0 and calm_emotions_duration > 0.0:
 		calm_emotions_duration = 0.0
 	var offset: Vector2 = destination - global_position

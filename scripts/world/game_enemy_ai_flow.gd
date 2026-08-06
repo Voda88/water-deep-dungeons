@@ -21,6 +21,14 @@ const ROOM_TARGETABLE_CACHE_FRAME_META: StringName = &"enemy_room_targetable_cac
 const ROOM_TARGETABLE_CACHE_VALUE_META: StringName = &"enemy_room_targetable_cache_value"
 const ROOM_PATH_DISTANCE_CACHE_FRAME_META: StringName = &"enemy_room_path_distance_cache_frame"
 const ROOM_PATH_DISTANCE_CACHE_VALUE_META: StringName = &"enemy_room_path_distance_cache_value"
+const ENEMY_SOFT_SEPARATION_CELL_SIZE: float = 72.0
+const ENEMY_SOFT_SEPARATION_SPRITE_RADIUS_BASE: float = 50.0
+const ENEMY_SOFT_SEPARATION_SPRITE_RADIUS_FACTOR: float = 0.75
+const ENEMY_SOFT_SEPARATION_MIN_RADIUS: float = 18.0
+const ENEMY_SOFT_SEPARATION_MAX_RADIUS: float = 96.0
+const ENEMY_SOFT_SEPARATION_STRENGTH: float = 16.0
+const ENEMY_SOFT_SEPARATION_MAX_OFFSET: float = 20.0
+const ENEMY_SOFT_SEPARATION_MAX_NEIGHBORS: int = 8
 
 static func room_target_cache_key(room_coord: Vector2i, strict: bool) -> String:
 	return "%d:%d:%d" % [room_coord.x, room_coord.y, 1 if strict else 0]
@@ -85,6 +93,93 @@ static func deterministic_ai_budget_defer(enemy: Variant, defer_min: float, defe
 	var bucket_index: int = uid_value % bucket_count
 	var ratio: float = float(bucket_index) / float(bucket_count - 1)
 	return lerpf(defer_min, defer_max, ratio)
+
+static func enemy_spatial_room_cell_key(room_coord: Vector2i, cell_coord: Vector2i) -> String:
+	return "%d:%d|%d:%d" % [room_coord.x, room_coord.y, cell_coord.x, cell_coord.y]
+
+static func enemy_spatial_cell_coord(position: Vector2, cell_size: float) -> Vector2i:
+	var safe_size: float = maxf(cell_size, 1.0)
+	return Vector2i(floori(position.x / safe_size), floori(position.y / safe_size))
+
+static func build_enemy_spatial_hash(active_enemies: Array, cell_size: float) -> Dictionary:
+	var hash: Dictionary = {}
+	for enemy in active_enemies:
+		if enemy == null or not is_instance_valid(enemy):
+			continue
+		var room_coord: Vector2i = Vector2i(enemy.current_room)
+		var cell_coord: Vector2i = enemy_spatial_cell_coord(enemy.global_position, cell_size)
+		var hash_key: String = enemy_spatial_room_cell_key(room_coord, cell_coord)
+		var bucket: Array = hash.get(hash_key, [])
+		bucket.append(enemy)
+		hash[hash_key] = bucket
+	return hash
+
+static func separation_direction_from_overlap(enemy: Variant, neighbor: Variant) -> Vector2:
+	var uid_delta: int = int(enemy.enemy_uid) - int(neighbor.enemy_uid)
+	var angle: float = float(abs(uid_delta % 32)) * (TAU / 32.0)
+	if uid_delta < 0:
+		angle += PI
+	return Vector2.RIGHT.rotated(angle)
+
+static func enemy_soft_separation_radius(enemy: Variant) -> float:
+	if enemy == null or not is_instance_valid(enemy):
+		return ENEMY_SOFT_SEPARATION_MIN_RADIUS
+	var role_scale: float = 1.0
+	if enemy.has_method("role_scale"):
+		role_scale = maxf(float(enemy.call("role_scale")), 0.2)
+	var sprite_radius: float = ENEMY_SOFT_SEPARATION_SPRITE_RADIUS_BASE * role_scale
+	return clampf(sprite_radius * ENEMY_SOFT_SEPARATION_SPRITE_RADIUS_FACTOR, ENEMY_SOFT_SEPARATION_MIN_RADIUS, ENEMY_SOFT_SEPARATION_MAX_RADIUS)
+
+static func enemy_soft_separation_offset(game: Node, enemy: Variant, spatial_hash: Dictionary) -> Vector2:
+	if enemy == null or not is_instance_valid(enemy):
+		return Vector2.ZERO
+	if not game.enemy_is_active(enemy):
+		return Vector2.ZERO
+	var room_coord: Vector2i = Vector2i(enemy.current_room)
+	var source_position: Vector2 = enemy.global_position
+	var source_cell: Vector2i = enemy_spatial_cell_coord(source_position, ENEMY_SOFT_SEPARATION_CELL_SIZE)
+	var accumulated_push: Vector2 = Vector2.ZERO
+	var considered_neighbors: int = 0
+	var separation_radius: float = enemy_soft_separation_radius(enemy)
+	var max_distance_sq: float = separation_radius * separation_radius
+	for y_offset in range(-1, 2):
+		for x_offset in range(-1, 2):
+			if considered_neighbors >= ENEMY_SOFT_SEPARATION_MAX_NEIGHBORS:
+				break
+			var neighbor_cell: Vector2i = source_cell + Vector2i(x_offset, y_offset)
+			var hash_key: String = enemy_spatial_room_cell_key(room_coord, neighbor_cell)
+			if not spatial_hash.has(hash_key):
+				continue
+			var bucket: Array = spatial_hash[hash_key]
+			for neighbor in bucket:
+				if considered_neighbors >= ENEMY_SOFT_SEPARATION_MAX_NEIGHBORS:
+					break
+				if neighbor == null or not is_instance_valid(neighbor) or neighbor == enemy:
+					continue
+				if Vector2i(neighbor.current_room) != room_coord:
+					continue
+				var delta: Vector2 = source_position - neighbor.global_position
+				var distance_sq: float = delta.length_squared()
+				if distance_sq > max_distance_sq:
+					continue
+				var direction: Vector2 = Vector2.ZERO
+				var normalized_distance: float = 1.0
+				if distance_sq <= 0.0001:
+					direction = separation_direction_from_overlap(enemy, neighbor)
+					normalized_distance = 0.0
+				else:
+					var distance_value: float = sqrt(distance_sq)
+					direction = delta / maxf(distance_value, 0.001)
+					normalized_distance = clampf(distance_value / separation_radius, 0.0, 1.0)
+				var influence: float = 1.0 - normalized_distance
+				accumulated_push += direction * influence
+				considered_neighbors += 1
+		if considered_neighbors >= ENEMY_SOFT_SEPARATION_MAX_NEIGHBORS:
+			break
+	if accumulated_push == Vector2.ZERO:
+		return Vector2.ZERO
+	var push_offset: Vector2 = accumulated_push.normalized() * minf(accumulated_push.length() * ENEMY_SOFT_SEPARATION_STRENGTH, ENEMY_SOFT_SEPARATION_MAX_OFFSET)
+	return push_offset
 
 static func room_has_active_major_module(game: Node, room_coord: Vector2i) -> bool:
 	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
@@ -227,6 +322,7 @@ static func advance_enemy_routes(game: Node, delta: float) -> void:
 	for enemy_variant in game.enemies:
 		if game.enemy_is_active(enemy_variant):
 			active_enemies.append(enemy_variant)
+	var enemy_spatial_hash: Dictionary = build_enemy_spatial_hash(active_enemies, ENEMY_SOFT_SEPARATION_CELL_SIZE)
 	var think_interval: float = adaptive_enemy_ai_think_interval(game, active_enemies.size())
 	var pathfind_budget: int = maxi(1, int(game.ENEMY_AI_PATHFIND_PER_TICK_BUDGET))
 	var defer_min: float = maxf(float(game.ENEMY_AI_BUDGET_DEFER_MIN), 0.0)
@@ -277,6 +373,8 @@ static func advance_enemy_routes(game: Node, delta: float) -> void:
 		# Keep movement target anchored to the chosen room so doorway transitions
 		# cannot temporarily pull enemies back across a threshold.
 		var target_position: Vector2 = game.clamp_point_to_room(enemy_target_position(game, enemy), target_room)
+		if target_room == Vector2i(enemy.current_room):
+			target_position = game.clamp_point_to_room(target_position + enemy_soft_separation_offset(game, enemy, enemy_spatial_hash), target_room)
 		var attack_start_distance: float = enemy_attack_start_distance(game, enemy)
 		if not enemy_idle:
 			if enemy.current_room == target_room:

@@ -20,6 +20,7 @@ const SPAWN_CLUSTER_GOLDEN_ANGLE: float = 2.39996323
 const SPAWN_CLUSTER_MAX_CELL_RETRIES: int = 2
 const SPAWN_CENTER_SAFE_MARGIN: float = 72.0
 const SPAWN_CENTER_ANCHOR_JITTER: float = 14.0
+const ORC_WAVE_ATTACK_DAMAGE_MULTIPLIER: float = 0.9
 const ROGUE_COMBO_HITS_PER_LEVEL: int = 2
 const ROGUE_COMBO_MAX_POINTS: int = 3
 const ROGUE_COMBO_DECAY_INTERVAL: float = 2.0
@@ -1145,6 +1146,9 @@ static func spawn_wave_enemy_at(game: Node, room_coord: Vector2i, enemy_type: St
 		enemy.set_meta("spawn_source", spawn_source)
 	elif enemy.has_meta("spawn_source"):
 		enemy.remove_meta("spawn_source")
+	var normalized_enemy_type: String = GAME_ENEMY_DEFS.normalize_enemy_type(String(enemy_type))
+	if spawn_source == "door_wave" and normalized_enemy_type == game.ENEMY_TYPE_ORC:
+		enemy.attack_damage = maxf(float(enemy.attack_damage) * ORC_WAVE_ATTACK_DAMAGE_MULTIPLIER, 0.0)
 	game.enemies.append(enemy)
 
 static func projectile_numeric_pierce(projectile: Dictionary) -> int:
