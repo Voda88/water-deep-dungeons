@@ -106,6 +106,8 @@ static func build_enemy_spatial_hash(active_enemies: Array, cell_size: float) ->
 	for enemy in active_enemies:
 		if enemy == null or not is_instance_valid(enemy):
 			continue
+		if bool(enemy.get("throw_active")):
+			continue
 		var room_coord: Vector2i = Vector2i(enemy.current_room)
 		var cell_coord: Vector2i = enemy_spatial_cell_coord(enemy.global_position, cell_size)
 		var hash_key: String = enemy_spatial_room_cell_key(room_coord, cell_coord)
@@ -135,6 +137,8 @@ static func enemy_soft_separation_offset(game: Node, enemy: Variant, spatial_has
 		return Vector2.ZERO
 	if not game.enemy_is_active(enemy):
 		return Vector2.ZERO
+	if bool(enemy.get("throw_active")):
+		return Vector2.ZERO
 	var room_coord: Vector2i = Vector2i(enemy.current_room)
 	var source_position: Vector2 = enemy.global_position
 	var source_cell: Vector2i = enemy_spatial_cell_coord(source_position, ENEMY_SOFT_SEPARATION_CELL_SIZE)
@@ -155,6 +159,8 @@ static func enemy_soft_separation_offset(game: Node, enemy: Variant, spatial_has
 				if considered_neighbors >= ENEMY_SOFT_SEPARATION_MAX_NEIGHBORS:
 					break
 				if neighbor == null or not is_instance_valid(neighbor) or neighbor == enemy:
+					continue
+				if bool(neighbor.get("throw_active")):
 					continue
 				if Vector2i(neighbor.current_room) != room_coord:
 					continue
@@ -375,7 +381,7 @@ static func advance_enemy_routes(game: Node, delta: float) -> void:
 		# Keep movement target anchored to the chosen room so doorway transitions
 		# cannot temporarily pull enemies back across a threshold.
 		var target_position: Vector2 = game.clamp_point_to_room(enemy_target_position(game, enemy), target_room)
-		if not enemy_spatial_hash.is_empty() and target_room == Vector2i(enemy.current_room):
+		if not enemy_spatial_hash.is_empty() and target_room == Vector2i(enemy.current_room) and not bool(enemy.get("throw_active")):
 			target_position = game.clamp_point_to_room(target_position + enemy_soft_separation_offset(game, enemy, enemy_spatial_hash), target_room)
 		var attack_start_distance: float = enemy_attack_start_distance(game, enemy)
 		if not enemy_idle:

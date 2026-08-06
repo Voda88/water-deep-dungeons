@@ -5,6 +5,23 @@ const UNIFIED_KNOCKBACK_FLATFOOTED_MOVE_MULTIPLIER: float = 0.72
 const UNIFIED_KNOCKBACK_FLATFOOTED_ATTACK_SPEED_MULTIPLIER: float = 0.78
 const UNIFIED_KNOCKBACK_FLATFOOTED_DAMAGE_TAKEN_MULTIPLIER: float = 1.5
 const UNIFIED_KNOCKBACK_BOUNCE_COLOR: Color = Color("c5d4df")
+const KNOCKBACK_GEOMETRY_CACHE_META: StringName = &"knockback_geometry_cache"
+
+static func knockback_geometry_cache_key(game: Node, room_coord: Vector2i) -> String:
+	return "%d|%d:%d" % [int(game.floor_index), room_coord.x, room_coord.y]
+
+static func cached_knockback_geometry(game: Node, room_coord: Vector2i) -> Dictionary:
+	var cache: Dictionary = Dictionary(game.get_meta(KNOCKBACK_GEOMETRY_CACHE_META, {}))
+	var cache_key: String = knockback_geometry_cache_key(game, room_coord)
+	if cache.has(cache_key):
+		return Dictionary(cache[cache_key])
+	var geometry: Dictionary = {
+		"bounds": game.room_interior_rect(room_coord, 20.0),
+		"regions": game.room_walkable_regions(room_coord, game.ROOM_WALKABLE_INSET + 2.0),
+	}
+	cache[cache_key] = geometry
+	game.set_meta(KNOCKBACK_GEOMETRY_CACHE_META, cache)
+	return geometry
 
 static func enemy_forward_direction(game: Node, enemy: Variant) -> Vector2:
 	if enemy == null or not is_instance_valid(enemy):
@@ -41,8 +58,9 @@ static func find_hero_by_index(game: Node, hero_index: int) -> Variant:
 static func knockback_actor(game: Node, actor: Variant, direction: Vector2, impulse_strength: float, recovery_duration: float, room_coord: Vector2i, options: Dictionary = {}) -> void:
 	if actor == null or not is_instance_valid(actor) or direction == Vector2.ZERO or impulse_strength <= 0.0 or recovery_duration <= 0.0:
 		return
-	var knockback_bounds: Rect2 = game.room_interior_rect(room_coord, 20.0)
-	var knockback_regions: Array = game.room_walkable_regions(room_coord, game.ROOM_WALKABLE_INSET + 2.0)
+	var knockback_geometry: Dictionary = cached_knockback_geometry(game, room_coord)
+	var knockback_bounds: Rect2 = Rect2(knockback_geometry.get("bounds", Rect2()))
+	var knockback_regions: Array = Array(knockback_geometry.get("regions", []))
 	if game.is_enemy_actor(actor) and actor.has_method("begin_physics_throw"):
 		var max_wall_bounces: int = maxi(0, int(options.get("max_wall_bounces", 1)))
 		var wall_hit_damage: float = maxf(float(options.get("wall_hit_damage", 0.0)), 0.0)

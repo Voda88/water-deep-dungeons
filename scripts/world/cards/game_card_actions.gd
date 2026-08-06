@@ -1562,22 +1562,19 @@ static func cast_silver_gauntlet_toss(game: Node, hero: Variant, target_world_po
 		return false
 	var buff_hits: int = maxi(1, int(hand_card.get("rage_throw_buff_hits", 6)))
 	var rage_ratio: float = clampf(float(rage_value) / float(rage_max), 0.0, 1.0)
-	var max_bounces: int = maxi(0, int(hand_card.get("max_bounces", 2)))
-	var allowed_bounces: int = mini(max_bounces, int(floor(float(rage_value) / 3.0)))
-	if rage_value >= rage_max:
-		allowed_bounces = mini(max_bounces, maxi(allowed_bounces, 2))
-	var throw_distance_scale: float = maxf(float(hand_card.get("throw_distance_scale", 2.35)), 0.0)
-	var throw_distance_curve: float = maxf(float(hand_card.get("throw_distance_curve", 1.8)), 1.0)
-	var throw_distance_room_span_multiplier: float = throw_distance_scale * pow(rage_ratio, throw_distance_curve)
-	var throw_duration: float = clampf(0.34 + rage_ratio * 0.5, 0.24, 1.0)
-	if allowed_bounces >= 2:
-		throw_duration = maxf(throw_duration, 0.62)
+	var shield_bash_def: Dictionary = game.card_definition("shield_bash_card")
+	var base_knockback_force: float = maxf(float(hand_card.get("knockback_force", shield_bash_def.get("knockback_force", 840.0))), 0.0)
+	var knockback_force_per_rage: float = maxf(float(hand_card.get("knockback_force_per_rage", 40.0)), 0.0)
+	var knockback_force: float = base_knockback_force + float(rage_value) * knockback_force_per_rage
+	var knockback_duration: float = clampf(float(hand_card.get("knockback_duration", shield_bash_def.get("knockback_duration", 0.24))), 0.04, 0.65)
+	var max_bounces: int = maxi(0, int(hand_card.get("max_bounces", 1)))
+	var allowed_bounces: int = mini(max_bounces, 1 + int(floor(rage_ratio * 1.0)))
 	hero.fighter_rage_throw_level = rage_value
 	hero.fighter_rage_throw_hits_left = buff_hits
 	hero.set_meta(FIGHTER_RAGE_THROW_CONFIG_META, {
+		"knockback_force": knockback_force,
+		"knockback_duration": knockback_duration,
 		"max_wall_bounces": allowed_bounces,
-		"throw_distance_room_span_multiplier": throw_distance_room_span_multiplier,
-		"throw_duration": throw_duration,
 		"flatfooted_duration": maxf(float(hand_card.get("flatfooted_duration", 4.0)), 0.0),
 		"flatfooted_move_multiplier": clampf(float(hand_card.get("flatfooted_move_multiplier", 0.72)), 0.0, 1.0),
 		"flatfooted_attack_speed_multiplier": clampf(float(hand_card.get("flatfooted_attack_speed_multiplier", 0.78)), 0.0, 1.0),
@@ -1589,7 +1586,7 @@ static func cast_silver_gauntlet_toss(game: Node, hero: Variant, target_world_po
 	hero.trigger_attack(target_world_position, "melee")
 	append_timed_effect_projectile(game, "shield_flash", hero.global_position, Color(hand_card.get("color", Color("c5d4df"))), 0.2, 0.2)
 	game.add_resource_floating_text(hero.global_position, "Thrash Around x%d" % buff_hits, Color(hand_card.get("color", Color("c5d4df"))))
-	game.status_message = "%s primed Thrash Around: next %d hits use Rage %d throw knockback." % [hero.hero_name, buff_hits, rage_value]
+	game.status_message = "%s primed Thrash Around: next %d hits use Rage %d knockback." % [hero.hero_name, buff_hits, rage_value]
 	return true
 
 static func cast_shield_bash(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary, card_modifiers: Dictionary = {}) -> bool:

@@ -95,7 +95,7 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 				"id": HERO_CLASS_FIGHTER,
 				"name": "Fighter",
 				"title": "Melee Fighter",
-				"move_speed": 48.0,
+				"move_speed": 100.0,
 				"max_health": 230.0,
 				"attack_damage": 28.0,
 				"defence": 14.0,
