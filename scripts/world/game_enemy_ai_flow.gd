@@ -1,14 +1,14 @@
 extends RefCounted
 
+const GAME_ENEMY_TARGET_PRIORITY_DEFS: GDScript = preload("res://scripts/content/game_enemy_target_priority_defs.gd")
+
 const ROOM_TARGET_LOCK_ACTOR_KEY_META: StringName = &"room_target_lock_actor_key"
 const ROOM_TARGET_LOCK_ROOM_META: StringName = &"room_target_lock_room"
 const ROOM_TARGET_LOCK_ROOM_TARGETS_META: StringName = &"room_target_lock_room_targets"
 const ENEMY_AI_THINK_TIMER_META: StringName = &"enemy_ai_think_timer_left"
 const CONVERTED_TARGET_LOCK_ENEMY_UID_META: StringName = &"converted_target_lock_enemy_uid"
-const RANGED_TARGET_CACHE_FRAME_META: StringName = &"ranged_target_cache_frame"
-const RANGED_TARGET_CACHE_ACTOR_META: StringName = &"ranged_target_cache_actor"
-const MELEE_TARGET_CACHE_FRAME_META: StringName = &"melee_target_cache_frame"
-const MELEE_TARGET_CACHE_ACTOR_META: StringName = &"melee_target_cache_actor"
+const PRIORITY_TARGET_CACHE_FRAME_META: StringName = &"priority_target_cache_frame"
+const PRIORITY_TARGET_CACHE_ACTOR_META: StringName = &"priority_target_cache_actor"
 const FEAR_FLEE_DISTANCE: float = 240.0
 const TARGET_CATEGORY_RANGED: String = "ranged_target"
 const TARGET_CATEGORY_MELEE: String = "melee_target"
@@ -438,34 +438,31 @@ static func target_room_for_enemy(game: Node, enemy: Variant) -> Vector2i:
 	if enemy_is_feared(enemy):
 		return Vector2i(enemy.current_room)
 	var local_target: Variant = local_enemy_override_target(game, enemy)
+	var role_target: Variant = priority_target_hero(game, enemy)
 	if local_target != null:
 		return hero_room_for_enemy_targeting(game, local_target)
 	match String(enemy.enemy_role):
 		game.ENEMY_TYPE_ORC_RIDER:
-			var orc_rider_target: Variant = orc_rider_target_hero(game, enemy)
-			if orc_rider_target == null:
+			if role_target == null:
 				return game.crystal_room
-			return hero_room_for_enemy_targeting(game, orc_rider_target)
+			return hero_room_for_enemy_targeting(game, role_target)
 		game.ENEMY_TYPE_SKELETON_ARCHER:
 			if enemy_targetable_heroes_in_room_strict(game, Vector2i(enemy.current_room)).is_empty() and room_has_active_major_module(game, Vector2i(enemy.current_room)):
 				return Vector2i(enemy.current_room)
-			var archer_target: Variant = skeleton_archer_target_hero(game, enemy)
-			if archer_target == null:
+			if role_target == null:
 				return game.crystal_room
-			return hero_room_for_enemy_targeting(game, archer_target)
+			return hero_room_for_enemy_targeting(game, role_target)
 		game.ENEMY_TYPE_ORC:
 			if enemy.current_room == game.crystal_room and enemy_targetable_heroes_in_room_strict(game, Vector2i(enemy.current_room)).is_empty():
 				return game.crystal_room
-			var orc_target: Variant = orc_target_hero(game, enemy)
-			if orc_target != null:
-				return hero_room_for_enemy_targeting(game, orc_target)
+			if role_target != null:
+				return hero_room_for_enemy_targeting(game, role_target)
 			return game.crystal_room
 		game.ENEMY_TYPE_WRAITH:
 			if enemy.current_room == game.crystal_room and enemy_targetable_heroes_in_room_strict(game, Vector2i(enemy.current_room)).is_empty():
 				return game.crystal_room
-			var wraith_target: Variant = wraith_target_hero(game, enemy)
-			if wraith_target != null:
-				return hero_room_for_enemy_targeting(game, wraith_target)
+			if role_target != null:
+				return hero_room_for_enemy_targeting(game, role_target)
 			return game.crystal_room
 		game.ENEMY_TYPE_GOLEM:
 			return golem_objective_room(game, enemy)
@@ -503,40 +500,37 @@ static func enemy_target_position(game: Node, enemy: Variant) -> Vector2:
 	if enemy_is_feared(enemy):
 		return feared_enemy_target_position(game, enemy)
 	var local_target: Variant = local_enemy_override_target(game, enemy)
+	var role_target: Variant = priority_target_hero(game, enemy)
 	if local_target != null:
 		if String(enemy.enemy_role) == game.ENEMY_TYPE_SKELETON_ARCHER or String(enemy.enemy_role) == game.ENEMY_TYPE_WRAITH:
 			return skeleton_archer_goal_position(game, enemy)
 		return local_target.global_position
 	match String(enemy.enemy_role):
 		game.ENEMY_TYPE_ORC_RIDER:
-			var orc_rider_target: Variant = orc_rider_target_hero(game, enemy)
-			if orc_rider_target != null:
-				return orc_rider_target.global_position
+			if role_target != null:
+				return role_target.global_position
 			return game.clamp_point_to_room(enemy.global_position, enemy.current_room)
 		game.ENEMY_TYPE_SKELETON_ARCHER:
 			if enemy_targetable_heroes_in_room_strict(game, Vector2i(enemy.current_room)).is_empty() and room_has_active_major_module(game, Vector2i(enemy.current_room)):
 				return game.major_slot_position(enemy.current_room)
-			var archer_target: Variant = skeleton_archer_target_hero(game, enemy)
-			if archer_target != null:
-				if hero_is_in_room(game, archer_target, enemy.current_room):
+			if role_target != null:
+				if hero_is_in_room(game, role_target, enemy.current_room):
 					return skeleton_archer_goal_position(game, enemy)
-				return archer_target.global_position
+				return role_target.global_position
 			return game.crystal_world_position()
 		game.ENEMY_TYPE_ORC:
 			if enemy.current_room == game.crystal_room and enemy_targetable_heroes_in_room_strict(game, Vector2i(enemy.current_room)).is_empty():
 				return game.crystal_world_position()
-			var orc_target: Variant = orc_target_hero(game, enemy)
-			if orc_target != null:
-				return orc_target.global_position
+			if role_target != null:
+				return role_target.global_position
 			return game.crystal_world_position()
 		game.ENEMY_TYPE_WRAITH:
 			if enemy.current_room == game.crystal_room and enemy_targetable_heroes_in_room_strict(game, Vector2i(enemy.current_room)).is_empty():
 				return game.crystal_world_position()
-			var wraith_target: Variant = wraith_target_hero(game, enemy)
-			if wraith_target != null:
-				if hero_is_in_room(game, wraith_target, enemy.current_room):
+			if role_target != null:
+				if hero_is_in_room(game, role_target, enemy.current_room):
 					return game.clamp_point_to_room(enemy.global_position, enemy.current_room)
-				return wraith_target.global_position
+				return role_target.global_position
 			return game.crystal_world_position()
 		game.ENEMY_TYPE_GOLEM:
 			return golem_objective_position(game, enemy)
@@ -657,48 +651,11 @@ static func actor_target_label(game: Node, actor: Variant) -> String:
 		return summon_label.to_lower()
 	return "a target"
 
-static func enemy_target_category_priority_for_role(game: Node, enemy_role: String) -> Dictionary:
-	match enemy_role:
-		game.ENEMY_TYPE_ORC:
-			return {
-				TARGET_CATEGORY_MELEE: 1,
-				TARGET_CATEGORY_RANGED: 2,
-				TARGET_CATEGORY_RESEARCH_CRYSTAL: 3,
-				TARGET_CATEGORY_MAJOR_MODULE: 4,
-				TARGET_CATEGORY_GENERATOR_CRYSTAL: 5,
-			}
-		game.ENEMY_TYPE_ORC_RIDER:
-			return {
-				TARGET_CATEGORY_MELEE: 1,
-				TARGET_CATEGORY_RANGED: 2,
-				TARGET_CATEGORY_RESEARCH_CRYSTAL: 3,
-				TARGET_CATEGORY_MAJOR_MODULE: 4,
-				TARGET_CATEGORY_GENERATOR_CRYSTAL: 5,
-			}
-		game.ENEMY_TYPE_SKELETON_ARCHER, game.ENEMY_TYPE_WRAITH:
-			return {
-				TARGET_CATEGORY_RANGED: 1,
-				TARGET_CATEGORY_MELEE: 2,
-				TARGET_CATEGORY_RESEARCH_CRYSTAL: 3,
-				TARGET_CATEGORY_MAJOR_MODULE: 4,
-				TARGET_CATEGORY_GENERATOR_CRYSTAL: 5,
-			}
-		game.ENEMY_TYPE_BAT, game.ENEMY_TYPE_GOLEM, game.ENEMY_TYPE_DEMON_D:
-			return {
-				TARGET_CATEGORY_RESEARCH_CRYSTAL: 1,
-				TARGET_CATEGORY_MAJOR_MODULE: 2,
-				TARGET_CATEGORY_GENERATOR_CRYSTAL: 3,
-				TARGET_CATEGORY_MELEE: 0,
-				TARGET_CATEGORY_RANGED: 0,
-			}
-		_:
-			return {
-				TARGET_CATEGORY_MELEE: 1,
-				TARGET_CATEGORY_RANGED: 2,
-				TARGET_CATEGORY_RESEARCH_CRYSTAL: 3,
-				TARGET_CATEGORY_MAJOR_MODULE: 4,
-				TARGET_CATEGORY_GENERATOR_CRYSTAL: 5,
-			}
+static func enemy_target_category_priority_for_role(_game: Node, enemy_role: String) -> Dictionary:
+	return GAME_ENEMY_TARGET_PRIORITY_DEFS.priority_table_for_role(enemy_role)
+
+static func enemy_targeting_rule_for_role(enemy_role: String) -> Dictionary:
+	return GAME_ENEMY_TARGET_PRIORITY_DEFS.targeting_rule_for_role(enemy_role)
 
 static func enemy_target_category_for_actor(game: Node, actor: Variant) -> String:
 	if actor == null or not is_instance_valid(actor):
@@ -906,104 +863,64 @@ static func local_enemy_override_target(game: Node, enemy: Variant) -> Variant:
 	var room_heroes: Array = enemy_targetable_heroes_in_room_strict(game, Vector2i(enemy.current_room))
 	if room_heroes.is_empty():
 		return null
-	match String(enemy.enemy_role):
-		game.ENEMY_TYPE_ORC_RIDER:
-			return locked_room_target_hero(game, enemy)
-		game.ENEMY_TYPE_SKELETON_ARCHER, game.ENEMY_TYPE_WRAITH:
-			return skeleton_archer_target_hero(game, enemy)
-		game.ENEMY_TYPE_ORC:
-			return locked_room_target_hero(game, enemy)
-		game.ENEMY_TYPE_BAT, game.ENEMY_TYPE_GOLEM, game.ENEMY_TYPE_DEMON_D:
-			return null
-		_:
-			var priority_table: Dictionary = enemy_target_category_priority_for_role(game, String(enemy.enemy_role))
-			return choose_target_from_actor_candidates(game, enemy, room_heroes, priority_table)
+	var enemy_role: String = String(enemy.enemy_role)
+	var priority_table: Dictionary = enemy_target_category_priority_for_role(game, enemy_role)
+	if category_priority_rank(priority_table, TARGET_CATEGORY_MELEE) >= 999 and category_priority_rank(priority_table, TARGET_CATEGORY_RANGED) >= 999:
+		return null
+	if bool(enemy_targeting_rule_for_role(enemy_role).get("lock_room_target", false)):
+		return locked_room_target_hero(game, enemy)
+	return choose_target_from_actor_candidates(game, enemy, room_heroes, priority_table)
 
-static func priority_hunter_target_hero(game: Node, enemy: Variant) -> Variant:
-	var priority_table: Dictionary = enemy_target_category_priority_for_role(game, String(enemy.enemy_role))
+static func cached_priority_target_hero(enemy: Variant) -> Variant:
+	if enemy == null or not is_instance_valid(enemy):
+		return null
+	if not enemy.has_meta(PRIORITY_TARGET_CACHE_FRAME_META):
+		return null
+	var cached_frame: int = int(enemy.get_meta(PRIORITY_TARGET_CACHE_FRAME_META))
+	if cached_frame != Engine.get_physics_frames():
+		return null
+	if not enemy.has_meta(PRIORITY_TARGET_CACHE_ACTOR_META):
+		return null
+	var cached_target: Variant = enemy.get_meta(PRIORITY_TARGET_CACHE_ACTOR_META)
+	if cached_target == null or not is_instance_valid(cached_target):
+		return null
+	return cached_target
+
+static func set_cached_priority_target_hero(enemy: Variant, target: Variant) -> void:
+	if enemy == null or not is_instance_valid(enemy):
+		return
+	enemy.set_meta(PRIORITY_TARGET_CACHE_FRAME_META, Engine.get_physics_frames())
+	enemy.set_meta(PRIORITY_TARGET_CACHE_ACTOR_META, target if target != null and is_instance_valid(target) else null)
+
+static func priority_target_hero(game: Node, enemy: Variant) -> Variant:
+	if enemy == null or not is_instance_valid(enemy):
+		return null
+	var enemy_role: String = String(enemy.enemy_role)
+	var priority_table: Dictionary = enemy_target_category_priority_for_role(game, enemy_role)
+	if category_priority_rank(priority_table, TARGET_CATEGORY_MELEE) >= 999 and category_priority_rank(priority_table, TARGET_CATEGORY_RANGED) >= 999:
+		set_cached_priority_target_hero(enemy, null)
+		return null
+	var rule: Dictionary = enemy_targeting_rule_for_role(enemy_role)
+	var cached_target: Variant = cached_priority_target_hero(enemy)
+	if hero_is_enemy_targetable(game, cached_target):
+		if not bool(rule.get("lock_room_target", false)) or hero_is_in_room(game, cached_target, Vector2i(enemy.current_room)):
+			return cached_target
 	var room_heroes: Array = enemy_room_hero_candidates(game, enemy)
 	if not room_heroes.is_empty():
-		return choose_target_from_actor_candidates(game, enemy, room_heroes, priority_table)
-	return choose_path_target_from_actor_candidates(game, enemy, enemy_targetable_actor_candidates(game), priority_table)
-
-static func cached_ranged_target_hero(enemy: Variant) -> Variant:
-	if enemy == null or not is_instance_valid(enemy):
+		var room_target: Variant = null
+		if bool(rule.get("lock_room_target", false)):
+			room_target = locked_room_target_hero(game, enemy)
+		else:
+			room_target = choose_target_from_actor_candidates(game, enemy, room_heroes, priority_table)
+		if room_target != null:
+			set_cached_priority_target_hero(enemy, room_target)
+			return room_target
+	if not bool(rule.get("allow_path_target", true)):
+		set_cached_priority_target_hero(enemy, null)
 		return null
-	if not enemy.has_meta(RANGED_TARGET_CACHE_FRAME_META):
-		return null
-	var cached_frame: int = int(enemy.get_meta(RANGED_TARGET_CACHE_FRAME_META))
-	if cached_frame != Engine.get_physics_frames():
-		return null
-	if not enemy.has_meta(RANGED_TARGET_CACHE_ACTOR_META):
-		return null
-	var cached_target: Variant = enemy.get_meta(RANGED_TARGET_CACHE_ACTOR_META)
-	if cached_target == null or not is_instance_valid(cached_target):
-		return null
-	return cached_target
-
-static func set_cached_ranged_target_hero(enemy: Variant, target: Variant) -> void:
-	if enemy == null or not is_instance_valid(enemy):
-		return
-	enemy.set_meta(RANGED_TARGET_CACHE_FRAME_META, Engine.get_physics_frames())
-	enemy.set_meta(RANGED_TARGET_CACHE_ACTOR_META, target if target != null and is_instance_valid(target) else null)
-
-static func cached_melee_target_hero(enemy: Variant) -> Variant:
-	if enemy == null or not is_instance_valid(enemy):
-		return null
-	if not enemy.has_meta(MELEE_TARGET_CACHE_FRAME_META):
-		return null
-	var cached_frame: int = int(enemy.get_meta(MELEE_TARGET_CACHE_FRAME_META))
-	if cached_frame != Engine.get_physics_frames():
-		return null
-	if not enemy.has_meta(MELEE_TARGET_CACHE_ACTOR_META):
-		return null
-	var cached_target: Variant = enemy.get_meta(MELEE_TARGET_CACHE_ACTOR_META)
-	if cached_target == null or not is_instance_valid(cached_target):
-		return null
-	return cached_target
-
-static func set_cached_melee_target_hero(enemy: Variant, target: Variant) -> void:
-	if enemy == null or not is_instance_valid(enemy):
-		return
-	enemy.set_meta(MELEE_TARGET_CACHE_FRAME_META, Engine.get_physics_frames())
-	enemy.set_meta(MELEE_TARGET_CACHE_ACTOR_META, target if target != null and is_instance_valid(target) else null)
-
-static func orc_rider_target_hero(game: Node, enemy: Variant) -> Variant:
-	var cached_target: Variant = cached_melee_target_hero(enemy)
-	if hero_is_enemy_targetable(game, cached_target):
-		return cached_target
-	var room_target: Variant = locked_room_target_hero(game, enemy)
-	if room_target != null:
-		set_cached_melee_target_hero(enemy, room_target)
-		return room_target
-	var priority_table: Dictionary = enemy_target_category_priority_for_role(game, String(enemy.enemy_role))
 	var resolved_target: Variant = choose_path_target_from_actor_candidates(game, enemy, enemy_targetable_actor_candidates(game), priority_table)
-	set_cached_melee_target_hero(enemy, resolved_target)
+	set_cached_priority_target_hero(enemy, resolved_target)
 	return resolved_target
-
-static func orc_target_hero(game: Node, enemy: Variant) -> Variant:
-	var cached_target: Variant = cached_melee_target_hero(enemy)
-	if hero_is_enemy_targetable(game, cached_target):
-		return cached_target
-	var room_target: Variant = locked_room_target_hero(game, enemy)
-	if room_target != null:
-		set_cached_melee_target_hero(enemy, room_target)
-		return room_target
-	var priority_table: Dictionary = enemy_target_category_priority_for_role(game, String(enemy.enemy_role))
-	var resolved_target: Variant = choose_path_target_from_actor_candidates(game, enemy, enemy_targetable_actor_candidates(game), priority_table)
-	set_cached_melee_target_hero(enemy, resolved_target)
-	return resolved_target
-
-static func wraith_target_hero(game: Node, enemy: Variant) -> Variant:
-	return skeleton_archer_target_hero(game, enemy)
-
-static func bat_target_hero(_game: Node, _enemy: Variant) -> Variant:
-	return null
-
-static func golem_target_hero(game: Node, enemy: Variant) -> Variant:
-	if enemy == null or not is_instance_valid(enemy):
-		return null
-	return default_room_hero_target(game, enemy.current_room, enemy.global_position)
 
 static func enemy_situational_speed_multiplier(game: Node, enemy: Variant) -> float:
 	if enemy == null or not is_instance_valid(enemy):
@@ -1018,29 +935,15 @@ static func enemy_situational_speed_multiplier(game: Node, enemy: Variant) -> fl
 		game.ENEMY_TYPE_ORC:
 			multiplier = 0.72 if has_heroes else 1.0
 		game.ENEMY_TYPE_BAT:
-			multiplier = 0.58 if has_heroes else 1.0
+			multiplier = 0.72 if has_heroes else 1.0
 		_:
 			multiplier = 1.0
 	if game.rooms.has(room_coord) and float(game.rooms[room_coord].get("neurostun_time_left", 0.0)) > 0.0:
 		multiplier *= 0.58
 	return multiplier
 
-static func skeleton_archer_target_hero(game: Node, enemy: Variant) -> Variant:
-	var cached_target: Variant = cached_ranged_target_hero(enemy)
-	if hero_is_enemy_targetable(game, cached_target):
-		return cached_target
-	var room_heroes: Array = enemy_room_hero_candidates(game, enemy)
-	var priority_table: Dictionary = enemy_target_category_priority_for_role(game, String(enemy.enemy_role))
-	var resolved_target: Variant = null
-	if not room_heroes.is_empty():
-		resolved_target = choose_target_from_actor_candidates(game, enemy, room_heroes, priority_table)
-	else:
-		resolved_target = choose_path_target_from_actor_candidates(game, enemy, enemy_targetable_actor_candidates(game), priority_table)
-	set_cached_ranged_target_hero(enemy, resolved_target)
-	return resolved_target
-
 static func skeleton_archer_goal_position(game: Node, enemy: Variant) -> Vector2:
-	var archer_target: Variant = skeleton_archer_target_hero(game, enemy)
+	var archer_target: Variant = priority_target_hero(game, enemy)
 	if archer_target == null or not hero_is_in_room(game, archer_target, enemy.current_room):
 		return game.clamp_point_to_room(enemy.global_position, enemy.current_room)
 	return game.clamp_point_to_room(enemy.global_position, enemy.current_room)
@@ -1166,16 +1069,17 @@ static func resolve_enemy_attack(game: Node, enemy: Variant) -> void:
 		game.update_hud()
 		return
 	var local_target: Variant = local_enemy_override_target(game, enemy)
+	var role_target: Variant = priority_target_hero(game, enemy)
 	match String(enemy.enemy_role):
 		game.ENEMY_TYPE_ORC_RIDER:
-			var orc_rider_target: Variant = local_target if local_target != null else orc_rider_target_hero(game, enemy)
+			var orc_rider_target: Variant = local_target if local_target != null else role_target
 			if orc_rider_target == null or not hero_is_in_room(game, orc_rider_target, enemy.current_room):
 				return
 			enemy.trigger_attack(orc_rider_target.global_position)
 			game.queue_pending_melee_attack(enemy, orc_rider_target, enemy.attack_damage, enemy.melee_impact_delay(), "An armored orc")
 			game.status_message = "An armored orc lunges at %s." % actor_target_label(game, orc_rider_target)
 		game.ENEMY_TYPE_SKELETON_ARCHER:
-			var archer_target: Variant = local_target if local_target != null else skeleton_archer_target_hero(game, enemy)
+			var archer_target: Variant = local_target if local_target != null else role_target
 			if archer_target != null and hero_is_in_room(game, archer_target, enemy.current_room):
 				enemy.trigger_attack(archer_target.global_position)
 				game.spawn_laser_projectile(enemy.global_position, archer_target, enemy.attack_damage, Color("dbe5c8"), 3.2, 980.0)
@@ -1191,7 +1095,7 @@ static func resolve_enemy_attack(game: Node, enemy: Variant) -> void:
 			else:
 				return
 		game.ENEMY_TYPE_ORC:
-			var orc_target: Variant = local_target if local_target != null else orc_target_hero(game, enemy)
+			var orc_target: Variant = local_target if local_target != null else role_target
 			if orc_target != null and hero_is_in_room(game, orc_target, enemy.current_room):
 				enemy.trigger_attack(orc_target.global_position)
 				game.queue_pending_melee_attack(enemy, orc_target, enemy.attack_damage, enemy.melee_impact_delay(), "Orcs")

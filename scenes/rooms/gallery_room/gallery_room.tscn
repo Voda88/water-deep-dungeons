@@ -116,7 +116,7 @@ position = Vector2(0, -125)
 position = Vector2(0, 125)
 
 [node name="DoorArt" parent="." unique_id=760650666 instance=ExtResource("4")]
-modulate = Color(0.56, 0.60, 0.68, 1)
+modulate = Color(0.56, 0.6, 0.68, 1)
 
 [node name="Slots" type="Node2D" parent="." unique_id=100732426]
 

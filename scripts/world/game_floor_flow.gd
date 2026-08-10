@@ -782,7 +782,7 @@ static func advance_wave_recovery(game: Node, delta: float) -> void:
 			var hero: Variant = hero_variant
 			if hero == null or not is_instance_valid(hero):
 				continue
-			if game.clear_fighter_rage_throw_buff(hero, false):
+			if game.clear_fighter_rage_throw_buff(hero, true):
 				cleared_thrash_buffs += 1
 	var dismissed_summons: int = dismiss_temporary_summons_on_calm(game) if calm_now else 0
 	if calm_now and bool(game.door_wave_spawns_incoming):

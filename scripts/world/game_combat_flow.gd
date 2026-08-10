@@ -243,7 +243,7 @@ static func apply_fighter_rage_throw_buff_hit(game: Node, hero: Variant, enemy: 
 	if String(hero.hero_class_id) != game.HERO_CLASS_FIGHTER:
 		return
 	if not game.wave_in_progress():
-		clear_fighter_rage_throw_buff(game, hero)
+		clear_fighter_rage_throw_buff(game, hero, true)
 		return
 	var hits_left: int = maxi(int(hero.fighter_rage_throw_hits_left), 0)
 	if hits_left <= 0:

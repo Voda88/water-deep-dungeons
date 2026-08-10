@@ -904,6 +904,17 @@ func _draw() -> void:
 		]), Color("ffe7a1"))
 	if selected:
 		draw_arc(Vector2.ZERO, 28.0, 0.0, TAU, 48, Color("f8ff7a"), 4.0, true)
+	var thrash_active: bool = hero_class_id == FIGHTER_CLASS_ID and fighter_rage_throw_hits_left > 0 and fighter_rage_throw_level > 0
+	if thrash_active:
+		var rage_ratio: float = clampf(float(fighter_rage_throw_level) / float(maxi(fighter_rage_max, 1)), 0.0, 1.0)
+		var pulse: float = 1.0 if reduced_animations else 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.018)
+		var aura_radius: float = 22.0 + 5.0 * rage_ratio + (0.0 if reduced_animations else 2.8 * pulse)
+		draw_circle(Vector2.ZERO, aura_radius + 9.0, Color(0.95, 0.18, 0.18, 0.14 + 0.08 * rage_ratio))
+		draw_circle(Vector2.ZERO, aura_radius + 4.0, Color(1.0, 0.30, 0.24, 0.18 + 0.10 * rage_ratio))
+		draw_arc(Vector2.ZERO, aura_radius, 0.0, TAU, 52, Color(1.0, 0.62, 0.54, 0.72), 2.2, true)
+		if not reduced_animations:
+			var sweep_start: float = float(Time.get_ticks_msec()) * 0.005
+			draw_arc(Vector2.ZERO, aura_radius - 3.6, sweep_start, sweep_start + PI * 1.35, 28, Color(1.0, 0.42, 0.34, 0.76), 1.8, true)
 	if reduced_animations:
 		return
 	if evasive_roll_time_left > 0.0 and absf(evasive_roll_spin_speed) <= 0.001:
