@@ -726,7 +726,7 @@ static func locked_room_target_hero(game: Node, enemy: Variant) -> Variant:
 	if enemy == null or not is_instance_valid(enemy):
 		return null
 	var current_room: Vector2i = Vector2i(enemy.current_room)
-	var room_heroes: Array = enemy_targetable_heroes_in_room_strict(game, current_room)
+	var room_heroes: Array = enemy_targetable_heroes_in_room(game, current_room)
 	if room_heroes.is_empty():
 		clear_room_target_lock(enemy)
 		return null
@@ -754,7 +754,7 @@ static func locked_room_target_hero(game: Node, enemy: Variant) -> Variant:
 static func local_enemy_override_target(game: Node, enemy: Variant) -> Variant:
 	if enemy == null or not is_instance_valid(enemy):
 		return null
-	var room_heroes: Array = enemy_targetable_heroes_in_room_strict(game, Vector2i(enemy.current_room))
+	var room_heroes: Array = enemy_targetable_heroes_in_room(game, Vector2i(enemy.current_room))
 	if room_heroes.is_empty():
 		return null
 	var enemy_role: String = String(enemy.enemy_role)
@@ -776,7 +776,7 @@ static func enemy_target_choices_in_room(game: Node, enemy: Variant, room_coord:
 		return []
 	var priority_table: Dictionary = enemy_target_category_priority_for_role(game, String(enemy.enemy_role))
 	var choices: Array = []
-	var actor_target: Variant = local_enemy_override_target(game, enemy) if room_coord == Vector2i(enemy.current_room) else choose_target_from_actor_candidates(game, enemy, enemy_targetable_heroes_in_room_strict(game, room_coord), priority_table)
+	var actor_target: Variant = local_enemy_override_target(game, enemy) if room_coord == Vector2i(enemy.current_room) else choose_target_from_actor_candidates(game, enemy, enemy_targetable_heroes_in_room(game, room_coord), priority_table)
 	if actor_target != null:
 		choices.append({
 			"category": enemy_target_category_for_actor(game, actor_target),
