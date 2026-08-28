@@ -37,10 +37,22 @@ func current_health() -> float:
 func is_under_construction() -> bool:
 	return bool(state_data().get("under_construction", false))
 
+func max_health() -> float:
+	if is_major or game == null:
+		return 0.0
+	return game.minor_module_max_health(module_type)
+
+func defence() -> float:
+	if is_major or game == null:
+		return 0.0
+	return game.minor_module_defence(module_type)
+
 func take_damage(amount: float, _impact_direction: Vector2 = Vector2.RIGHT, source_label: String = "Enemies") -> bool:
 	if amount <= 0.0 or game == null or not game.rooms.has(current_room):
 		return false
-	var remaining_health: float = maxf(current_health() - amount, 0.0)
+	var safe_defence: float = maxf(defence(), 0.0)
+	var damage_multiplier: float = 1.0 - safe_defence / (safe_defence + 100.0) if safe_defence > 0.0 else 1.0
+	var remaining_health: float = maxf(current_health() - amount * damage_multiplier, 0.0)
 	if remaining_health <= 0.0:
 		destroy(source_label)
 	else:

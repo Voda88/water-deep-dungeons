@@ -21,6 +21,7 @@ const GAME_MULTIPLAYER_LOBBY: GDScript = preload("res://scripts/world/network/ga
 const GAME_NETWORK_SYNC: GDScript = preload("res://scripts/world/network/game_network_sync.gd")
 const GAME_LAN_DISCOVERY: GDScript = preload("res://scripts/world/network/game_lan_discovery.gd")
 const GAME_COMBAT_FLOW: GDScript = preload("res://scripts/world/game_combat_flow.gd")
+const GAME_TARGETING_FLOW: GDScript = preload("res://scripts/world/game_targeting_flow.gd")
 const GAME_PATHING_FLOW: GDScript = preload("res://scripts/world/game_pathing_flow.gd")
 const GAME_ENEMY_AI_FLOW: GDScript = preload("res://scripts/world/game_enemy_ai_flow.gd")
 const GAME_CARD_ACTIONS: GDScript = preload("res://scripts/world/cards/game_card_actions.gd")
@@ -112,7 +113,6 @@ const MAJOR_MODULE_INDUSTRY: String = "industry"
 const MAJOR_MODULE_COST_BASE: int = 20
 const MAJOR_MODULE_COST_STEP: int = 5
 const MAJOR_MODULE_REPAIR_COST: int = 3
-const MINOR_MODULE_MAX_HEALTH: float = 80.0
 const MAJOR_MODULE_MAX_HEALTH: float = 180.0
 const PROJECTILE_SPEED: float = 950.0
 const RESEARCH_REROLL_BASE_COST: int = 10
@@ -2963,14 +2963,18 @@ func is_minor_module_type(module_type: String) -> bool:
 func is_major_module_type(module_type: String) -> bool:
 	return GAME_MODULE_DEFS.is_major_module_type(module_type)
 
-func minor_module_cost(module_type: String) -> int:
-	return GAME_MODULE_DEFS.minor_module_cost(module_type, minor_module_levels)
-
-func minor_module_base_cost(module_type: String) -> int:
-	return GAME_MODULE_DEFS.minor_module_base_cost(module_type)
+func minor_module_cost(module_type: String, levels: Dictionary = {}) -> int:
+	var resolved_levels: Dictionary = minor_module_levels if levels.is_empty() else levels
+	return GAME_MODULE_DEFS.minor_module_cost(module_type, resolved_levels)
 
 func minor_module_research_cost(module_type: String, next_level: int) -> int:
 	return GAME_MODULE_DEFS.minor_module_research_cost(module_type, next_level)
+
+func minor_module_max_health(module_type: String) -> float:
+	return GAME_MODULE_DEFS.minor_module_max_health(module_type, minor_module_levels)
+
+func minor_module_defence(module_type: String) -> float:
+	return GAME_MODULE_DEFS.minor_module_defence(module_type, minor_module_levels)
 
 func major_module_upgrade_cost(next_level: int) -> int:
 	return GAME_MODULE_DEFS.major_module_upgrade_cost(next_level)

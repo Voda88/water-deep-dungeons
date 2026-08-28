@@ -1,5 +1,6 @@
 extends RefCounted
 
+const GAME_CARD_DEFS: GDScript = preload("res://scripts/content/game_card_defs.gd")
 const GAME_ENEMY_DEFS: GDScript = preload("res://scripts/content/game_enemy_defs.gd")
 const GAME_DUNGEON_BUILDER: GDScript = preload("res://scripts/world/rooms/game_dungeon_builder.gd")
 const FIGHTER_RAGE_THROW_CONFIG_META: StringName = &"fighter_rage_throw_config"

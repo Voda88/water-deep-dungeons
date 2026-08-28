@@ -1679,7 +1679,8 @@ static func apply_cleric_mend_to_room(game: Node, room: Dictionary, delta: float
 		var module_data: Dictionary = Dictionary(room["minor_modules"][module_index])
 		if float(module_data.get("health", 0.0)) <= 0.0 or bool(module_data.get("under_construction", false)):
 			continue
-		module_data["health"] = minf(float(module_data.get("health", 0.0)) + repair_amount, game.MINOR_MODULE_MAX_HEALTH)
+		var module_type: String = game.canonical_minor_module_type(String(module_data.get("type", game.MINOR_MODULE_TURRET)))
+		module_data["health"] = minf(float(module_data.get("health", 0.0)) + repair_amount, game.minor_module_max_health(module_type))
 		room["minor_modules"][module_index] = module_data
 
 static func attack_definition(game: Node, attack_id: String) -> Dictionary:

@@ -154,7 +154,8 @@ static func should_highlight_minor_slot(game: Node, room_coord: Vector2i, slot_i
 	var module_index: int = game.minor_module_index_for_slot(room_coord, slot_index)
 	if module_index < 0:
 		return true
-	return float(game.rooms[room_coord]["minor_modules"][module_index]["health"]) < game.MINOR_MODULE_MAX_HEALTH
+	var module_data: Dictionary = Dictionary(game.rooms[room_coord]["minor_modules"][module_index])
+	return float(module_data["health"]) < game.minor_module_max_health(String(module_data.get("type", game.MINOR_MODULE_TURRET)))
 
 static func should_highlight_major_slot(game: Node, room_coord: Vector2i) -> bool:
 	if not game.can_manage_modules(room_coord):
@@ -259,7 +260,7 @@ static func queue_room_construction(game: Node, room_coord: Vector2i, module_typ
 	game.industry -= industry_cost
 	var duration: float = game.BUILD_DURATION_WAVE if game.wave_in_progress() else game.BUILD_DURATION_CALM
 	var start_health: float = 1.0
-	var target_health: float = game.MAJOR_MODULE_MAX_HEALTH if is_major else game.MINOR_MODULE_MAX_HEALTH
+	var target_health: float = game.MAJOR_MODULE_MAX_HEALTH if is_major else game.minor_module_max_health(module_type)
 	if is_major:
 		if repairing:
 			start_health = float(room["major_health"])
@@ -352,7 +353,7 @@ static func finish_room_construction(game: Node, construction: Dictionary) -> vo
 	var module_index: int = game.minor_module_index_for_slot(room_coord, slot_index)
 	if module_index >= 0:
 		var module_data: Dictionary = Dictionary(room["minor_modules"][module_index])
-		module_data["health"] = game.MINOR_MODULE_MAX_HEALTH
+		module_data["health"] = game.minor_module_max_health(module_type)
 		module_data["under_construction"] = false
 		room["minor_modules"][module_index] = module_data
 	game.rooms[room_coord] = room

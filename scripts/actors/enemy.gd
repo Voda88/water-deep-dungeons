@@ -83,6 +83,7 @@ var turn_undead_damage_taken_multiplier: float = 1.0
 var calm_emotions_time_left: float = 0.0
 var calm_emotions_duration: float = 0.0
 var attack_effect_left: float = 0.0
+var attack_style: String = ""
 var hurt_effect_left: float = 0.0
 var visual_facing_left: bool = false
 var death_started: bool = false
@@ -280,7 +281,7 @@ func desired_sprite_animation(move_offset: Vector2) -> String:
 	if hurt_effect_left > 0.0:
 		return "hurt"
 	if attack_effect_left > 0.0:
-		return "attack"
+		return attack_animation_name()
 	if velocity.length() > 6.0 or move_offset.length() > 8.0:
 		return "walk"
 	return "idle"
@@ -717,12 +718,19 @@ func clamp_to_knockback_bounds() -> void:
 		clampf(global_position.y, knockback_bounds.position.y, knockback_bounds.end.y)
 	)
 
-func trigger_attack(target_position: Vector2) -> void:
+func attack_animation_name() -> String:
+	var styled_animation: String = "attack_%s" % attack_style
+	if attack_style != "" and animated_sprite != null and animated_sprite.sprite_frames != null and animated_sprite.sprite_frames.has_animation(styled_animation):
+		return styled_animation
+	return "attack"
+
+func trigger_attack(target_position: Vector2, style: String = "") -> void:
 	if death_started:
 		return
 	start_familiar_attack_swoop(target_position)
 	destination = target_position if global_position.distance_to(target_position) <= 48.0 else destination
-	attack_effect_left = maxf(attack_effect_left, animation_duration("attack", 0.32))
+	attack_style = style
+	attack_effect_left = maxf(attack_effect_left, animation_duration(attack_animation_name(), 0.32))
 	update_visual_facing(target_position - global_position)
 	update_sprite_state(destination - global_position)
 

@@ -838,8 +838,9 @@ static func draw_room_overlays(game: Node, reduce_animations: bool = false) -> v
 							game.draw_circle(slot_position, 7.5, module_color)
 							game.draw_line(slot_position + Vector2(0.0, -10.0), slot_position + Vector2(0.0, -18.0), module_color.lightened(0.25), 2.0)
 					game.draw_string(ThemeDB.fallback_font, slot_position + Vector2(-8.0, -16.0), str(clampi(game.minor_module_level(module_type), 1, 4)), HORIZONTAL_ALIGNMENT_LEFT, 18.0, 12, Color("f5f8fb"))
-					if bool(module_data.get("under_construction", false)) or float(module_data["health"]) < game.MINOR_MODULE_MAX_HEALTH:
-						var turret_ratio: float = float(module_data["health"]) / game.MINOR_MODULE_MAX_HEALTH
+					var module_max_health: float = game.minor_module_max_health(module_type)
+					if bool(module_data.get("under_construction", false)) or float(module_data["health"]) < module_max_health:
+						var turret_ratio: float = float(module_data["health"]) / module_max_health
 						game.draw_rect(Rect2(slot_position + Vector2(-12.0, 14.0), Vector2(24.0, 4.0)), Color("142026"), true)
 						game.draw_rect(Rect2(slot_position + Vector2(-12.0, 14.0), Vector2(24.0 * turret_ratio, 4.0)), module_color, true)
 					if bool(module_data.get("under_construction", false)):

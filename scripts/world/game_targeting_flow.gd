@@ -47,6 +47,13 @@ static func target_category_for_actor(game: Node, seeker: Variant, actor: Varian
 		return "hostile_enemy"
 	return "ranged_target" if game.hero_is_long_range_target(actor) else "melee_target"
 
+static func actor_strength(game: Node, actor: Variant) -> float:
+	if actor == null or not is_instance_valid(actor):
+		return 0.0
+	if game.is_module_actor(actor):
+		return actor.current_health()
+	return float(actor.current_health)
+
 static func select_in_room_actor_target(game: Node, seeker: Variant, candidates: Array, priority_table: Dictionary, target_meta: StringName = &"", prefer_highest_strength: bool = false) -> Variant:
 	if seeker == null or not is_instance_valid(seeker):
 		return null
@@ -59,7 +66,7 @@ static func select_in_room_actor_target(game: Node, seeker: Variant, candidates:
 			"category": target_category_for_actor(game, seeker, candidate),
 			"position": candidate.global_position,
 			"actor": candidate,
-			"strength": float(candidate.get("current_health", 0.0)),
+			"strength": actor_strength(game, candidate),
 		})
 	var target_choice: Dictionary = persistent_actor_target_choice(seeker, target_meta, choices, priority_table, prefer_highest_strength) if target_meta != &"" else highest_priority_choice(seeker, choices, priority_table, prefer_highest_strength)
 	return target_choice.get("actor", null)
@@ -81,7 +88,7 @@ static func select_actor_targets(origin: Vector2, candidates: Array, strategy: S
 		if strategy == "all":
 			selected_targets.append(candidate)
 			continue
-		var strength: float = float(candidate.get("current_health", 0.0))
+		var strength: float = actor_strength_from_candidate(candidate)
 		if selected_target == null \
 		or (strategy == "strongest" and (strength > selected_strength or (is_equal_approx(strength, selected_strength) and distance_value < selected_distance))) \
 		or (strategy != "strongest" and distance_value < selected_distance):
@@ -91,6 +98,11 @@ static func select_actor_targets(origin: Vector2, candidates: Array, strategy: S
 	if selected_target != null:
 		selected_targets.append(selected_target)
 	return selected_targets
+
+static func actor_strength_from_candidate(actor: Variant) -> float:
+	if actor == null or not is_instance_valid(actor):
+		return 0.0
+	return actor.current_health() if actor.has_method("current_health") else float(actor.current_health)
 
 static func priority_rank(priority_table: Dictionary, category: String) -> int:
 	var rank: int = int(priority_table.get(category, -1))

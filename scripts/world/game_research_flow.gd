@@ -5,25 +5,7 @@ const GAME_FLOOR_FLOW: GDScript = preload("res://scripts/world/game_floor_flow.g
 static func research_option_cost(game: Node, module_type: String, next_level: int, is_major: bool) -> int:
 	if is_major:
 		return game.major_module_upgrade_cost(next_level)
-	match game.canonical_minor_module_type(module_type):
-		game.MINOR_MODULE_TURRET:
-			return game.minor_module_research_cost(module_type, next_level)
-		game.MINOR_MODULE_BLIGHT_GAS:
-			return game.minor_module_research_cost(module_type, next_level)
-		game.MINOR_MODULE_RUNEBURST_MORTAR:
-			return game.minor_module_research_cost(module_type, next_level)
-		game.MINOR_MODULE_ARCANA_TURRET:
-			return game.minor_module_research_cost(module_type, next_level)
-		game.MINOR_MODULE_CONVERSION:
-			return game.minor_module_research_cost(module_type, next_level)
-		game.MINOR_MODULE_BOUNTY_INDUSTRY:
-			return game.minor_module_research_cost(module_type, next_level)
-		game.MINOR_MODULE_BOUNTY_FOOD:
-			return game.minor_module_research_cost(module_type, next_level)
-		game.MINOR_MODULE_BOUNTY_SCIENCE:
-			return game.minor_module_research_cost(module_type, next_level)
-		_:
-			return game.minor_module_research_cost(module_type, next_level)
+	return game.minor_module_research_cost(module_type, next_level)
 
 static func research_option_description(game: Node, module_type: String, next_level: int, is_major: bool) -> String:
 	if is_major:
