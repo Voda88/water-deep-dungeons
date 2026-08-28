@@ -52,6 +52,7 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"base_damage": 23.4,
 				"delivery": "magic_missile",
 				"visual_style": "laser",
+				"allow_cross_room_targets": true,
 				"projectile_kind": "magic_missile",
 				"projectile_motion": "homing",
 				"projectile_initial_direction": "perpendicular",

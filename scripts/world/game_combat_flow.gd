@@ -1727,13 +1727,21 @@ static func execute_attack(game: Node, attacker: Variant, target: Variant, attac
 	if definition.is_empty() or (not game.is_hero_actor(attacker) and not game.is_enemy_actor(attacker)):
 		return false
 	var attack_room: Vector2i = Vector2i(attacker.current_room)
-	if game.is_hero_actor(target) and not game.hero_is_in_room(target, attack_room):
+	var target_room: Vector2i = attack_room
+	var allow_cross_room_targets: bool = bool(definition.get("allow_cross_room_targets", false))
+	if game.is_hero_actor(target) and not game.hero_is_in_room(target, attack_room) and not allow_cross_room_targets:
 		return false
-	if game.is_enemy_actor(target) and Vector2i(target.current_room) != attack_room:
+	if game.is_enemy_actor(target):
+		target_room = Vector2i(target.current_room)
+		if target_room != attack_room and not allow_cross_room_targets:
+			return false
+	if game.is_module_actor(target) and (not target.is_active() or (Vector2i(target.current_room) != attack_room and not allow_cross_room_targets)):
 		return false
-	if game.is_module_actor(target) and (not target.is_active() or Vector2i(target.current_room) != attack_room):
-		return false
-	var target_position: Vector2 = game.clamp_point_to_room(target.global_position, attack_room)
+	if game.is_module_actor(target):
+		target_room = Vector2i(target.current_room)
+	if game.is_hero_actor(target):
+		target_room = Vector2i(target.current_room)
+	var target_position: Vector2 = game.clamp_point_to_room(target.global_position, target_room)
 	var enemy_definition: Dictionary = GAME_ENEMY_DEFS.enemy_role_definition(attacker.enemy_role) if game.is_enemy_actor(attacker) else {}
 	var source_label: String = String(attacker.hero_name) if game.is_hero_actor(attacker) else String(enemy_definition.get("attack_label", String(attacker.enemy_role).capitalize()))
 	var damage: float = game.hero_room_attack_damage(attacker) if game.is_hero_actor(attacker) else float(attacker.attack_damage)
