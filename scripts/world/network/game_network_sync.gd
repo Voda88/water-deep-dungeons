@@ -662,8 +662,24 @@ static func server_request_play_card(game: Node, hero_index: int, card_uid: int,
 	var sender_peer_id: int = game.multiplayer.get_remote_sender_id()
 	if not peer_can_control_hero(game, sender_peer_id, hero_index):
 		return
-	if game.play_card_for_hero(hero_index, card_uid, target_world_position):
-		broadcast_network_snapshot(game)
+	var resolved_magic_missile_target_uids: Array = game.magic_missile_target_uids(hero_index, card_uid, target_world_position)
+	if game.play_card_for_hero(hero_index, card_uid, target_world_position, resolved_magic_missile_target_uids, true):
+		game.broadcast_network_play_card_command(hero_index, card_uid, target_world_position, resolved_magic_missile_target_uids)
+
+static func receive_network_play_card_command(game: Node, hero_index: int, card_uid: int, target_world_position: Vector2, resolved_magic_missile_target_uids: Array = []) -> void:
+	if game.authoritative_simulation_active() or game.can_local_control_hero_index(hero_index):
+		return
+	game.play_card_for_hero(hero_index, card_uid, target_world_position, resolved_magic_missile_target_uids, true)
+
+static func receive_network_crystal_pressure_spawn(game: Node, pending_spawn: Dictionary) -> void:
+	if game.authoritative_simulation_active():
+		return
+	var room_coord: Vector2i = Vector2i(pending_spawn.get("room", game.INVALID_ROOM))
+	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord) or String(pending_spawn.get("spawn_source", "")) != "crystal_pressure":
+		return
+	game.pending_enemy_spawns.append(pending_spawn.duplicate(true))
+	game.rooms[room_coord]["warning_timer_left"] = maxf(float(pending_spawn.get("delay_left", 0.0)), 0.0)
+	game.crystal_pressure_event_index += 1
 
 static func server_request_pick_up_crystal(game: Node, hero_index: int) -> void:
 	if not game.multiplayer.is_server():

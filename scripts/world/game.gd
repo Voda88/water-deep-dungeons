@@ -2461,8 +2461,11 @@ func apply_hand_card_effect(hero: Variant, hand_card: Dictionary, target_data: D
 func finalize_played_hand_card_source(hand_card: Dictionary) -> void:
 	GAME_CARD_ACTIONS.finalize_played_hand_card_source(self, hand_card)
 
-func play_card_for_hero(hero_index: int, card_uid: int, target_world_position: Vector2) -> bool:
-	return GAME_CARD_ACTIONS.play_card_for_hero(self, hero_index, card_uid, target_world_position)
+func play_card_for_hero(hero_index: int, card_uid: int, target_world_position: Vector2, resolved_magic_missile_target_uids: Array = [], magic_missile_targets_resolved: bool = false) -> bool:
+	return GAME_CARD_ACTIONS.play_card_for_hero(self, hero_index, card_uid, target_world_position, resolved_magic_missile_target_uids, magic_missile_targets_resolved)
+
+func magic_missile_target_uids(hero_index: int, card_uid: int, target_world_position: Vector2) -> Array:
+	return GAME_CARD_ACTIONS.magic_missile_target_uids(self, hero_index, card_uid, target_world_position)
 
 func cast_fireball_spell(hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
 	GAME_CARD_ACTIONS.cast_fireball_spell(self, hero, target_world_position, target_room, hand_card)
@@ -2663,6 +2666,14 @@ func broadcast_network_room_loot_command(hero_index: int, room_coord: Vector2i) 
 	if multiplayer_session_active() and multiplayer.is_server():
 		receive_network_room_loot_command.rpc(hero_index, room_coord)
 
+func broadcast_network_play_card_command(hero_index: int, card_uid: int, target_world_position: Vector2, resolved_magic_missile_target_uids: Array = []) -> void:
+	if multiplayer_session_active() and multiplayer.is_server():
+		receive_network_play_card_command.rpc(hero_index, card_uid, target_world_position, resolved_magic_missile_target_uids)
+
+func broadcast_network_crystal_pressure_spawn(pending_spawn: Dictionary) -> void:
+	if multiplayer_session_active() and multiplayer.is_server():
+		receive_network_crystal_pressure_spawn.rpc(pending_spawn)
+
 func request_network_full_snapshot() -> void:
 	if multiplayer_session_active() and not multiplayer.is_server():
 		server_request_network_full_snapshot.rpc_id(NETWORK_HOST_PEER_ID)
@@ -2693,6 +2704,14 @@ func receive_network_room_construction_command(hero_index: int, room_coord: Vect
 @rpc("authority", "call_remote", "reliable")
 func receive_network_room_loot_command(hero_index: int, room_coord: Vector2i) -> void:
 	GAME_NETWORK_SYNC.receive_network_room_loot_command(self, hero_index, room_coord)
+
+@rpc("authority", "call_remote", "reliable")
+func receive_network_play_card_command(hero_index: int, card_uid: int, target_world_position: Vector2, resolved_magic_missile_target_uids: Array = []) -> void:
+	GAME_NETWORK_SYNC.receive_network_play_card_command(self, hero_index, card_uid, target_world_position, resolved_magic_missile_target_uids)
+
+@rpc("authority", "call_remote", "reliable")
+func receive_network_crystal_pressure_spawn(pending_spawn: Dictionary) -> void:
+	GAME_NETWORK_SYNC.receive_network_crystal_pressure_spawn(self, pending_spawn)
 
 @rpc("authority", "call_remote", "reliable")
 func receive_lobby_ready_confirmation(ready: bool) -> void:

@@ -362,12 +362,14 @@ static func finish_hand_card_drag(game: Node, pointer_kind: String, pointer_id: 
 	var target_world_position: Vector2 = game.screen_to_world(screen_position)
 	if screen_position.distance_to(source_rect.get_center()) > game.CARD_HAND_RELEASE_DISTANCE and source_hero != null and is_instance_valid(source_hero) and game.card_target_is_valid(source_hero, drag_card, target_world_position):
 		if game.multiplayer_session_active() and not game.authoritative_simulation_active():
-			game.server_request_play_card.rpc_id(game.NETWORK_HOST_PEER_ID, hero_index, int(drag_card.get("uid", -1)), target_world_position)
-			played = true
-		else:
 			played = game.play_card_for_hero(hero_index, int(drag_card.get("uid", -1)), target_world_position)
+			if played:
+				game.server_request_play_card.rpc_id(game.NETWORK_HOST_PEER_ID, hero_index, int(drag_card.get("uid", -1)), target_world_position)
+		else:
+			var resolved_magic_missile_target_uids: Array = game.magic_missile_target_uids(hero_index, int(drag_card.get("uid", -1)), target_world_position)
+			played = game.play_card_for_hero(hero_index, int(drag_card.get("uid", -1)), target_world_position, resolved_magic_missile_target_uids, true)
 			if played and game.multiplayer_session_active() and game.multiplayer.is_server():
-				game.broadcast_network_snapshot()
+				game.broadcast_network_play_card_command(hero_index, int(drag_card.get("uid", -1)), target_world_position, resolved_magic_missile_target_uids)
 		if not played:
 			start_hand_card_return_animation(game, drag_card, drag_rect, source_rect)
 	else:

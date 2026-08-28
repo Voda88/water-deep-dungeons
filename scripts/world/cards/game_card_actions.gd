@@ -635,7 +635,7 @@ static func hand_card_phase_allows_play(game: Node, hand_card: Dictionary) -> bo
 		_:
 			return true
 
-static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Dictionary, target_data: Dictionary) -> bool:
+static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Dictionary, target_data: Dictionary, resolved_magic_missile_target_uids: Array = [], magic_missile_targets_resolved: bool = false) -> bool:
 	if hero == null or not is_instance_valid(hero) or hero.carrying_crystal:
 		return false
 	var card_id: String = String(hand_card.get("card_id", ""))
@@ -672,7 +672,7 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 			var missile_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
 			if missile_room == game.INVALID_ROOM or not game.rooms.has(missile_room):
 				return false
-			cast_magic_missile_spell(game, hero, target_world_position, missile_room, hand_card)
+			cast_magic_missile_spell(game, hero, target_world_position, missile_room, hand_card, resolved_magic_missile_target_uids, magic_missile_targets_resolved)
 			game.status_message = "%s cast Magic Missile." % hero.hero_name
 			return true
 		"light_cantrip_card":
@@ -1066,7 +1066,7 @@ static func finalize_played_hand_card_source(game: Node, hand_card: Dictionary) 
 	if charge_cost > 0:
 		game.consume_item_charges_by_uid(item_uid, charge_cost)
 
-static func play_card_for_hero(game: Node, hero_index: int, card_uid: int, target_world_position: Vector2) -> bool:
+static func play_card_for_hero(game: Node, hero_index: int, card_uid: int, target_world_position: Vector2, resolved_magic_missile_target_uids: Array = [], magic_missile_targets_resolved: bool = false) -> bool:
 	if hero_index < 0 or hero_index >= game.heroes.size():
 		return false
 	var hero: Variant = game.heroes[hero_index]
@@ -1105,7 +1105,7 @@ static func play_card_for_hero(game: Node, hero_index: int, card_uid: int, targe
 		if not hero_ready_for_card_cast(game, hero, cast_room, target_room, hand_card, Vector2(target_data.get("world_position", target_world_position))):
 			return game.request_deferred_room_card_for_hero(hero_index, cast_room, target_room, card_uid, Vector2(target_data.get("world_position", target_world_position)))
 	var is_study_play: bool = hand_card_starts_spell_study(game, hero, hand_card, target_data)
-	if not apply_hand_card_effect(game, hero, hand_card, target_data):
+	if not apply_hand_card_effect(game, hero, hand_card, target_data, resolved_magic_missile_target_uids, magic_missile_targets_resolved):
 		return false
 	if not bool(hand_card.get("reusable", false)):
 		hero.hand_cards.remove_at(hand_index)
@@ -1296,8 +1296,37 @@ static func heroes_in_cone_in_room(game: Node, room_coord: Vector2i, origin: Vec
 		cone_targets.append(room_hero)
 	return cone_targets
 
-static func cast_magic_missile_spell(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
-	var missile_targets: Array = nearest_enemies_in_room(game, target_room, target_world_position, int(hand_card.get("projectile_count", 3)))
+static func magic_missile_target_uids(game: Node, hero_index: int, card_uid: int, target_world_position: Vector2) -> Array:
+	if hero_index < 0 or hero_index >= game.heroes.size():
+		return []
+	var hero: Variant = game.heroes[hero_index]
+	if hero == null or not is_instance_valid(hero):
+		return []
+	var hand_index: int = hero_hand_card_index(game, hero, card_uid)
+	if hand_index < 0:
+		return []
+	var hand_card: Dictionary = hero.hand_cards[hand_index]
+	if String(hand_card.get("card_id", "")) != "magic_missile_card":
+		return []
+	var target_data: Dictionary = resolve_card_target(game, hero, hand_card, target_world_position)
+	var target_room: Vector2i = target_data.get("room", game.INVALID_ROOM)
+	if target_room == game.INVALID_ROOM:
+		return []
+	var target_uids: Array = []
+	for target_enemy in nearest_enemies_in_room(game, target_room, Vector2(target_data.get("world_position", target_world_position)), int(hand_card.get("projectile_count", 3))):
+		if game.enemy_is_active(target_enemy):
+			target_uids.append(int(target_enemy.enemy_uid))
+	return target_uids
+
+static func cast_magic_missile_spell(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary, resolved_target_uids: Array = [], targets_resolved: bool = false) -> void:
+	var missile_targets: Array = []
+	if targets_resolved:
+		for target_uid in resolved_target_uids:
+			var resolved_target: Variant = game.find_enemy_by_uid(int(target_uid))
+			if game.enemy_is_active(resolved_target) and Vector2i(resolved_target.current_room) == target_room:
+				missile_targets.append(resolved_target)
+	else:
+		missile_targets = nearest_enemies_in_room(game, target_room, target_world_position, int(hand_card.get("projectile_count", 3)))
 	if missile_targets.is_empty():
 		game.add_resource_floating_text(target_world_position, "Miss", Color(hand_card.get("color", Color("9cd7ff"))))
 		return

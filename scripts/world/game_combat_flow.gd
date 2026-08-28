@@ -794,6 +794,8 @@ static func advance_pending_enemy_spawns(game: Node, delta: float) -> void:
 			game.active_spawn_warning_room = queue_head_room
 
 static func advance_crystal_pressure(game: Node, delta: float) -> void:
+	if game.multiplayer_session_active() and not game.multiplayer.is_server():
+		return
 	if game.crystal_holder == null or not is_instance_valid(game.crystal_holder):
 		return
 	if not game.pending_wave_spawn_builds.is_empty():
@@ -860,6 +862,8 @@ static func trigger_crystal_pressure(game: Node) -> void:
 	game.crystal_pressure_timer_left = crystal_pressure_interval_for_dark_room_count(game, dark_rooms.size())
 	if queued_count <= 0:
 		return
+	if game.multiplayer_session_active() and game.multiplayer.is_server() and not game.pending_enemy_spawns.is_empty():
+		game.broadcast_network_crystal_pressure_spawn(Dictionary(game.pending_enemy_spawns[game.pending_enemy_spawns.size() - 1]).duplicate(true))
 	game.status_message = "The crystal agitates %s." % game.room_title(chosen_room)
 	game.update_hud()
 

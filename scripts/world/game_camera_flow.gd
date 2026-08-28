@@ -67,7 +67,7 @@ static func advance_camera(game: Node, delta: float) -> void:
 	clamp_camera(game)
 
 static func clamp_camera(game: Node) -> void:
-	if game.camera_bounds == Rect2():
+	if not game.is_inside_tree() or game.camera == null or not is_instance_valid(game.camera) or not game.camera.is_inside_tree() or game.camera_bounds == Rect2():
 		return
 	var viewport_size: Vector2 = game.get_viewport_rect().size
 	var view_half: Vector2 = viewport_size * 0.5 * game.camera.zoom
