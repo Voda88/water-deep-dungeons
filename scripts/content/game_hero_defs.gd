@@ -85,7 +85,7 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 				"attack_damage": 15.6,
 				"defence": 5.0,
 				"wit": 9.0,
-				"attack_range": 320.0,
+				"attack_range": 120.0,
 				"attack_cooldown": 1.5,
 				"attack_style": "fire_bolt",
 				"weight": 1.2,

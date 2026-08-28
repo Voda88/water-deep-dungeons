@@ -324,7 +324,7 @@ static func enemy_role_definition(enemy_type: String) -> Dictionary:
 				"max_health": 29.9,
 				"attack_damage": 4.5,
 				"attack_cooldown": 0.6,
-				"attack_range": 300.0,
+				"attack_range": 120.0,
 				"weight": 0.65,
 				"body_color": Color("e3a0d9"),
 				"expose_stacks_per_hit": 1,
@@ -383,7 +383,7 @@ static func enemy_role_definition(enemy_type: String) -> Dictionary:
 				"max_health": 176.8,
 				"attack_damage": 8.0,
 				"attack_cooldown": 0.65,
-				"attack_range": 78.0,
+				"attack_range": 120.0,
 				"weight": 1.32,
 				"body_color": Color("a16fd5"),
 			}
@@ -394,7 +394,7 @@ static func enemy_role_definition(enemy_type: String) -> Dictionary:
 				"max_health": 70.98,
 				"attack_damage": 6.5,
 				"attack_cooldown": 0.65,
-				"attack_range": 52.0,
+				"attack_range": 120.0,
 				"weight": 0.95,
 				"body_color": Color("d7decf"),
 			}
