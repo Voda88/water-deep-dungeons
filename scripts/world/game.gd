@@ -1600,11 +1600,16 @@ func select_hero_by_index(hero_index: int) -> void:
 	update_hud()
 	queue_redraw()
 
+func hero_diamond_formation_position(room_coord: Vector2i, slot_index: int, total_heroes: int) -> Vector2:
+	var room_center: Vector2 = room_rect(room_coord).get_center()
+	if total_heroes <= 1:
+		return clamp_point_to_room(room_center, room_coord)
+	var formation_radius: float = 46.0
+	var formation_angle: float = -PI * 0.5 + TAU * float(slot_index % total_heroes) / float(total_heroes)
+	return clamp_point_to_room(room_center + Vector2.from_angle(formation_angle) * formation_radius, room_coord)
+
 func hero_idle_position(room_coord: Vector2i, hero_index: int, total_heroes: int) -> Vector2:
-	var room_rect_local: Rect2 = room_rect(room_coord)
-	var spread: float = 52.0
-	var start_x: float = -spread * 0.5 * float(max(total_heroes - 1, 1))
-	return clamp_point_to_room(room_rect_local.get_center() + Vector2(start_x + float(hero_index) * spread, 24.0), room_coord)
+	return hero_diamond_formation_position(room_coord, hero_index, total_heroes)
 
 func room_local_idle_position_for_hero(room_coord: Vector2i, hero: Variant) -> Vector2:
 	if hero == null or not is_instance_valid(hero):
@@ -1618,11 +1623,7 @@ func room_local_idle_position_for_hero(room_coord: Vector2i, hero: Variant) -> V
 		if room_heroes[index] == hero:
 			slot_index = index
 			break
-	var room_rect_local: Rect2 = room_rect(room_coord)
-	var count: int = max(room_heroes.size(), 1)
-	var spread: float = 52.0
-	var start_x: float = -spread * 0.5 * float(max(count - 1, 1))
-	return clamp_point_to_room(room_rect_local.get_center() + Vector2(start_x + float(slot_index) * spread, 24.0), room_coord)
+	return hero_diamond_formation_position(room_coord, slot_index, max(room_heroes.size(), 1))
 
 func hero_room_command_target_position(hero: Variant, room_coord: Vector2i) -> Vector2:
 	if hero == null or not is_instance_valid(hero):

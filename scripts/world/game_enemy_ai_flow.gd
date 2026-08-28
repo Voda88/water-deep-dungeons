@@ -64,13 +64,7 @@ static func targetable_room_actors_cached(game: Node, room_coord: Vector2i, stri
 	if cache.has(cache_key):
 		return cache[cache_key]
 	var room_actors: Array = []
-	for hero in game.heroes:
-		if not game.hero_is_active(hero):
-			continue
-		if strict and Vector2i(hero.current_room) != room_coord:
-			continue
-		if not strict and not hero_is_in_room(game, hero, room_coord):
-			continue
+	for hero in heroes_in_room(game, room_coord, strict):
 		if hero_is_enemy_targetable(game, hero):
 			room_actors.append(hero)
 	for summon in game.enemies:
@@ -665,6 +659,18 @@ static func choose_target_from_actor_candidates(game: Node, enemy: Variant, cand
 			chosen_priority_rank = priority_rank
 			chosen_distance = distance_value
 	return chosen_actor
+
+static func heroes_in_room(game: Node, room_coord: Vector2i, strict: bool = false) -> Array:
+	var room_heroes: Array = []
+	for hero in game.heroes:
+		if not game.hero_is_active(hero):
+			continue
+		if strict and Vector2i(hero.current_room) != room_coord:
+			continue
+		if not strict and not hero_is_in_room(game, hero, room_coord):
+			continue
+		room_heroes.append(hero)
+	return room_heroes
 
 static func enemy_targetable_heroes_in_room(game: Node, room_coord: Vector2i) -> Array:
 	return targetable_room_actors_cached(game, room_coord, false)
