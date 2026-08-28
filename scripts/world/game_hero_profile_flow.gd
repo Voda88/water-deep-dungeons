@@ -101,6 +101,28 @@ static func hero_class_summary_lines(game: Node, class_id: String) -> Array[Stri
 		"Range %d  Cooldown %.2fs  Weight %.1f" % [int(round(float(class_def.get("attack_range", 0.0)))), float(class_def.get("attack_cooldown", 0.0)), float(class_def.get("weight", 1.0))],
 	]
 
+static func level_one_pack_modules(game: Node, class_id: String, existing_pack_modules: Array = []) -> Array:
+	var pack_modules: Array = existing_pack_modules.duplicate(true)
+	var pack_size: Vector2i = game.next_level_pack_size(1, class_id)
+	var pack_anchor: Vector2i = game.find_default_pack_anchor(pack_modules, pack_size)
+	if pack_anchor != game.INVALID_ROOM:
+		pack_modules.append({
+			"size": pack_size,
+			"anchor": pack_anchor,
+		})
+	return pack_modules
+
+static func migrate_level_one_pack_modules(game: Node, class_id: String, pack_modules: Array) -> Array:
+	var migrated_modules: Array = pack_modules.duplicate(true)
+	for pack_index in range(migrated_modules.size()):
+		var pack_module: Dictionary = Dictionary(migrated_modules[pack_index])
+		if Vector2i(pack_module.get("size", Vector2i.ONE)) != Vector2i(1, 3):
+			continue
+		pack_module["size"] = game.next_level_pack_size(1, class_id)
+		migrated_modules[pack_index] = pack_module
+		return migrated_modules
+	return level_one_pack_modules(game, class_id, migrated_modules)
+
 static func ensure_hero_profiles(game: Node) -> void:
 	if game.hero_profiles.size() >= game.HERO_COUNT:
 		for hero_index in range(game.hero_profiles.size()):
@@ -113,6 +135,13 @@ static func ensure_hero_profiles(game: Node) -> void:
 				game.hero_profiles[hero_index]["learned_spells"] = game.default_learned_spells_for_class(String(game.hero_profiles[hero_index]["class_id"]))
 			if not game.hero_profiles[hero_index].has("slotted_spells"):
 				game.hero_profiles[hero_index]["slotted_spells"] = game.default_slotted_spells_for_class(String(game.hero_profiles[hero_index]["class_id"]))
+			var class_id: String = String(game.hero_profiles[hero_index]["class_id"])
+			if not bool(game.hero_profiles[hero_index].get("level_one_pack_granted", false)):
+				game.hero_profiles[hero_index]["pack_modules"] = level_one_pack_modules(game, class_id, Array(game.hero_profiles[hero_index].get("pack_modules", [])))
+				game.hero_profiles[hero_index]["level_one_pack_granted"] = true
+			if int(game.hero_profiles[hero_index].get("level_one_pack_version", 1)) < 2:
+				game.hero_profiles[hero_index]["pack_modules"] = migrate_level_one_pack_modules(game, class_id, Array(game.hero_profiles[hero_index].get("pack_modules", [])))
+				game.hero_profiles[hero_index]["level_one_pack_version"] = 2
 		return
 	for hero_index in range(game.hero_profiles.size(), game.HERO_COUNT):
 		var class_id: String = game.default_hero_class_for_slot(hero_index)
@@ -121,7 +150,9 @@ static func ensure_hero_profiles(game: Node) -> void:
 			"name": hero_display_name(game, hero_index, class_id),
 			"level": 1,
 			"dead": false,
-			"pack_modules": [],
+			"pack_modules": level_one_pack_modules(game, class_id),
+			"level_one_pack_granted": true,
+			"level_one_pack_version": 2,
 			"inventory_items": GAME_INVENTORY_ITEM_FLOW.default_inventory_items_for_class(game, class_id),
 			"learned_spells": game.default_learned_spells_for_class(class_id),
 			"slotted_spells": game.default_slotted_spells_for_class(class_id),

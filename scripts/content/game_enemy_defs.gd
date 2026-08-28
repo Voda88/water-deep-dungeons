@@ -128,6 +128,13 @@ const ENEMY_SPRITE_PROFILES := {
 		"attack_path": "res://assets/characters/enemies/hellhound/Hellhound_Attack01.png",
 		"death_path": "res://assets/characters/enemies/hellhound/Hellhound_Death.png",
 	},
+	TYPE_SLIME: {
+		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Slime/Slime/Slime_Idle.png",
+		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Slime/Slime/Slime_Walk.png",
+		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Slime/Slime/Slime_Hurt.png",
+		"attack_path": "res://assets/characters/packs/pack01/characters_split_100x100/Slime/Slime/Slime_Attack01.png",
+		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Slime/Slime/Slime_Death.png",
+	},
 	TYPE_WARLOCK: {
 		"idle_path": "res://assets/characters/enemies/warlock/Warlock_Idle.png",
 		"walk_path": "res://assets/characters/enemies/warlock/Warlock_Walk.png",

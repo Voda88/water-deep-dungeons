@@ -1,10 +1,10 @@
 extends RefCounted
 
 const GAME_HERO_LEVEL_DEFS: GDScript = preload("res://scripts/content/game_hero_level_defs.gd")
+const GAME_HERO_DEFS: GDScript = preload("res://scripts/content/game_hero_defs.gd")
 
-static func next_level_pack_size(game: Node, level_value: int) -> Vector2i:
-	var sequence_index: int = maxi(level_value - 2, 0) % game.LEVEL_UP_PACK_SEQUENCE.size()
-	return game.LEVEL_UP_PACK_SEQUENCE[sequence_index]
+static func next_level_pack_size(_game: Node, level_value: int, class_id: String = "") -> Vector2i:
+	return GAME_HERO_DEFS.backpack_module_size_for_class_level(class_id, level_value)
 
 static func hero_level_stat_bonuses(game: Node, level_value: int, class_id: String = "") -> Dictionary:
 	var resolved_class_id: String = class_id
@@ -326,7 +326,7 @@ static func level_up_food_cost(_game: Node, level_value: int) -> int:
 	return GAME_HERO_LEVEL_DEFS.level_up_food_cost(level_value)
 
 static func hero_next_pack_size(game: Node, hero: Variant) -> Vector2i:
-	return next_level_pack_size(game, hero.level + 1)
+	return next_level_pack_size(game, hero.level + 1, String(hero.hero_class_id))
 
 static func hero_can_level_up(game: Node, hero: Variant) -> bool:
 	if hero == null or not is_instance_valid(hero):

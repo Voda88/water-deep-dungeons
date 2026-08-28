@@ -219,7 +219,7 @@ func set_visual_scale_multiplier(multiplier: float) -> void:
 func apply_role_visuals() -> void:
 	if animated_sprite == null:
 		return
-	animated_sprite.visible = enemy_role != TYPE_SLIME
+	animated_sprite.visible = true
 	if enemy_role == TYPE_SPIRITUAL_WEAPON:
 		animated_sprite.modulate = Color(1.0, 0.94, 0.68, 0.98)
 	else:
@@ -1112,12 +1112,6 @@ func draw_summon_particles(primary_color: Color, secondary_color: Color) -> void
 func _draw() -> void:
 	var has_summon_particles: bool = enemy_role == TYPE_SPIRITUAL_WEAPON or bool(get_meta("temporary_summon", false))
 	var reduced_animations: bool = should_reduce_animations()
-	if enemy_role == TYPE_SLIME:
-		var slime_radius: float = 23.0 * visual_scale_multiplier
-		draw_circle(Vector2(0.0, 3.0), slime_radius, Color("4bae69"))
-		draw_circle(Vector2(-7.0, -5.0) * visual_scale_multiplier, slime_radius * 0.42, Color("91e888"))
-		draw_circle(Vector2(-7.5, 1.0) * visual_scale_multiplier, 2.4 * visual_scale_multiplier, Color("173d35"))
-		draw_circle(Vector2(7.5, 1.0) * visual_scale_multiplier, 2.4 * visual_scale_multiplier, Color("173d35"))
 	if enemy_role != TYPE_SPIRITUAL_WEAPON:
 		var health_ratio: float = clampf(current_health / maxf(max_health, 0.001), 0.0, 1.0)
 		draw_rect(Rect2(Vector2(-18.0, -31.0), Vector2(36.0, 4.0)), Color(0.08, 0.1, 0.11, 0.9), true)

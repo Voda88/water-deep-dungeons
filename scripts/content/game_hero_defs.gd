@@ -7,6 +7,14 @@ const HERO_CLASS_WIZARD: String = "wizard"
 const CLERIC_MEND_UNLOCK_LEVEL: int = 2
 const CLERIC_RESTORATION_AURA_UNLOCK_LEVEL: int = 4
 const FIGHTER_LEADERSHIP_AURA_UNLOCK_LEVEL: int = 4
+const DEFAULT_BACKPACK_PROGRESSION: Array[Vector2i] = [
+	Vector2i(1, 2),
+	Vector2i(1, 2),
+	Vector2i(2, 1),
+	Vector2i(1, 3),
+	Vector2i(2, 2),
+	Vector2i(3, 1),
+]
 
 const HERO_BASIC_ATTACK_IDS: Dictionary = {
 	HERO_CLASS_FIGHTER: "fighter_basic_strike",
@@ -54,6 +62,7 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 				"body_color": Color("9fe6b0"),
 				"core_color": Color("f5fff1"),
 				"ignore_room_opponent_slowdown": true,
+				"backpack_progression": DEFAULT_BACKPACK_PROGRESSION.duplicate(),
 				"level_passives": [
 					{
 						"level": 1,
@@ -90,6 +99,7 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 				"body_color": Color("c2d8ff"),
 				"core_color": Color("f6fbff"),
 				"ignore_room_opponent_slowdown": true,
+				"backpack_progression": DEFAULT_BACKPACK_PROGRESSION.duplicate(),
 				"level_passives": [
 					{
 						"level": 2,
@@ -121,6 +131,7 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 				"body_color": Color("c7a7ff"),
 				"core_color": Color("fff6ff"),
 				"ignore_room_opponent_slowdown": true,
+				"backpack_progression": DEFAULT_BACKPACK_PROGRESSION.duplicate(),
 				"level_passives": [
 					{
 						"level": 4,
@@ -147,6 +158,7 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 				"body_color": Color("ff9a7a"),
 				"core_color": Color("fff2dd"),
 				"ignore_room_opponent_slowdown": true,
+				"backpack_progression": DEFAULT_BACKPACK_PROGRESSION.duplicate(),
 				"level_passives": [
 					{
 						"level": 1,
@@ -160,6 +172,16 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 					},
 				],
 			}
+
+static func backpack_module_size_for_class_level(class_id: String, level_value: int) -> Vector2i:
+	var class_definition: Dictionary = hero_class_definition(class_id)
+	var progression: Array = Array(class_definition.get("backpack_progression", DEFAULT_BACKPACK_PROGRESSION))
+	if progression.is_empty():
+		return Vector2i(1, 2)
+	if level_value <= 1 or progression.size() == 1:
+		return Vector2i(progression[0])
+	var progression_index: int = 1 + posmod(level_value - 2, progression.size() - 1)
+	return Vector2i(progression[progression_index])
 
 static func operate_unlock_level_for_class(class_id: String) -> int:
 	match class_id:

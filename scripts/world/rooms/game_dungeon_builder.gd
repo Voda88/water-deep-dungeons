@@ -39,9 +39,9 @@ static func grow_layout_towards_room_count(game: Node, minimum_room_count: int, 
 		var room_coord: Vector2i = origin + direction
 		var force_branching: bool = game.rooms.size() < minimum_room_count
 		var minimum_doors: int = 2 if force_branching else 1
-		var blueprint: Dictionary = game.roll_room_blueprint(-direction, false, false, minimum_doors)
+		var blueprint: Dictionary = game.roll_room_blueprint(-direction, false, false, minimum_doors, String(game.rooms[origin].get("profile", "")))
 		if blueprint.is_empty() and minimum_doors > 1:
-			blueprint = game.roll_room_blueprint(-direction, false, false, 1)
+			blueprint = game.roll_room_blueprint(-direction, false, false, 1, String(game.rooms[origin].get("profile", "")))
 		if blueprint.is_empty():
 			continue
 		var template_id: String = String(blueprint["template_id"])
@@ -161,7 +161,7 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 			var needs_growth: bool = is_first_floor and game.rooms.size() < minimum_room_count
 			var prefer_dead_end: bool = (not needs_growth) and game.rooms.size() >= 4 and frontier_sockets.size() >= 3 and game.rng.randf() < 0.58
 			var minimum_doors: int = 2 if generating_second_room or needs_growth else 1
-			var blueprint: Dictionary = game.roll_room_blueprint(-direction, generating_second_room, prefer_dead_end, minimum_doors)
+			var blueprint: Dictionary = game.roll_room_blueprint(-direction, generating_second_room, prefer_dead_end, minimum_doors, String(game.rooms[origin].get("profile", "")))
 			if blueprint.is_empty():
 				continue
 			var template_id: String = String(blueprint["template_id"])
@@ -569,7 +569,7 @@ static func room_blueprint_weight(game: Node, template_id: String, door_dirs: Ar
 			weight *= 0.18
 	return weight
 
-static func roll_room_blueprint(game: Node, required_dir: Vector2i, prefer_major: bool = false, prefer_dead_end: bool = false, minimum_doors: int = 1) -> Dictionary:
+static func roll_room_blueprint(game: Node, required_dir: Vector2i, prefer_major: bool = false, prefer_dead_end: bool = false, minimum_doors: int = 1, parent_template_id: String = "") -> Dictionary:
 	var candidates: Array = []
 	var total_weight: float = 0.0
 	for template_id_variant in [game.ROOM_TEMPLATE_NOOK, game.ROOM_TEMPLATE_CORRIDOR, game.ROOM_TEMPLATE_GALLERY, game.ROOM_TEMPLATE_WORKSHOP, game.ROOM_TEMPLATE_FORGE]:
@@ -579,6 +579,8 @@ static func roll_room_blueprint(game: Node, required_dir: Vector2i, prefer_major
 			if (required_dir != game.INVALID_ROOM and not door_dirs.has(required_dir)) or door_dirs.size() < minimum_doors:
 				continue
 			var candidate_weight: float = game.room_blueprint_weight(template_id, door_dirs, prefer_major, prefer_dead_end)
+			if parent_template_id == game.ROOM_TEMPLATE_CORRIDOR and template_id == game.ROOM_TEMPLATE_CORRIDOR:
+				candidate_weight *= 0.08
 			if candidate_weight <= 0.0:
 				continue
 			candidates.append({
@@ -1198,9 +1200,13 @@ static func find_path(game: Node, from_room: Vector2i, to_room: Vector2i, only_o
 		frontier.remove_at(0)
 		if current == to_room:
 			break
-		for neighbor_variant in game.rooms[current]["neighbors"]:
+		if not game.rooms.has(current):
+			continue
+		for neighbor_variant in game.rooms[current].get("neighbors", []):
 			var neighbor: Vector2i = neighbor_variant
-			if only_open_rooms and not game.rooms[neighbor]["opened"]:
+			if not game.rooms.has(neighbor):
+				continue
+			if only_open_rooms and not bool(game.rooms[neighbor].get("opened", false)):
 				continue
 			if came_from.has(neighbor):
 				continue

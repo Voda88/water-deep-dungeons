@@ -1329,8 +1329,8 @@ func template_can_support_major_slots(template_id: String) -> bool:
 func room_blueprint_weight(template_id: String, door_dirs: Array, prefer_major: bool = false, prefer_dead_end: bool = false) -> float:
 	return GAME_DUNGEON_BUILDER.room_blueprint_weight(self, template_id, door_dirs, prefer_major, prefer_dead_end)
 
-func roll_room_blueprint(required_dir: Vector2i, prefer_major: bool = false, prefer_dead_end: bool = false, minimum_doors: int = 1) -> Dictionary:
-	return GAME_DUNGEON_BUILDER.roll_room_blueprint(self, required_dir, prefer_major, prefer_dead_end, minimum_doors)
+func roll_room_blueprint(required_dir: Vector2i, prefer_major: bool = false, prefer_dead_end: bool = false, minimum_doors: int = 1, parent_template_id: String = "") -> Dictionary:
+	return GAME_DUNGEON_BUILDER.roll_room_blueprint(self, required_dir, prefer_major, prefer_dead_end, minimum_doors, parent_template_id)
 
 func room_template_size(template_id: String, door_dirs: Array = []) -> Vector2:
 	return GAME_DUNGEON_BUILDER.room_template_size(self, template_id, door_dirs)
@@ -1410,8 +1410,8 @@ func item_fits_active_cells(item: Dictionary, active_cells: Dictionary) -> bool:
 func find_default_pack_anchor(pack_modules: Array, pack_size: Vector2i) -> Vector2i:
 	return GAME_INVENTORY_ITEM_FLOW.find_default_pack_anchor(self, pack_modules, pack_size)
 
-func next_level_pack_size(level_value: int) -> Vector2i:
-	return GAME_HERO_PROGRESSION_FLOW.next_level_pack_size(self, level_value)
+func next_level_pack_size(level_value: int, class_id: String = "") -> Vector2i:
+	return GAME_HERO_PROGRESSION_FLOW.next_level_pack_size(self, level_value, class_id)
 
 func hero_level_stat_bonuses(level_value: int, class_id: String = HERO_CLASS_FIGHTER) -> Dictionary:
 	return GAME_HERO_PROGRESSION_FLOW.hero_level_stat_bonuses(self, level_value, class_id)
