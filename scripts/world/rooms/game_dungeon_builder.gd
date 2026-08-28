@@ -47,8 +47,8 @@ static func grow_layout_towards_room_count(game: Node, minimum_room_count: int, 
 		var template_id: String = String(blueprint["template_id"])
 		if room_template_is_large(game, String(game.rooms[origin].get("profile", ""))) and room_template_is_large(game, template_id):
 			continue
-		var candidate_center: Vector2 = game.proposed_room_center(origin, template_id, direction)
-		if not game.can_place_room_center(candidate_center, game.room_template_size(template_id)):
+		var candidate_center: Vector2 = game.proposed_room_center(origin, template_id, direction, blueprint["door_dirs"])
+		if not game.can_place_room_center(candidate_center, game.room_template_size(template_id, blueprint["door_dirs"])):
 			continue
 		game.create_room(room_coord, template_id, blueprint["door_dirs"], candidate_center)
 		game.connect_rooms(origin, room_coord)
@@ -166,8 +166,8 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 			var template_id: String = String(blueprint["template_id"])
 			if room_template_is_large(game, String(game.rooms[origin].get("profile", ""))) and room_template_is_large(game, template_id):
 				continue
-			var candidate_center: Vector2 = game.proposed_room_center(origin, template_id, direction)
-			if not game.can_place_room_center(candidate_center, game.room_template_size(template_id)):
+			var candidate_center: Vector2 = game.proposed_room_center(origin, template_id, direction, blueprint["door_dirs"])
+			if not game.can_place_room_center(candidate_center, game.room_template_size(template_id, blueprint["door_dirs"])):
 				continue
 			game.create_room(room_coord, template_id, blueprint["door_dirs"], candidate_center)
 			game.connect_rooms(origin, room_coord)
@@ -219,9 +219,11 @@ static func spawn_starting_room_test_items(game: Node) -> void:
 
 static func roll_room_template(game: Node) -> String:
 	var roll: float = game.rng.randf()
-	if roll < 0.28:
+	if roll < 0.2:
 		return game.ROOM_TEMPLATE_NOOK
-	if roll < 0.52:
+	if roll < 0.32:
+		return game.ROOM_TEMPLATE_CORRIDOR
+	if roll < 0.56:
 		return game.ROOM_TEMPLATE_GALLERY
 	if roll < 0.8:
 		return game.ROOM_TEMPLATE_WORKSHOP
@@ -271,6 +273,8 @@ static func room_template_base_scene_path(game: Node, template_id: String, cryst
 	return base_scene.resource_path
 
 static func room_template_scene_path(game: Node, template_id: String, _door_dirs: Array = [], crystal_chamber: bool = false) -> String:
+	if not crystal_chamber and template_id == game.ROOM_TEMPLATE_CORRIDOR and (_door_dirs.has(Vector2i.UP) or _door_dirs.has(Vector2i.DOWN)):
+		return game.CORRIDOR_VERTICAL_ROOM_SCENE.resource_path
 	return game.room_template_base_scene_path(template_id, crystal_chamber)
 
 static func room_template_scene(game: Node, template_id: String, door_dirs: Array = [], crystal_chamber: bool = false) -> PackedScene:
@@ -384,8 +388,8 @@ static func normalize_runtime_room_slot_capacity(game: Node, room_coord: Vector2
 		if not normalized.has("major_slot_normalized") and scene_metadata.has("major_slot_normalized"):
 			normalized["major_slot_normalized"] = Vector2(scene_metadata["major_slot_normalized"])
 	var minor_positions: Array = Array(normalized.get("minor_slot_positions_normalized", []))
-	if not minor_positions.is_empty():
-		normalized["minor_slots"] = maxi(int(normalized.get("minor_slots", 0)), minor_positions.size())
+	if not normalized.has("minor_slots") and not minor_positions.is_empty():
+		normalized["minor_slots"] = minor_positions.size()
 	return normalized
 
 static func normalize_runtime_rooms_slot_capacity(game: Node) -> void:
@@ -403,6 +407,8 @@ static func create_room(game: Node, room_coord: Vector2i, template_id: String, d
 	room_size = Vector2(template_metadata.get("room_size", room_size))
 	minor_slots = int(template_metadata.get("minor_slots", minor_slots))
 	major_slots = int(template_metadata.get("major_slots", major_slots))
+	if template_id == game.ROOM_TEMPLATE_CORRIDOR:
+		minor_slots = [0, 2, 3][game.rng.randi_range(0, 2)]
 	template_name = String(template_metadata.get("template_name", template_name))
 	var geometry_data: Dictionary = game.build_room_geometry(template_id, door_dirs, room_coord == game.crystal_room)
 	var theme_id: String = game.current_floor_theme_id()
@@ -438,6 +444,7 @@ static func create_room(game: Node, room_coord: Vector2i, template_id: String, d
 		"major_under_construction": false,
 		"research_crystal": false,
 		"research_crystal_spent": false,
+		"research_obelisk_health": 0.0,
 		"neurostun_time_left": 0.0,
 		"warning_timer_left": 0.0,
 		"color_filter_id": "",
@@ -463,6 +470,11 @@ static func create_room(game: Node, room_coord: Vector2i, template_id: String, d
 
 static func room_template_door_options(game: Node, template_id: String) -> Array:
 	match template_id:
+		game.ROOM_TEMPLATE_CORRIDOR:
+			return [
+				[Vector2i.LEFT, Vector2i.RIGHT],
+				[Vector2i.UP, Vector2i.DOWN],
+			]
 		game.ROOM_TEMPLATE_GALLERY:
 			return [
 				[Vector2i.LEFT, Vector2i.RIGHT],
@@ -514,19 +526,21 @@ static func random_template_doors(game: Node, template_id: String, required_dir:
 	return chosen.duplicate()
 
 static func template_can_support_major_slots(game: Node, template_id: String) -> bool:
-	return template_id != ""
+	return template_id != "" and template_id != game.ROOM_TEMPLATE_CORRIDOR
 
 static func room_blueprint_weight(game: Node, template_id: String, door_dirs: Array, prefer_major: bool = false, prefer_dead_end: bool = false) -> float:
 	var weight: float = 1.0
 	match template_id:
 		game.ROOM_TEMPLATE_NOOK:
-			weight = 3.0
+			weight = 2.4
+		game.ROOM_TEMPLATE_CORRIDOR:
+			weight = 4.5
 		game.ROOM_TEMPLATE_GALLERY:
-			weight = 2.1
+			weight = 1.8
 		game.ROOM_TEMPLATE_WORKSHOP:
-			weight = 0.5
+			weight = 0.18
 		game.ROOM_TEMPLATE_FORGE:
-			weight = 0.45
+			weight = 0.16
 		_:
 			weight = 1.0
 	var door_count: int = door_dirs.size()
@@ -554,7 +568,7 @@ static func room_blueprint_weight(game: Node, template_id: String, door_dirs: Ar
 static func roll_room_blueprint(game: Node, required_dir: Vector2i, prefer_major: bool = false, prefer_dead_end: bool = false, minimum_doors: int = 1) -> Dictionary:
 	var candidates: Array = []
 	var total_weight: float = 0.0
-	for template_id_variant in [game.ROOM_TEMPLATE_NOOK, game.ROOM_TEMPLATE_GALLERY, game.ROOM_TEMPLATE_WORKSHOP, game.ROOM_TEMPLATE_FORGE]:
+	for template_id_variant in [game.ROOM_TEMPLATE_NOOK, game.ROOM_TEMPLATE_CORRIDOR, game.ROOM_TEMPLATE_GALLERY, game.ROOM_TEMPLATE_WORKSHOP, game.ROOM_TEMPLATE_FORGE]:
 		var template_id: String = String(template_id_variant)
 		for option_variant in game.room_template_door_options(template_id):
 			var door_dirs: Array = Array(option_variant)
@@ -586,8 +600,8 @@ static func roll_room_blueprint(game: Node, required_dir: Vector2i, prefer_major
 		"door_dirs": Array(fallback.get("door_dirs", [])).duplicate(),
 	}
 
-static func room_template_size(game: Node, template_id: String) -> Vector2:
-	var metadata: Dictionary = game.room_template_metadata(template_id)
+static func room_template_size(game: Node, template_id: String, door_dirs: Array = []) -> Vector2:
+	var metadata: Dictionary = game.room_template_metadata(template_id, door_dirs)
 	if metadata.has("room_size"):
 		return Vector2(metadata["room_size"])
 	match template_id:
@@ -600,9 +614,9 @@ static func room_template_size(game: Node, template_id: String) -> Vector2:
 		_:
 			return Vector2(330.0, 220.0)
 
-static func proposed_room_center(game: Node, origin_room: Vector2i, template_id: String, direction: Vector2i) -> Vector2:
+static func proposed_room_center(game: Node, origin_room: Vector2i, template_id: String, direction: Vector2i, door_dirs: Array = []) -> Vector2:
 	var origin_size: Vector2 = game.room_size_for(origin_room)
-	var next_size: Vector2 = game.room_template_size(template_id)
+	var next_size: Vector2 = game.room_template_size(template_id, door_dirs)
 	var offset: Vector2 = Vector2.ZERO
 	if direction.x != 0:
 		offset.x = float(direction.x) * ((origin_size.x + next_size.x) * 0.5 + game.ROOM_DOOR_GAP)
@@ -742,6 +756,8 @@ static func finalize_room_slot_distribution(game: Node) -> void:
 		var profile_id: String = String(room.get("profile", game.ROOM_TEMPLATE_NOOK))
 		var major_slot_chance: float = 0.18
 		match profile_id:
+			game.ROOM_TEMPLATE_CORRIDOR:
+				major_slot_chance = 0.0
 			game.ROOM_TEMPLATE_FORGE:
 				major_slot_chance = 1.0
 			game.ROOM_TEMPLATE_WORKSHOP:
@@ -981,6 +997,7 @@ static func assign_special_room_features(game: Node) -> void:
 		var research_room: Vector2i = Vector2i(assigned_rooms.get(SPECIAL_FEATURE_RESEARCH, game.INVALID_ROOM))
 		if research_room != game.INVALID_ROOM and game.rooms.has(research_room):
 			game.rooms[research_room]["research_crystal"] = true
+			game.rooms[research_room]["research_obelisk_health"] = game.RESEARCH_OBELISK_MAX_HEALTH
 	if assigned_rooms.has(SPECIAL_FEATURE_MERCHANT):
 		var merchant_room: Vector2i = Vector2i(assigned_rooms.get(SPECIAL_FEATURE_MERCHANT, game.INVALID_ROOM))
 		if merchant_room != game.INVALID_ROOM and game.rooms.has(merchant_room):
@@ -1675,7 +1692,7 @@ static func effective_minor_slot_count(game: Node, room_coord: Vector2i) -> int:
 	var normalized_positions: Array = Array(room.get("minor_slot_positions_normalized", []))
 	if normalized_positions.is_empty():
 		return configured_count
-	return maxi(configured_count, normalized_positions.size())
+	return configured_count
 
 static func minor_slot_positions(game: Node, room_coord: Vector2i) -> Array:
 	if game.rooms.has(room_coord):

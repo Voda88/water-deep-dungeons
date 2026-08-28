@@ -331,6 +331,26 @@ static func apply_research_option(game: Node, choice_index: int) -> void:
 static func room_has_research_crystal(game: Node, room_coord: Vector2i) -> bool:
 	return game.rooms.has(room_coord) and bool(game.rooms[room_coord].get("research_crystal", false))
 
+static func damage_research_obelisk(game: Node, room_coord: Vector2i, amount: float, attacker_label: String) -> bool:
+	if not room_has_research_crystal(game, room_coord):
+		return false
+	var room: Dictionary = game.rooms[room_coord]
+	var health: float = maxf(float(room.get("research_obelisk_health", game.RESEARCH_OBELISK_MAX_HEALTH)) - amount, 0.0)
+	room["research_obelisk_health"] = health
+	if health > 0.0:
+		game.rooms[room_coord] = room
+		game.status_message = "%s is damaging the Research Obelisk in %s." % [attacker_label, game.room_title(room_coord)]
+		return true
+	room["research_crystal"] = false
+	room["research_crystal_spent"] = true
+	game.rooms[room_coord] = room
+	if room_has_active_research(game, room_coord):
+		game.active_research.clear()
+		if game.research_overlay != null and game.research_overlay.visible:
+			close_research_overlay(game)
+	game.status_message = "%s destroyed the Research Obelisk in %s; its research was lost." % [attacker_label, game.room_title(room_coord)]
+	return true
+
 static func research_in_progress(game: Node) -> bool:
 	return not game.active_research.is_empty()
 

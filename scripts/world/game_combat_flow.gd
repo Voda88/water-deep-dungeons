@@ -29,6 +29,7 @@ const ROGUE_COMBO_POPUP_COLOR: Color = Color("ffd27a")
 const ROGUE_COMBO_POPUP_Y_OFFSET: float = 42.0
 const FIGHTER_RAGE_POPUP_COLOR: Color = Color("ff9a7a")
 const FIGHTER_RAGE_THROW_CONFIG_META: StringName = &"fighter_rage_throw_config"
+const MELEE_TARGET_ENEMY_UID_META: StringName = &"melee_target_enemy_uid"
 const PHYSICAL_CARD_RAGE_DAMAGE_PER_LEVEL: float = 5.0
 const PHYSICAL_CARD_RAGE_KNOCKBACK_FORCE_PER_LEVEL: float = 120.0
 const PHYSICAL_CARD_COMBO_FLATFOOTED_DURATION: float = 4.0
@@ -1425,10 +1426,19 @@ static func process_combat(game: Node, delta: float) -> void:
 		hero.cooldown_left = maxf(hero.cooldown_left - delta, 0.0)
 		if hero.has_method("has_active_scorcher_channel") and bool(hero.has_active_scorcher_channel()):
 			continue
+		if hero.preferred_attack_style == "melee" and not hero.carrying_crystal and hero.pending_room == game.HERO_INVALID_ROOM and not game.hero_has_locked_player_command(hero) and game.active_hand_drag.is_empty():
+			var pursuit_target: Variant = melee_target_for_hero(game, hero)
+			if pursuit_target != null:
+				var pursuit_offset: Vector2 = pursuit_target.global_position - hero.global_position
+				var pursuit_distance: float = pursuit_offset.length()
+				var pursuit_direction: Vector2 = pursuit_offset.normalized() if pursuit_distance > 0.001 else Vector2.RIGHT
+				var pursuit_range: float = game.melee_attack_resolution_distance(hero, pursuit_target)
+				var pursuit_position: Vector2 = game.clamp_point_to_room(pursuit_target.global_position - pursuit_direction * maxf(pursuit_range - 10.0, 28.0), hero.current_room)
+				hero.set_destination(pursuit_position)
 		if hero.carrying_crystal or hero.pending_room != game.HERO_INVALID_ROOM or hero.cooldown_left > 0.0 or game.attacker_has_pending_melee(hero):
 			continue
 		if hero.preferred_attack_style == "melee":
-			var melee_target: Variant = nearest_enemy_in_room(game, hero.current_room, hero.global_position, 100000.0)
+			var melee_target: Variant = melee_target_for_hero(game, hero)
 			if melee_target == null:
 				continue
 			var melee_offset: Vector2 = melee_target.global_position - hero.global_position
@@ -1445,7 +1455,6 @@ static func process_combat(game: Node, delta: float) -> void:
 			var preserve_player_orders: bool = game.hero_has_locked_player_command(hero)
 			if not preserve_player_orders:
 				hero.move_steps.clear()
-				hero.set_destination(hero.global_position)
 			hero.trigger_attack(melee_target.global_position, hero.preferred_attack_style)
 			note_hero_combo_attack(game, hero)
 			game.queue_pending_melee_attack(hero, melee_target, hero.current_attack_damage(), hero.melee_impact_delay(), hero.hero_name)
@@ -1482,7 +1491,7 @@ static func process_combat(game: Node, delta: float) -> void:
 			continue
 		if game.hero_has_locked_player_command(hero) or not game.active_hand_drag.is_empty():
 			continue
-		if nearest_enemy_in_room(game, hero.current_room, hero.global_position, 100000.0) != null:
+		if hero.preferred_attack_style == "melee" and melee_target_for_hero(game, hero) != null:
 			continue
 		var idle_position: Vector2 = game.room_local_idle_position_for_hero(hero.current_room, hero)
 		if hero.global_position.distance_to(idle_position) <= 18.0:
@@ -2393,6 +2402,19 @@ static func nearest_enemy_in_room(game: Node, room_coord: Vector2i, origin: Vect
 			closest_distance = distance
 			closest_enemy = enemy
 	return closest_enemy
+
+static func melee_target_for_hero(game: Node, hero: Variant) -> Variant:
+	if hero == null or not is_instance_valid(hero):
+		return null
+	if hero.has_meta(MELEE_TARGET_ENEMY_UID_META):
+		var locked_target: Variant = game.find_enemy_by_uid(int(hero.get_meta(MELEE_TARGET_ENEMY_UID_META, -1)))
+		if locked_target != null and game.enemy_is_active(locked_target) and Vector2i(locked_target.current_room) == Vector2i(hero.current_room) and not bool(locked_target.moving_between_rooms) and (not locked_target.has_method("is_converted") or not locked_target.is_converted()):
+			return locked_target
+		hero.remove_meta(MELEE_TARGET_ENEMY_UID_META)
+	var target: Variant = nearest_enemy_in_room(game, hero.current_room, hero.global_position, 100000.0)
+	if target != null:
+		hero.set_meta(MELEE_TARGET_ENEMY_UID_META, int(target.enemy_uid))
+	return target
 
 static func strongest_enemy_in_room(game: Node, room_coord: Vector2i, origin: Vector2, max_range: float) -> Variant:
 	var chosen_enemy: Variant = null

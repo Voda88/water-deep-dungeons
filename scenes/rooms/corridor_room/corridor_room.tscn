@@ -1,0 +1,78 @@
+[gd_scene format=4 uid="uid://bsik8e5cr5omo"]
+
+[ext_resource type="Script" uid="uid://cgt17m4bbov2" path="res://scripts/world/rooms/dungeon_room_template.gd" id="1"]
+[ext_resource type="PackedScene" uid="uid://cqmv4faocdoco" path="res://scenes/world/room_door_art.tscn" id="2"]
+[ext_resource type="TileSet" uid="uid://b24un31beqe8f" path="res://resources/dungeon_walkable_tileset.tres" id="3"]
+[ext_resource type="TileSet" uid="uid://0ewn5vre8qgh" path="res://resources/tilesets/cavern_water_chunk_main.tres" id="4"]
+
+[node name="CorridorRoom" type="Node2D" unique_id=1178372967]
+script = ExtResource("1")
+template_id = "corridor"
+template_name = "Corridor"
+room_size = Vector2(300, 48)
+default_minor_slots = 0
+
+[node name="Art" type="Node2D" parent="." unique_id=1093909816]
+
+[node name="DungeonTileMap" type="TileMapLayer" parent="Art" unique_id=1640221814]
+modulate = Color(0.2, 0.22, 0.28, 1)
+position = Vector2(6, 8)
+tile_map_data = PackedByteArray("AAD2/wAAAAAEAAAAAAD3/wAAAAAEAAAAAAD4/wAAAAAEAAAAAAD5/wAAAAAEAAAAAAD6/wAAAAAEAAAAAAD7/wAAAAAEAAAAAAD8/wAAAAAEAAAAAAD9/wAAAAAEAAAAAAD+/wAAAAAEAAAAAAD//wAAAAAEAAAAAAAAAAAAAAAEAAAAAAABAAAAAAAEAAAAAAACAAAAAAAEAAAAAAADAAAAAAAEAAAAAAAEAAAAAAAEAAAAAAAFAAAAAAAEAAAAAAAGAAAAAAAEAAAAAAAHAAAAAAAEAAAAAAAIAAAAAAAEAAAAAAD2//3/AAAHAAAAAAD3//3/AAAHAAAAAAD4//3/AAAHAAAAAAD5//3/AAAHAAAAAAD6//3/AAAHAAAAAAD7//3/AAAHAAAAAAD8//3/AAAHAAAAAAD9//3/AAAHAAAAAAD+//3/AAAHAAAAAAD///3/AAAHAAAAAAAAAP3/AAAHAAAAAAABAP3/AAAHAAAAAAACAP3/AAAHAAAAAAADAP3/AAAHAAAAAAAEAP3/AAAHAAAAAAAFAP3/AAAHAAAAAAAGAP3/AAAHAAAAAAAHAP3/AAAHAAAAAAAIAP3/AAAHAAAAAAD2////AwALAAMAAAD3////AwALAAMAAAD4////AwALAAMAAAD5////AwALAAMAAAD6////AwALAAMAAAD7////AwALAAMAAAD8////AwALAAMAAAD9////AwALAAMAAAD+////AwALAAMAAAD/////AwALAAMAAAAAAP//AwALAAMAAAABAP//AwALAAMAAAACAP//AwALAAMAAAADAP//AwALAAMAAAAEAP//AwALAAMAAAAFAP//AwALAAMAAAAGAP//AwALAAMAAAAHAP//AwALAAMAAAAIAP//AwALAAMAAAD2//7/AwALAAMAAAD3//7/AwALAAMAAAD4//7/AwALAAMAAAD5//7/AwALAAMAAAD6//7/AwALAAMAAAD7//7/AwALAAMAAAD8//7/AwALAAMAAAD9//7/AwALAAMAAAD+//7/AwALAAMAAAD///7/AwALAAMAAAAAAP7/AwALAAMAAAABAP7/AwALAAMAAAACAP7/AwALAAMAAAADAP7/AwALAAMAAAAEAP7/AwALAAMAAAAFAP7/AwALAAMAAAAGAP7/AwALAAMAAAAHAP7/AwALAAMAAAAIAP7/AwALAAMAAAA=")
+tile_set = ExtResource("3")
+
+[node name="WaterTileMap" type="TileMapLayer" parent="Art" unique_id=182265521]
+modulate = Color(0.2, 0.22, 0.28, 1)
+position = Vector2(-150, -24)
+tile_set = ExtResource("4")
+
+[node name="RoomBackdrop" type="ColorRect" parent="Art" unique_id=861163384]
+z_index = -4
+offset_left = -154.0
+offset_top = -38.0
+offset_right = 149.0
+offset_bottom = 24.0
+mouse_filter = 2
+color = Color(0.07450981, 0.06666667, 0.0627451, 0.94)
+
+[node name="InnerWall" type="ColorRect" parent="Art" unique_id=1873350371]
+z_index = -3
+offset_left = -153.0
+offset_top = -39.0
+offset_right = 150.0
+offset_bottom = 24.0
+mouse_filter = 2
+color = Color(0.2901961, 0.2627451, 0.21568628, 0.22)
+
+[node name="Layout" type="Node2D" parent="." unique_id=2041100069]
+
+[node name="WalkableRegions" type="Node2D" parent="Layout" unique_id=1825337981]
+
+[node name="Passage" type="ColorRect" parent="Layout/WalkableRegions" unique_id=1955718917]
+offset_left = -149.0
+offset_top = -25.0
+offset_right = 150.0
+offset_bottom = 14.0
+mouse_filter = 2
+color = Color(0.2901961, 0.2627451, 0.21568628, 0)
+
+[node name="SlotAreas" type="Node2D" parent="Layout" unique_id=647290681]
+
+[node name="Doors" type="Node2D" parent="." unique_id=193919193]
+
+[node name="Left" type="Marker2D" parent="Doors" unique_id=180821654]
+position = Vector2(-150, 0)
+
+[node name="Right" type="Marker2D" parent="Doors" unique_id=1524023250]
+position = Vector2(150, 0)
+
+[node name="DoorArt" parent="." unique_id=892748563 instance=ExtResource("2")]
+
+[node name="Slots" type="Node2D" parent="." unique_id=984466977]
+
+[node name="Minor1" type="Marker2D" parent="Slots" unique_id=609308644]
+position = Vector2(-72, 0)
+
+[node name="Minor2" type="Marker2D" parent="Slots" unique_id=1106640878]
+
+[node name="Minor3" type="Marker2D" parent="Slots" unique_id=1554495445]
+position = Vector2(72, 0)

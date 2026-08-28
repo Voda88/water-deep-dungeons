@@ -1,0 +1,79 @@
+[gd_scene format=4 uid="uid://bqkkenijeqpfm"]
+
+[ext_resource type="Script" uid="uid://cgt17m4bbov2" path="res://scripts/world/rooms/dungeon_room_template.gd" id="1"]
+[ext_resource type="PackedScene" uid="uid://cqmv4faocdoco" path="res://scenes/world/room_door_art.tscn" id="2"]
+[ext_resource type="TileSet" uid="uid://b24un31beqe8f" path="res://resources/dungeon_walkable_tileset.tres" id="3"]
+[ext_resource type="TileSet" uid="uid://0ewn5vre8qgh" path="res://resources/tilesets/cavern_water_chunk_main.tres" id="4"]
+
+[node name="CorridorVerticalRoom" type="Node2D" unique_id=2059129369]
+script = ExtResource("1")
+template_id = "corridor"
+template_name = "Corridor"
+room_size = Vector2(48, 300)
+default_minor_slots = 0
+
+[node name="Art" type="Node2D" parent="." unique_id=170836920]
+
+[node name="DungeonTileMap" type="TileMapLayer" parent="Art" unique_id=721133141]
+modulate = Color(0.2, 0.22, 0.28, 1)
+position = Vector2(8, 6)
+tile_map_data = PackedByteArray("AAD9/wgAAAACAAEAAAD9/wcAAAACAAEAAAD9/wYAAAACAAEAAAD9/wUAAAACAAEAAAD9/wQAAAACAAEAAAD9/wMAAAACAAEAAAD9/wIAAAACAAEAAAD9/wEAAAACAAEAAAD9/wAAAAACAAEAAAD9////AAACAAEAAAD9//7/AAACAAEAAAD9//3/AAACAAEAAAD9//z/AAACAAEAAAD9//v/AAACAAEAAAD9//r/AAACAAEAAAD9//n/AAACAAEAAAD9//j/AAACAAEAAAD9//f/AAACAAEAAAD9//b/AAACAAEAAAABAAgAAAAAAAEAAAABAAcAAAAAAAEAAAABAAYAAAAAAAEAAAABAAUAAAAAAAEAAAABAAQAAAAAAAEAAAABAAMAAAAAAAEAAAAAAAMAAwAMAAMAAAAAAAIAAwAMAAMAAAAAAAEAAwAMAAMAAAAAAAAAAwAMAAMAAAAAAP//AwAMAAMAAAAAAP7/AwAMAAMAAAAAAP3/AwAMAAMAAAAAAPz/AwAMAAMAAAAAAPv/AwAMAAMAAAAAAPr/AwAMAAMAAAAAAPn/AwAMAAMAAAABAAAAAAAAAAEAAAABAAEAAAAAAAEAAAABAAIAAAAAAAEAAAABAP//AAAAAAEAAAABAP7/AAAAAAEAAAABAP3/AAAAAAEAAAABAPz/AAAAAAEAAAABAPv/AAAAAAEAAAABAPr/AAAAAAEAAAABAPn/AAAAAAEAAAABAPj/AAAAAAEAAAABAPf/AAAAAAEAAAABAPb/AAAAAAEAAAD+/wgAAwAMAAMAAAD+/wcAAwAMAAMAAAD+/wYAAwAMAAMAAAD+/wUAAwAMAAMAAAD+/wQAAwAMAAMAAAD+/wMAAwAMAAMAAAD+/wIAAwAMAAMAAAD+/wEAAwAMAAMAAAD+/wAAAwAMAAMAAAD+////AwAMAAMAAAD+//7/AwAMAAMAAAD+//3/AwAMAAMAAAD+//z/AwAMAAMAAAD+//v/AwAMAAMAAAD+//r/AwAMAAMAAAD+//n/AwAMAAMAAAD+//j/AwAMAAMAAAD+//f/AwAMAAMAAAD+//b/AwAMAAMAAAD///f/AwAMAAMAAAD///b/AwAMAAMAAAAAAPb/AwAMAAMAAAAAAPf/AwAMAAMAAAD///j/AwAMAAMAAAAAAPj/AwAMAAMAAAAAAAQAAwAMAAMAAAAAAAUAAwAMAAMAAAAAAAYAAwAMAAMAAAAAAAcAAwAMAAMAAAAAAAgAAwAMAAMAAAD///n/AwAMAAMAAAD///r/AwAMAAMAAAD///v/AwAMAAMAAAD///z/AwAMAAMAAAD///3/AwAMAAMAAAD///7/AwAMAAMAAAD/////AwAMAAMAAAD//wAAAwAMAAMAAAD//wEAAwAMAAMAAAD//wIAAwAMAAMAAAD//wMAAwAMAAMAAAD//wQAAwAMAAMAAAD//wUAAwAMAAMAAAD//wYAAwAMAAMAAAD//wcAAwAMAAMAAAD//wgAAwAMAAMAAAA=")
+tile_set = ExtResource("3")
+
+[node name="WaterTileMap" type="TileMapLayer" parent="Art" unique_id=1625499473]
+modulate = Color(0.2, 0.22, 0.28, 1)
+position = Vector2(-24, -150)
+tile_set = ExtResource("4")
+
+[node name="RoomBackdrop" type="ColorRect" parent="Art" unique_id=1808976743]
+z_index = -4
+offset_left = -40.0
+offset_top = -155.0
+offset_right = 40.0
+offset_bottom = 152.0
+mouse_filter = 2
+color = Color(0.07450981, 0.06666667, 0.0627451, 0.94)
+
+[node name="InnerWall" type="ColorRect" parent="Art" unique_id=226906108]
+z_index = -3
+offset_left = -23.0
+offset_top = -142.0
+offset_right = 25.0
+offset_bottom = 152.0
+mouse_filter = 2
+color = Color(0.07450981, 0.06666667, 0.0627451, 0.1)
+
+[node name="Layout" type="Node2D" parent="." unique_id=1795632201]
+
+[node name="WalkableRegions" type="Node2D" parent="Layout" unique_id=2005398016]
+
+[node name="Passage" type="ColorRect" parent="Layout/WalkableRegions" unique_id=696533542]
+offset_left = -40.0
+offset_top = -164.0
+offset_right = 39.0
+offset_bottom = 164.0
+mouse_filter = 2
+color = Color(0.2901961, 0.2627451, 0.21568628, 0)
+
+[node name="SlotAreas" type="Node2D" parent="Layout" unique_id=1697596839]
+
+[node name="Doors" type="Node2D" parent="." unique_id=1427180631]
+
+[node name="Up" type="Marker2D" parent="Doors" unique_id=525893669]
+position = Vector2(0, -150)
+
+[node name="Down" type="Marker2D" parent="Doors" unique_id=805567354]
+position = Vector2(0, 150)
+
+[node name="DoorArt" parent="." unique_id=2028646018 instance=ExtResource("2")]
+modulate = Color(0.2, 0.22, 0.28, 1)
+
+[node name="Slots" type="Node2D" parent="." unique_id=1080356198]
+
+[node name="Minor1" type="Marker2D" parent="Slots" unique_id=1574097397]
+position = Vector2(0, -72)
+
+[node name="Minor2" type="Marker2D" parent="Slots" unique_id=886877700]
+
+[node name="Minor3" type="Marker2D" parent="Slots" unique_id=1534433165]
+position = Vector2(0, 72)

@@ -791,6 +791,9 @@ static func draw_room_overlays(game: Node, reduce_animations: bool = false) -> v
 					game.draw_string(ThemeDB.fallback_font, major_position + Vector2(-18.0, -20.0), "BUILD", HORIZONTAL_ALIGNMENT_LEFT, 40.0, 12, Color("fff1b7"))
 			elif game.room_has_research_crystal(room_coord):
 				draw_research_obelisk(game, major_position, game.room_has_active_research(room_coord) and not reduce_animations)
+				var obelisk_health_ratio: float = clampf(float(room.get("research_obelisk_health", game.RESEARCH_OBELISK_MAX_HEALTH)) / game.RESEARCH_OBELISK_MAX_HEALTH, 0.0, 1.0)
+				game.draw_rect(Rect2(major_position + Vector2(-20.0, 22.0), Vector2(40.0, 5.0)), Color("1b1610"), true)
+				game.draw_rect(Rect2(major_position + Vector2(-20.0, 22.0), Vector2(40.0 * obelisk_health_ratio, 5.0)), Color("a890ff"), true)
 			if not pending_major.is_empty():
 				var pending_ratio: float = 1.0 - (float(pending_major.get("timer_left", 0.0)) / maxf(float(pending_major.get("duration", 1.0)), 0.001))
 				game.draw_rect(Rect2(major_position - Vector2(12.0, 12.0), Vector2(24.0, 24.0)), Color(1.0, 0.91, 0.69, 0.22), true)

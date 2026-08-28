@@ -51,11 +51,13 @@ const ROOM_WALKABLE_INSET: float = 4.0
 const ROOM_SLOT_INSET: float = 18.0
 const ROOM_NAV_CELL_SIZE: float = 12.0
 const ROOM_NAV_WALKABLE_MARGIN: float = 3.0
+const RESEARCH_OBELISK_MAX_HEALTH: float = 1000.0
 const INVALID_ROOM: Vector2i = Vector2i(-99, -99)
 const HERO_INVALID_ROOM: Vector2i = Vector2i(-99, -99)
 const DOOR_OPEN_DURATION: float = 1.82
 const FRONTIER_DOOR_RADIUS: float = 24.0
 const ROOM_TEMPLATE_NOOK: String = "nook"
+const ROOM_TEMPLATE_CORRIDOR: String = "corridor"
 const ROOM_TEMPLATE_GALLERY: String = "gallery"
 const ROOM_TEMPLATE_WORKSHOP: String = "workshop"
 const ROOM_TEMPLATE_FORGE: String = "forge"
@@ -63,10 +65,12 @@ const FLOOR1_CRYSTAL_ROOM_SCENE: PackedScene = preload("res://scenes/rooms/floor
 const CRYSTAL_ROOM_SCENE: PackedScene = preload("res://scenes/rooms/crystal_room/crystal_room.tscn")
 const ROOM_TEMPLATE_SCENES: Dictionary = {
 	ROOM_TEMPLATE_NOOK: preload("res://scenes/rooms/nook_room/nook_room.tscn"),
+	ROOM_TEMPLATE_CORRIDOR: preload("res://scenes/rooms/corridor_room/corridor_room.tscn"),
 	ROOM_TEMPLATE_GALLERY: preload("res://scenes/rooms/gallery_room/gallery_room.tscn"),
 	ROOM_TEMPLATE_WORKSHOP: preload("res://scenes/rooms/workshop_room/workshop_room.tscn"),
 	ROOM_TEMPLATE_FORGE: preload("res://scenes/rooms/forge_room/forge_room.tscn"),
 }
+const CORRIDOR_VERTICAL_ROOM_SCENE: PackedScene = preload("res://scenes/rooms/corridor_room/corridor_vertical_room.tscn")
 const FLOOR_THEME_CAVERN: String = "cavern"
 const FLOOR_THEME_FUNGAL: String = "fungal"
 const FLOOR_THEME_RUINS: String = "ruins"
@@ -1206,11 +1210,11 @@ func room_blueprint_weight(template_id: String, door_dirs: Array, prefer_major: 
 func roll_room_blueprint(required_dir: Vector2i, prefer_major: bool = false, prefer_dead_end: bool = false, minimum_doors: int = 1) -> Dictionary:
 	return GAME_DUNGEON_BUILDER.roll_room_blueprint(self, required_dir, prefer_major, prefer_dead_end, minimum_doors)
 
-func room_template_size(template_id: String) -> Vector2:
-	return GAME_DUNGEON_BUILDER.room_template_size(self, template_id)
+func room_template_size(template_id: String, door_dirs: Array = []) -> Vector2:
+	return GAME_DUNGEON_BUILDER.room_template_size(self, template_id, door_dirs)
 
-func proposed_room_center(origin_room: Vector2i, template_id: String, direction: Vector2i) -> Vector2:
-	return GAME_DUNGEON_BUILDER.proposed_room_center(self, origin_room, template_id, direction)
+func proposed_room_center(origin_room: Vector2i, template_id: String, direction: Vector2i, door_dirs: Array = []) -> Vector2:
+	return GAME_DUNGEON_BUILDER.proposed_room_center(self, origin_room, template_id, direction, door_dirs)
 
 func can_place_room_center(world_center: Vector2, room_size: Vector2) -> bool:
 	return GAME_DUNGEON_BUILDER.can_place_room_center(self, world_center, room_size)
@@ -2074,12 +2078,6 @@ func advance_hero_movement() -> void:
 func advance_enemy_routes(delta: float) -> void:
 	GAME_ENEMY_AI_FLOW.advance_enemy_routes(self, delta)
 
-func target_room_for_enemy(enemy: Variant) -> Vector2i:
-	return GAME_ENEMY_AI_FLOW.target_room_for_enemy(self, enemy)
-
-func enemy_room_goal_position(enemy: Variant, room_coord: Vector2i) -> Vector2:
-	return GAME_ENEMY_AI_FLOW.enemy_room_goal_position(self, enemy, room_coord)
-
 func enemy_target_position(enemy: Variant) -> Vector2:
 	return GAME_ENEMY_AI_FLOW.enemy_target_position(self, enemy)
 
@@ -2098,65 +2096,23 @@ func hero_is_in_room(hero: Variant, room_coord: Vector2i) -> bool:
 func hero_is_long_range_target(hero: Variant) -> bool:
 	return GAME_ENEMY_AI_FLOW.hero_is_long_range_target(self, hero)
 
-func hero_target_priority_rank(hero: Variant) -> int:
-	return GAME_ENEMY_AI_FLOW.hero_target_priority_rank(self, hero)
-
-func orc_rider_target_priority_rank(hero: Variant) -> int:
-	return GAME_ENEMY_AI_FLOW.orc_rider_target_priority_rank(self, hero)
-
 func room_path_distance(from_room: Vector2i, to_room: Vector2i) -> int:
 	return GAME_PATHING_FLOW.room_path_distance(self, from_room, to_room)
 
 func heroes_in_room(room_coord: Vector2i) -> Array:
 	return GAME_ENEMY_AI_FLOW.heroes_in_room(self, room_coord)
 
-func default_room_hero_target(room_coord: Vector2i, origin: Vector2) -> Variant:
-	return GAME_ENEMY_AI_FLOW.default_room_hero_target(self, room_coord, origin)
-
-func enemy_room_hero_candidates(enemy: Variant) -> Array:
-	return GAME_ENEMY_AI_FLOW.enemy_room_hero_candidates(self, enemy)
-
 func local_enemy_override_target(enemy: Variant) -> Variant:
 	return GAME_ENEMY_AI_FLOW.local_enemy_override_target(self, enemy)
-
-func priority_hunter_target_hero(enemy: Variant) -> Variant:
-	return GAME_ENEMY_AI_FLOW.priority_hunter_target_hero(self, enemy)
-
-func orc_rider_target_hero(enemy: Variant) -> Variant:
-	return GAME_ENEMY_AI_FLOW.orc_rider_target_hero(self, enemy)
-
-func goblin_target_hero(enemy: Variant) -> Variant:
-	return GAME_ENEMY_AI_FLOW.goblin_target_hero(self, enemy)
-
-func bat_target_hero(enemy: Variant) -> Variant:
-	return GAME_ENEMY_AI_FLOW.bat_target_hero(self, enemy)
-
-func golem_target_hero(enemy: Variant) -> Variant:
-	return GAME_ENEMY_AI_FLOW.golem_target_hero(self, enemy)
 
 func enemy_situational_speed_multiplier(enemy: Variant) -> float:
 	return GAME_ENEMY_AI_FLOW.enemy_situational_speed_multiplier(self, enemy)
 
-func skeleton_archer_target_hero(enemy: Variant) -> Variant:
-	return GAME_ENEMY_AI_FLOW.skeleton_archer_target_hero(self, enemy)
-
-func skeleton_archer_goal_position(enemy: Variant) -> Vector2:
-	return GAME_ENEMY_AI_FLOW.skeleton_archer_goal_position(self, enemy)
-
-func module_target_position(room_coord: Vector2i, origin: Vector2) -> Vector2:
-	return GAME_ENEMY_AI_FLOW.module_target_position(self, room_coord, origin)
-
 func major_module_target_position(room_coord: Vector2i) -> Vector2:
 	return GAME_ENEMY_AI_FLOW.major_module_target_position(self, room_coord)
 
-func preferred_golem_major_module_room(enemy: Variant) -> Vector2i:
-	return GAME_ENEMY_AI_FLOW.preferred_golem_major_module_room(self, enemy)
-
 func resolve_enemy_attack(enemy: Variant) -> void:
 	GAME_ENEMY_AI_FLOW.resolve_enemy_attack(self, enemy)
-
-func find_nearest_major_module_room(from_room: Vector2i) -> Vector2i:
-	return GAME_ENEMY_AI_FLOW.find_nearest_major_module_room(self, from_room)
 
 func damage_module(room_coord: Vector2i, amount: float, major_only: bool = false, attacker_label: String = "Enemies") -> bool:
 	return GAME_ENEMY_AI_FLOW.damage_module(self, room_coord, amount, major_only, attacker_label)
@@ -2881,6 +2837,9 @@ func module_level_roman(level: int) -> String:
 
 func room_has_research_crystal(room_coord: Vector2i) -> bool:
 	return GAME_RESEARCH_FLOW.room_has_research_crystal(self, room_coord)
+
+func damage_research_obelisk(room_coord: Vector2i, amount: float, attacker_label: String) -> bool:
+	return GAME_RESEARCH_FLOW.damage_research_obelisk(self, room_coord, amount, attacker_label)
 
 func research_in_progress() -> bool:
 	return GAME_RESEARCH_FLOW.research_in_progress(self)
