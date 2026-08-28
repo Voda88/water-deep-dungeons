@@ -323,6 +323,18 @@ static func ensure_hero_select_overlay(game: Node) -> void:
 	game.lobby_debug_back_button.pressed.connect(game._on_lobby_debug_back_button_pressed)
 
 	game.lobby_debug_research_buttons.clear()
+	game.lobby_debug_first_floor_enemy_buttons.clear()
+	var first_floor_enemy_grid: GridContainer = game.hero_select_overlay.get_node(^"DebugView/Panel/VBox/FirstFloorEnemyGrid")
+	for enemy_type_variant in GAME_ENEMY_DEFS.enemy_spawn_order():
+		var enemy_type: String = String(enemy_type_variant)
+		var enemy_button: CheckButton = CheckButton.new()
+		enemy_button.custom_minimum_size = Vector2(0.0, 28.0)
+		enemy_button.add_theme_font_size_override("font_size", 12)
+		enemy_button.text = enemy_type.replace("_", " ").capitalize()
+		enemy_button.toggled.connect(game._on_lobby_debug_first_floor_enemy_toggled.bind(enemy_type))
+		first_floor_enemy_grid.add_child(enemy_button)
+		game.lobby_debug_first_floor_enemy_buttons[enemy_type] = enemy_button
+
 	var module_grid: GridContainer = game.hero_select_overlay.get_node(^"DebugView/Panel/VBox/ModuleGrid")
 	for module_type_variant in game.minor_module_catalog():
 		var module_type: String = String(module_type_variant)

@@ -935,6 +935,8 @@ static func weighted_enemy_type_choice(game: Node, candidates: Array[String], pr
 
 static func enemy_spawn_candidates_for_floor(game: Node) -> Array[String]:
 	var floor_candidates: Array[String] = []
+	if game.floor_index == 1 and not game.debug_first_floor_enemy_types.is_empty():
+		return game.debug_first_floor_enemy_types.duplicate()
 	for enemy_type_variant in Array(game.floor_enemy_spawn_types):
 		var enemy_type: String = String(enemy_type_variant)
 		if GAME_ENEMY_DEFS.enemy_available_on_floor(enemy_type, game.floor_index):
@@ -950,6 +952,9 @@ static func enemy_spawn_candidates_for_floor(game: Node) -> Array[String]:
 	return floor_candidates
 
 static func prepare_floor_enemy_spawn_types(game: Node) -> void:
+	if game.floor_index == 1 and not game.debug_first_floor_enemy_types.is_empty():
+		game.floor_enemy_spawn_types = game.debug_first_floor_enemy_types.duplicate()
+		return
 	var available_types: Array[String] = []
 	for enemy_type_variant in GAME_ENEMY_DEFS.enemy_spawn_order():
 		var enemy_type: String = String(enemy_type_variant)

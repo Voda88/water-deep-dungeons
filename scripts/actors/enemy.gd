@@ -965,20 +965,15 @@ func take_damage(amount: float, hit_direction: Vector2 = Vector2.ZERO) -> bool:
 	if enemy_role == TYPE_SPIRITUAL_WEAPON:
 		return false
 	var applied_damage: float = maxf(amount, 0.0) * current_damage_taken_multiplier()
-	var health_before: float = current_health
 	current_health = maxf(current_health - applied_damage, 0.0)
 	if applied_damage > 0.0 and turn_undead_time_left > 0.0:
 		clear_turn_undead_debuff(true)
 	clear_calm_emotions()
 	hurt_effect_left = maxf(hurt_effect_left, 0.22)
-	if enemy_role == TYPE_SLIME \
-	and not bool(get_meta("slime_has_split", false)) \
-	and health_before > max_health * 0.5 \
-	and current_health > 0.0 \
-	and current_health <= max_health * 0.5:
-		set_meta("slime_split_pending", true)
-		set_meta("slime_split_health", current_health)
 	if current_health <= 0.0:
+		if enemy_role == TYPE_SLIME and not bool(get_meta("slime_has_split", false)):
+			set_meta("slime_split_pending", true)
+			set_meta("slime_split_health", max_health * 0.25)
 		begin_death()
 		var overkill_damage: float = maxf(applied_damage - health_before, 0.0)
 		apply_overkill_knockback(overkill_damage, hit_direction)

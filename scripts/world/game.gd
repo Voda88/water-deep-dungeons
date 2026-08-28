@@ -359,6 +359,7 @@ var lobby_debug_research_panel: PanelContainer = null
 var lobby_debug_research_buttons: Dictionary = {}
 var lobby_debug_unlock_all_button: Button = null
 var lobby_debug_starting_room_test_items: CheckButton = null
+var lobby_debug_first_floor_enemy_buttons: Dictionary = {}
 var lobby_debug_view: ColorRect = null
 var lobby_debug_link: Button = null
 var lobby_debug_back_button: Button = null
@@ -453,6 +454,7 @@ var minor_module_levels: Dictionary = {}
 var major_module_levels: Dictionary = {}
 var research_reroll_count: int = 0
 var starting_room_test_items_enabled: bool = false
+var debug_first_floor_enemy_types: Array[String] = []
 
 func _ready() -> void:
 	rng.randomize()
@@ -1006,6 +1008,15 @@ func _on_lobby_debug_starting_room_test_items_toggled(enabled: bool) -> void:
 		return
 	starting_room_test_items_enabled = enabled
 
+func _on_lobby_debug_first_floor_enemy_toggled(enemy_type: String, enabled: bool) -> void:
+	if lobby_game_started or (multiplayer_session_active() and not multiplayer.is_server()):
+		return
+	if enabled and not debug_first_floor_enemy_types.has(enemy_type):
+		debug_first_floor_enemy_types.append(enemy_type)
+	elif not enabled:
+		debug_first_floor_enemy_types.erase(enemy_type)
+	update_lobby_debug_research_controls()
+
 func _on_lobby_debug_link_pressed() -> void:
 	set_lobby_debug_view_visible(true)
 
@@ -1034,6 +1045,13 @@ func update_lobby_debug_research_controls() -> void:
 	if lobby_debug_starting_room_test_items != null:
 		lobby_debug_starting_room_test_items.button_pressed = starting_room_test_items_enabled
 		lobby_debug_starting_room_test_items.disabled = not host_actions_allowed
+	for enemy_type_variant in GAME_ENEMY_DEFS.enemy_spawn_order():
+		var enemy_type: String = String(enemy_type_variant)
+		var enemy_button: CheckButton = lobby_debug_first_floor_enemy_buttons.get(enemy_type, null)
+		if enemy_button == null:
+			continue
+		enemy_button.button_pressed = debug_first_floor_enemy_types.has(enemy_type)
+		enemy_button.disabled = not host_actions_allowed
 	for module_type_variant in minor_module_catalog():
 		var module_type: String = String(module_type_variant)
 		var unlock_button: Button = lobby_debug_research_buttons.get(module_type, null)
@@ -1106,6 +1124,11 @@ func apply_pending_lobby_research_levels(pending_data: Dictionary) -> void:
 
 func apply_pending_lobby_debug_settings(pending_data: Dictionary) -> void:
 	starting_room_test_items_enabled = bool(pending_data.get("starting_room_test_items_enabled", false))
+	debug_first_floor_enemy_types.clear()
+	for enemy_type_variant in Array(pending_data.get("debug_first_floor_enemy_types", [])):
+		var enemy_type: String = String(enemy_type_variant)
+		if GAME_ENEMY_DEFS.enemy_spawn_order().has(enemy_type) and not debug_first_floor_enemy_types.has(enemy_type):
+			debug_first_floor_enemy_types.append(enemy_type)
 
 func lobby_start_transition_payload() -> Dictionary:
 	return {
@@ -1115,6 +1138,7 @@ func lobby_start_transition_payload() -> Dictionary:
 		"selected_hero_index": selected_hero_index,
 		"minor_module_levels": minor_module_levels.duplicate(true),
 		"starting_room_test_items_enabled": starting_room_test_items_enabled,
+		"debug_first_floor_enemy_types": debug_first_floor_enemy_types.duplicate(),
 	}
 
 func begin_run_from_lobby_transition() -> void:
