@@ -27,6 +27,7 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 				"melee_windup": 0.21,
 				"body_color": Color("9fe6b0"),
 				"core_color": Color("f5fff1"),
+				"ignore_room_opponent_slowdown": true,
 				"level_passives": [
 					{
 						"level": 1,
@@ -62,6 +63,7 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 				"melee_windup": 0.16,
 				"body_color": Color("c2d8ff"),
 				"core_color": Color("f6fbff"),
+				"ignore_room_opponent_slowdown": true,
 				"level_passives": [
 					{
 						"level": 2,
@@ -92,6 +94,7 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 				"melee_windup": 0.18,
 				"body_color": Color("c7a7ff"),
 				"core_color": Color("fff6ff"),
+				"ignore_room_opponent_slowdown": true,
 				"level_passives": [
 					{
 						"level": 4,
@@ -117,6 +120,7 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 				"melee_windup": 0.24,
 				"body_color": Color("ff9a7a"),
 				"core_color": Color("fff2dd"),
+				"ignore_room_opponent_slowdown": true,
 				"level_passives": [
 					{
 						"level": 1,

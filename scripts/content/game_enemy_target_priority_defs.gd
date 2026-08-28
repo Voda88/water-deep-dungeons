@@ -6,6 +6,7 @@ const TARGET_CATEGORY_RESEARCH_OBELISK: String = "research_obelisk"
 const TARGET_CATEGORY_MAJOR_MODULE: String = "major_module"
 const TARGET_CATEGORY_MINOR_MODULE: String = "minor_module"
 const TARGET_CATEGORY_GENERATOR_CRYSTAL: String = "generator_crystal"
+const TARGET_CATEGORY_HOSTILE_ENEMY: String = "hostile_enemy"
 
 const DEFAULT_PRIORITY_TABLE: Dictionary = {
 	TARGET_CATEGORY_MELEE: 1,
@@ -14,6 +15,10 @@ const DEFAULT_PRIORITY_TABLE: Dictionary = {
 	TARGET_CATEGORY_MAJOR_MODULE: -1,
 	TARGET_CATEGORY_MINOR_MODULE: -1,
 	TARGET_CATEGORY_GENERATOR_CRYSTAL: 5,
+}
+
+const CONVERTED_PRIORITY_TABLE: Dictionary = {
+	TARGET_CATEGORY_HOSTILE_ENEMY: 1,
 }
 
 # Lower number = higher priority. Negative priority disables a category for that role.
@@ -89,7 +94,9 @@ const ROLE_PRIORITY_TABLE: Dictionary = {
 	},
 }
 
-static func priority_table_for_role(enemy_role: String) -> Dictionary:
+static func priority_table_for_role(enemy_role: String, converted: bool = false) -> Dictionary:
+	if converted:
+		return Dictionary(CONVERTED_PRIORITY_TABLE).duplicate(true)
 	var table: Dictionary = Dictionary(DEFAULT_PRIORITY_TABLE).duplicate(true)
 	var role_table: Dictionary = Dictionary(ROLE_PRIORITY_TABLE.get(enemy_role, {}))
 	for category in role_table.keys():

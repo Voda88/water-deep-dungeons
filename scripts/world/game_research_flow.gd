@@ -189,9 +189,11 @@ static func research_option_stats_text(game: Node, option: Dictionary) -> String
 		game.MINOR_MODULE_BOUNTY_INDUSTRY, game.MINOR_MODULE_BOUNTY_FOOD, game.MINOR_MODULE_BOUNTY_SCIENCE:
 			var resource_label: String = research_resource_label(game.minor_module_bounty_resource_id(module_type))
 			var threshold_by_level: Array[int] = [6, 5, 4, 3]
-			var current_threshold: int = threshold_by_level[clampi(max(current_level, 1) - 1, 0, threshold_by_level.size() - 1)]
 			var next_threshold: int = threshold_by_level[clampi(next_level - 1, 0, threshold_by_level.size() - 1)]
-			return "Current level %d -> %d\nPassive bounty module\n+1 %s every %d -> %d kills in room" % [current_level, next_level, resource_label, current_threshold, next_threshold]
+			if current_level <= 0:
+				return "Unlock level %d\nPassive bounty module\n+1 %s every %d enemy kills in this room" % [next_level, resource_label, next_threshold]
+			var current_threshold: int = threshold_by_level[clampi(current_level - 1, 0, threshold_by_level.size() - 1)]
+			return "Upgrade level %d -> %d\nPassive bounty module\n+1 %s every %d -> %d enemy kills in this room" % [current_level, next_level, resource_label, current_threshold, next_threshold]
 		_:
 			return "Current level %d -> %d" % [current_level, next_level]
 
@@ -248,7 +250,15 @@ static func refresh_research_overlay(game: Node) -> void:
 		if game.research_detail_stats_label != null:
 			game.research_detail_stats_label.text = research_option_stats_text(game, selected_option)
 		if game.research_detail_cost_label != null:
-			game.research_detail_cost_label.text = "Cost %d Arcana  |  Duration 3 doors" % selected_cost
+			var cost_text: String = "Research %d Arcana" % selected_cost
+			if bool(selected_option.get("is_major", false)):
+				cost_text += "  |  Build %d Materials" % game.major_module_build_cost_for_floor()
+			else:
+				var module_type: String = game.canonical_minor_module_type(String(selected_option.get("module_type", "")))
+				var build_levels: Dictionary = Dictionary(game.minor_module_levels).duplicate(true)
+				build_levels[module_type] = int(selected_option.get("next_level", 1))
+				cost_text += "  |  Build %d Materials" % game.minor_module_cost(module_type, build_levels)
+			game.research_detail_cost_label.text = "%s  |  Duration 3 doors" % cost_text
 		if game.research_start_button != null:
 			game.research_start_button.disabled = game.science < selected_cost or game.wave_in_progress()
 			game.research_start_button.text = "Start Research"

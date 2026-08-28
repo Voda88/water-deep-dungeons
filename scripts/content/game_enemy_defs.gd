@@ -220,6 +220,7 @@ static func enemy_role_definition(enemy_type: String) -> Dictionary:
 				"attack_range": 78.0,
 				"weight": 3.35,
 				"body_color": Color("8d9e67"),
+				"ignore_room_opponent_slowdown": true,
 			}
 		TYPE_DEATH_KNIGHT:
 			return {
@@ -233,6 +234,7 @@ static func enemy_role_definition(enemy_type: String) -> Dictionary:
 				"body_color": Color("8b9bb4"),
 				"ally_aura_radius": 150.0,
 				"ally_aura_damage_taken_multiplier": 0.72,
+				"ignore_room_opponent_slowdown": true,
 			}
 		TYPE_BAT:
 			return {
@@ -292,6 +294,7 @@ static func enemy_role_definition(enemy_type: String) -> Dictionary:
 				"hero_slow_max": 0.48,
 				"hero_slow_duration": 4.0,
 				"hero_flatfooted_damage_taken_multiplier": 1.5,
+				"ignore_room_opponent_slowdown": true,
 			}
 		TYPE_SLIME:
 			return {
@@ -327,6 +330,12 @@ static func enemy_role_definition(enemy_type: String) -> Dictionary:
 				"attack_range": 120.0,
 				"weight": 0.65,
 				"body_color": Color("e3a0d9"),
+				"attack_delivery": "arrow",
+				"attack_label": "An archer imp",
+				"attack_status_template": "%s marks %s.",
+				"attack_projectile_color": Color("ff956a"),
+				"attack_projectile_width": 2.8,
+				"attack_projectile_speed": 1060.0,
 				"expose_stacks_per_hit": 1,
 				"expose_max_stacks": 3,
 				"expose_duration": 6.0,
@@ -386,6 +395,14 @@ static func enemy_role_definition(enemy_type: String) -> Dictionary:
 				"attack_range": 120.0,
 				"weight": 1.32,
 				"body_color": Color("a16fd5"),
+				"attack_delivery": "fireball",
+				"attack_label": "A wraith",
+				"attack_status_template": "%s hurls a mini fireball.",
+				"attack_single_defeat_status_template": "%s burned down %s.",
+				"attack_multiple_defeat_status": "A wraith burned down multiple heroes.",
+				"attack_blast_radius": 68.0,
+				"attack_blast_force": 360.0,
+				"ignore_room_opponent_slowdown": true,
 			}
 		TYPE_SKELETON_ARCHER:
 			return {
@@ -397,6 +414,12 @@ static func enemy_role_definition(enemy_type: String) -> Dictionary:
 				"attack_range": 120.0,
 				"weight": 0.95,
 				"body_color": Color("d7decf"),
+				"attack_delivery": "laser",
+				"attack_label": "A skeleton archer",
+				"attack_status_template": "%s looses an arrow at %s.",
+				"attack_projectile_color": Color("dbe5c8"),
+				"attack_projectile_width": 3.2,
+				"attack_projectile_speed": 980.0,
 			}
 		_:
 			return {

@@ -1644,6 +1644,24 @@ func crystal_world_position() -> Vector2:
 		return room_walkable_center(crystal_ground_room)
 	return room_walkable_center(crystal_room)
 
+func room_world_target_choices(room_coord: Vector2i) -> Array:
+	var choices: Array = []
+	if crystal_holder != null and is_instance_valid(crystal_holder):
+		if hero_room_for_enemy_targeting(crystal_holder) == room_coord:
+			choices.append({
+				"category": "generator_crystal",
+				"room": room_coord,
+				"position": crystal_world_position(),
+				"actor": crystal_holder,
+			})
+	elif crystal_ground_room == room_coord and rooms.has(room_coord):
+		choices.append({
+			"category": "generator_crystal",
+			"room": room_coord,
+			"position": crystal_world_position(),
+		})
+	return choices
+
 func carrier_in_exit_room() -> bool:
 	return hero_is_active(crystal_holder) and crystal_holder.current_room == exit_room and crystal_holder.pending_room == INVALID_ROOM and crystal_holder.is_idle()
 
