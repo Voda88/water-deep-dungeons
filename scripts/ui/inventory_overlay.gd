@@ -1236,6 +1236,9 @@ func item_icon_texture(item_def: Dictionary) -> Texture2D:
 func cached_item_icon_texture(icon_path: String) -> Texture2D:
 	if item_icon_cache.has(icon_path):
 		return item_icon_cache[icon_path]
+	if not ResourceLoader.exists(icon_path):
+		item_icon_cache[icon_path] = null
+		return null
 	var icon_resource: Resource = load(icon_path)
 	var icon_texture: Texture2D = icon_resource if icon_resource is Texture2D else null
 	item_icon_cache[icon_path] = icon_texture

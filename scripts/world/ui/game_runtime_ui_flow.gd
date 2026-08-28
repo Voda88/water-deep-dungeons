@@ -298,6 +298,11 @@ static func ensure_hero_select_overlay(game: Node) -> void:
 	game.hero_select_detail_summary_label = game.hero_select_overlay.get_node(^"Panel/RootVBox/ContentRow/DetailPanel/DetailVBox/DetailSummaryLabel")
 	game.hero_select_detail_hint_label = game.hero_select_overlay.get_node(^"Panel/RootVBox/ContentRow/DetailPanel/DetailVBox/DetailHintLabel")
 	game.hero_select_player_list = game.hero_select_overlay.get_node(^"Panel/RootVBox/ContentRow/PlayerPanel/PlayerVBox/PlayerList")
+	game.lobby_debug_link = game.hero_select_overlay.get_node(^"DebugLink")
+	game.lobby_debug_view = game.hero_select_overlay.get_node(^"DebugView")
+	game.lobby_debug_back_button = game.hero_select_overlay.get_node(^"DebugView/BackButton")
+	game.lobby_debug_research_panel = game.hero_select_overlay.get_node(^"DebugView/Panel")
+	game.lobby_debug_unlock_all_button = game.hero_select_overlay.get_node(^"DebugView/Panel/VBox/UnlockAllButton")
 	game.hero_select_new_game_button = game.hero_select_overlay.get_node(^"Panel/RootVBox/FooterBar/NewGameButton")
 	game.hero_select_load_game_button = game.hero_select_overlay.get_node(^"Panel/RootVBox/FooterBar/LoadGameButton")
 	game.hero_select_start_button = game.hero_select_overlay.get_node(^"Panel/RootVBox/FooterBar/StartButton")
@@ -311,6 +316,20 @@ static func ensure_hero_select_overlay(game: Node) -> void:
 	game.hero_select_new_game_button.pressed.connect(game._on_hero_select_new_game_button_pressed)
 	game.hero_select_load_game_button.pressed.connect(game._on_hero_select_load_game_button_pressed)
 	game.hero_select_start_button.pressed.connect(game._on_hero_select_start_button_pressed)
+	game.lobby_debug_unlock_all_button.pressed.connect(game._on_lobby_debug_unlock_all_button_pressed)
+	game.lobby_debug_link.pressed.connect(game._on_lobby_debug_link_pressed)
+	game.lobby_debug_back_button.pressed.connect(game._on_lobby_debug_back_button_pressed)
+
+	game.lobby_debug_research_buttons.clear()
+	var module_grid: GridContainer = game.hero_select_overlay.get_node(^"DebugView/Panel/VBox/ModuleGrid")
+	for module_type_variant in game.minor_module_catalog():
+		var module_type: String = String(module_type_variant)
+		var unlock_button: Button = Button.new()
+		unlock_button.custom_minimum_size = Vector2(0.0, 34.0)
+		unlock_button.add_theme_font_size_override("font_size", 13)
+		unlock_button.pressed.connect(game._on_lobby_debug_research_button_pressed.bind(module_type))
+		module_grid.add_child(unlock_button)
+		game.lobby_debug_research_buttons[module_type] = unlock_button
 
 	game.hero_select_cards.clear()
 	var card_grid: GridContainer = game.hero_select_overlay.get_node(^"Panel/RootVBox/ContentRow/HeroTilePanel/CardGrid")

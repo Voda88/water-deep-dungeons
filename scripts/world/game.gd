@@ -132,7 +132,7 @@ const HERO_CLASS_ORDER: Array[String] = [
 const NETWORK_HOST_PEER_ID: int = 1
 const NETWORK_PORT: int = 7777
 const NETWORK_MAX_CLIENTS: int = HERO_COUNT - 1
-const NETWORK_SNAPSHOT_INTERVAL: float = 0.12
+const NETWORK_SNAPSHOT_INTERVAL: float = 1.0
 const NETWORK_SNAPSHOT_CHANNEL: int = 1
 const NETWORK_DEFAULT_ADDRESS: String = "127.0.0.1"
 const NETWORK_DISCOVERY_PORT: int = 7778
@@ -277,6 +277,8 @@ const CARDINAL_DIRS: Array[Vector2i] = [
 @onready var industry_major_button: Button = $UI/BuildMenu/Panel/VBox/Buttons/IndustryMajorButton
 
 var rng: RandomNumberGenerator = RandomNumberGenerator.new()
+var network_simulation_seed: int = 0
+var room_status_effects_by_room: Dictionary = {}
 var room_template_metadata_cache: Dictionary = {}
 var item_defs: Dictionary = {}
 var hero_profiles: Array = []
@@ -310,6 +312,7 @@ var crystal_holder: Variant = null
 var crystal_ground_room: Vector2i = INVALID_ROOM
 var crystal_prompt_visible: bool = false
 var crystal_pressure_timer_left: float = 0.0
+var crystal_pressure_event_index: int = 0
 var crystal_dust_damage_fraction: float = 0.0
 var dust: int = 24
 var food: int = 10
@@ -352,6 +355,12 @@ var hero_select_detail_summary_label: Label = null
 var hero_select_detail_hint_label: Label = null
 var hero_select_detail_class_buttons: Dictionary = {}
 var hero_select_player_list: VBoxContainer = null
+var lobby_debug_research_panel: PanelContainer = null
+var lobby_debug_research_buttons: Dictionary = {}
+var lobby_debug_unlock_all_button: Button = null
+var lobby_debug_view: ColorRect = null
+var lobby_debug_link: Button = null
+var lobby_debug_back_button: Button = null
 var network_panel: PanelContainer = null
 var network_bar: HBoxContainer = null
 var network_address_input: LineEdit = null
@@ -468,6 +477,8 @@ func _ready() -> void:
 	var client_waiting_for_layout: bool = not start_in_lobby and multiplayer_session_active() and not multiplayer.is_server()
 	if (not start_in_lobby or dedicated_host_mode) and not client_waiting_for_layout:
 		build_dungeon(true)
+		if not pending_lobby_start_data.is_empty():
+			apply_pending_lobby_research_levels(pending_lobby_start_data)
 		spawn_heroes()
 		reset_hero_owner_peer_ids()
 	if not pending_lobby_start_data.is_empty():
@@ -521,10 +532,6 @@ func _physics_process(delta: float) -> void:
 		return
 	advance_room_action_hold(delta)
 	sync_hero_skulking_visual_states()
-	if not authoritative_simulation_active():
-		advance_client_owned_hero_movement()
-		advance_projectiles(delta)
-		return
 	var trace_enabled: bool = PERF_TRACE_LOG_ENABLED
 	var trace_t0: int = 0
 	if trace_enabled:
@@ -558,6 +565,10 @@ func _physics_process(delta: float) -> void:
 	advance_crystal_pressure(delta)
 	if trace_enabled:
 		perf_trace_add_us("crystal", Time.get_ticks_usec() - trace_t0)
+		trace_t0 = Time.get_ticks_usec()
+	refresh_room_status_effects()
+	if trace_enabled:
+		perf_trace_add_us("room_effects", Time.get_ticks_usec() - trace_t0)
 		trace_t0 = Time.get_ticks_usec()
 	advance_enemy_routes(delta)
 	if trace_enabled:
@@ -633,12 +644,17 @@ func advance_perf_trace_logging(delta: float) -> void:
 	var physics_samples: int = maxi(1, perf_trace_samples)
 	var draw_samples: int = maxi(1, perf_trace_draw_samples)
 	print(
-		"[PERF] en=%d/%d pend=%d rooms=%d | ai %.2fms modules %.2fms spawn %.2fms proj %.2fms combat %.2fms draw %.2fms (ov %.2f worldui %.2f screenui %.2f)" % [
+		"[PERF] en=%d/%d pend=%d rooms=%d | roomfx %.2fms ai %.2fms [state %.2f target %.2f/%.2f nav %.2f] modules %.2fms spawn %.2fms proj %.2fms combat %.2fms draw %.2fms (ov %.2f worldui %.2f screenui %.2f)" % [
 			active_enemy_runtime_count(),
 			ENEMY_ACTIVE_CAP,
 			pending_enemy_spawn_count(),
 			opened_rooms,
+			perf_trace_avg_ms("room_effects", physics_samples),
 			perf_trace_avg_ms("enemy_ai", physics_samples),
+			perf_trace_avg_ms("ai_enemy_state", physics_samples),
+			perf_trace_avg_ms("ai_target_validation", physics_samples),
+			perf_trace_avg_ms("ai_target_selection", physics_samples),
+			perf_trace_avg_ms("ai_navigation", physics_samples),
 			perf_trace_avg_ms("modules", physics_samples),
 			perf_trace_avg_ms("enemy_spawn", physics_samples),
 			perf_trace_avg_ms("projectiles", physics_samples),
@@ -930,6 +946,7 @@ func set_hero_select_overlay_visible(visible: bool) -> void:
 
 func update_hero_select_overlay() -> void:
 	GAME_MULTIPLAYER_LOBBY.update_hero_select_overlay(self)
+	update_lobby_debug_research_controls()
 
 func should_require_lobby_enter_hold() -> bool:
 	return lobby_game_started and (hero_select_overlay == null or not hero_select_overlay.visible)
@@ -964,6 +981,57 @@ func _on_hero_select_new_game_button_pressed() -> void:
 
 func _on_hero_select_load_game_button_pressed() -> void:
 	GAME_MULTIPLAYER_LOBBY.on_hero_select_load_game_button_pressed(self)
+
+func _on_lobby_debug_research_button_pressed(module_type: String) -> void:
+	if lobby_game_started or (multiplayer_session_active() and not multiplayer.is_server()):
+		return
+	var canonical_type: String = canonical_minor_module_type(module_type)
+	var next_level: int = mini(minor_module_level(canonical_type) + 1, 4)
+	minor_module_levels[canonical_type] = next_level
+	update_lobby_debug_research_controls()
+
+func _on_lobby_debug_unlock_all_button_pressed() -> void:
+	if lobby_game_started or (multiplayer_session_active() and not multiplayer.is_server()):
+		return
+	for module_type_variant in minor_module_catalog():
+		var module_type: String = String(module_type_variant)
+		minor_module_levels[module_type] = maxi(minor_module_level(module_type), 1)
+	update_lobby_debug_research_controls()
+
+func _on_lobby_debug_link_pressed() -> void:
+	set_lobby_debug_view_visible(true)
+
+func _on_lobby_debug_back_button_pressed() -> void:
+	set_lobby_debug_view_visible(false)
+
+func set_lobby_debug_view_visible(visible: bool) -> void:
+	if lobby_debug_view == null or (visible and lobby_game_started):
+		return
+	lobby_debug_view.visible = visible
+
+func update_lobby_debug_research_controls() -> void:
+	if lobby_debug_research_panel == null:
+		return
+	var debug_available: bool = not lobby_game_started
+	if lobby_debug_link != null:
+		lobby_debug_link.visible = debug_available
+	if not debug_available and lobby_debug_view != null:
+		lobby_debug_view.visible = false
+	lobby_debug_research_panel.visible = true
+	if not debug_available:
+		return
+	var host_actions_allowed: bool = not multiplayer_session_active() or multiplayer.is_server()
+	if lobby_debug_unlock_all_button != null:
+		lobby_debug_unlock_all_button.disabled = not host_actions_allowed
+	for module_type_variant in minor_module_catalog():
+		var module_type: String = String(module_type_variant)
+		var unlock_button: Button = lobby_debug_research_buttons.get(module_type, null)
+		if unlock_button == null:
+			continue
+		var level: int = minor_module_level(module_type)
+		var level_label: String = module_level_roman(level) if level > 0 else "Locked"
+		unlock_button.text = "%s %s" % [build_type_label(module_type), level_label]
+		unlock_button.disabled = not host_actions_allowed or level >= 4
 
 func redistribute_multiplayer_hero_owners() -> void:
 	GAME_MULTIPLAYER_LOBBY.redistribute_multiplayer_hero_owners(self)
@@ -1021,12 +1089,17 @@ func apply_pending_lobby_network_assignments(pending_data: Dictionary) -> void:
 		selected_hero_index = int(pending_data.get("selected_hero_index", selected_hero_index))
 	ensure_valid_selected_hero()
 
+func apply_pending_lobby_research_levels(pending_data: Dictionary) -> void:
+	if pending_data.has("minor_module_levels"):
+		minor_module_levels = normalized_minor_module_levels(Dictionary(pending_data.get("minor_module_levels", {})))
+
 func lobby_start_transition_payload() -> Dictionary:
 	return {
 		"hero_profiles": hero_profiles.duplicate(true),
 		"hero_owner_peer_ids": hero_owner_peer_ids.duplicate(true),
 		"rejoin_claimable_hero_indices": rejoin_claimable_hero_indices.duplicate(true),
 		"selected_hero_index": selected_hero_index,
+		"minor_module_levels": minor_module_levels.duplicate(true),
 	}
 
 func begin_run_from_lobby_transition() -> void:
@@ -1902,6 +1975,9 @@ func request_room_loot(room_coord: Vector2i) -> void:
 func request_room_loot_for_hero(hero_index: int, room_coord: Vector2i) -> void:
 	GAME_COMMAND_FLOW.request_room_loot_for_hero(self, hero_index, room_coord)
 
+func execute_room_loot_command(hero_index: int, room_coord: Vector2i) -> void:
+	GAME_COMMAND_FLOW.execute_room_loot_command(self, hero_index, room_coord)
+
 func hero_ready_for_room_action(hero: Variant, room_coord: Vector2i) -> bool:
 	return GAME_COMMAND_FLOW.hero_ready_for_room_action(self, hero, room_coord)
 
@@ -1934,6 +2010,9 @@ func request_room_construction(room_coord: Vector2i, module_type: String) -> boo
 
 func request_room_construction_for_hero(hero_index: int, room_coord: Vector2i, module_type: String) -> bool:
 	return GAME_COMMAND_FLOW.request_room_construction_for_hero(self, hero_index, room_coord, module_type)
+
+func execute_room_construction_command(hero_index: int, room_coord: Vector2i, module_type: String) -> bool:
+	return GAME_COMMAND_FLOW.execute_room_construction_command(self, hero_index, room_coord, module_type)
 
 func request_room_merchant_buy(room_coord: Vector2i, offer_uid: int) -> bool:
 	return GAME_COMMAND_FLOW.request_room_merchant_buy(self, room_coord, offer_uid)
@@ -2172,6 +2251,18 @@ func local_enemy_override_target(enemy: Variant) -> Variant:
 
 func enemy_situational_speed_multiplier(enemy: Variant) -> float:
 	return GAME_ENEMY_AI_FLOW.enemy_situational_speed_multiplier(self, enemy)
+
+func refresh_room_status_effects() -> void:
+	GAME_ENEMY_AI_FLOW.refresh_room_status_effects(self)
+
+func room_status_effects(room_coord: Vector2i) -> Dictionary:
+	return Dictionary(room_status_effects_by_room.get(room_coord, {}))
+
+func hero_room_attack_damage(hero: Variant) -> float:
+	if hero == null or not is_instance_valid(hero):
+		return 0.0
+	var effects: Dictionary = room_status_effects(Vector2i(hero.current_room))
+	return float(hero.current_attack_damage()) * float(effects.get("hero_attack_damage_multiplier", 1.0))
 
 func major_module_target_position(room_coord: Vector2i) -> Vector2:
 	return GAME_ENEMY_AI_FLOW.major_module_target_position(self, room_coord)
@@ -2538,12 +2629,24 @@ func peer_can_control_hero(peer_id: int, hero_index: int) -> bool:
 func maybe_broadcast_network_snapshot(delta: float) -> void:
 	GAME_NETWORK_SYNC.maybe_broadcast_network_snapshot(self, delta)
 
-func broadcast_network_snapshot() -> void:
-	GAME_NETWORK_SYNC.broadcast_network_snapshot(self)
+func broadcast_network_snapshot(force: bool = false) -> void:
+	GAME_NETWORK_SYNC.broadcast_network_snapshot(self, true, force)
 
 func broadcast_network_projectile_visual(projectile: Dictionary) -> void:
 	if multiplayer_session_active() and multiplayer.is_server():
 		receive_network_projectile_visual.rpc(GAME_NETWORK_SYNC.network_projectile_visual_state(projectile))
+
+func broadcast_network_world_command(hero_index: int, world_position: Vector2) -> void:
+	if multiplayer_session_active() and multiplayer.is_server():
+		receive_network_world_command.rpc(hero_index, world_position)
+
+func broadcast_network_room_construction_command(hero_index: int, room_coord: Vector2i, module_type: String) -> void:
+	if multiplayer_session_active() and multiplayer.is_server():
+		receive_network_room_construction_command.rpc(hero_index, room_coord, module_type)
+
+func broadcast_network_room_loot_command(hero_index: int, room_coord: Vector2i) -> void:
+	if multiplayer_session_active() and multiplayer.is_server():
+		receive_network_room_loot_command.rpc(hero_index, room_coord)
 
 func request_network_full_snapshot() -> void:
 	if multiplayer_session_active() and not multiplayer.is_server():
@@ -2563,6 +2666,18 @@ func receive_network_full_snapshot(snapshot: Dictionary) -> void:
 @rpc("authority", "call_remote", "reliable")
 func receive_network_projectile_visual(projectile: Dictionary) -> void:
 	GAME_NETWORK_SYNC.receive_network_projectile_visual(self, projectile)
+
+@rpc("authority", "call_remote", "reliable")
+func receive_network_world_command(hero_index: int, world_position: Vector2) -> void:
+	GAME_NETWORK_SYNC.receive_network_world_command(self, hero_index, world_position)
+
+@rpc("authority", "call_remote", "reliable")
+func receive_network_room_construction_command(hero_index: int, room_coord: Vector2i, module_type: String) -> void:
+	GAME_NETWORK_SYNC.receive_network_room_construction_command(self, hero_index, room_coord, module_type)
+
+@rpc("authority", "call_remote", "reliable")
+func receive_network_room_loot_command(hero_index: int, room_coord: Vector2i) -> void:
+	GAME_NETWORK_SYNC.receive_network_room_loot_command(self, hero_index, room_coord)
 
 @rpc("authority", "call_remote", "reliable")
 func receive_lobby_ready_confirmation(ready: bool) -> void:
@@ -3241,6 +3356,7 @@ func request_selected_hero_pick_up_crystal() -> void:
 	crystal_ground_room = INVALID_ROOM
 	crystal_prompt_visible = false
 	crystal_pressure_timer_left = CRYSTAL_PRESSURE_PICKUP_DELAY
+	crystal_pressure_event_index = 0
 	update_hero_combat_movement_mode()
 	status_message = "%s picked up the crystal. Dark rooms will agitate every %.0f seconds." % [hero.hero_name, CRYSTAL_PRESSURE_INTERVAL]
 	update_hud()

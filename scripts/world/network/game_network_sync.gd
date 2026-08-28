@@ -5,22 +5,24 @@ const GAME_DUNGEON_BUILDER: GDScript = preload("res://scripts/world/rooms/game_d
 static func peer_can_control_hero(game: Node, peer_id: int, hero_index: int) -> bool:
 	return hero_index >= 0 and hero_index < game.hero_owner_peer_ids.size() and int(game.hero_owner_peer_ids[hero_index]) == peer_id
 
-static func maybe_broadcast_network_snapshot(game: Node, delta: float) -> void:
-	if not game.multiplayer_session_active() or not game.multiplayer.is_server():
-		return
-	game.network_snapshot_timer += delta
-	if game.network_snapshot_timer < game.NETWORK_SNAPSHOT_INTERVAL:
-		return
-	game.network_snapshot_timer = 0.0
-	broadcast_network_snapshot(game, false)
+static func maybe_broadcast_network_snapshot(_game: Node, _delta: float) -> void:
+	# Gameplay state is predicted locally and reconciled after each cleared wave.
+	pass
 
-static func broadcast_network_snapshot(game: Node, include_rooms: bool = true) -> void:
+static func broadcast_network_snapshot(game: Node, include_rooms: bool = true, force: bool = false) -> void:
 	if not game.multiplayer_session_active() or not game.multiplayer.is_server():
+		return
+	if game.lobby_game_started and game.wave_in_progress() and not force:
 		return
 	if include_rooms:
 		game.receive_network_full_snapshot.rpc(build_network_snapshot(game, true))
 		return
 	game.receive_network_snapshot.rpc(build_network_snapshot(game, false))
+
+static func send_reliable_snapshot_to_peer(game: Node, peer_id: int) -> void:
+	if peer_id <= 0 or not game.multiplayer_session_active() or not game.multiplayer.is_server():
+		return
+	game.receive_network_full_snapshot.rpc_id(peer_id, build_network_snapshot(game, true))
 
 static func build_network_snapshot(game: Node, include_rooms: bool = true) -> Dictionary:
 	var room_visual_states: Dictionary = {}
@@ -184,9 +186,13 @@ static func build_network_snapshot(game: Node, include_rooms: bool = true) -> Di
 		"door_wave_spawns_incoming": game.door_wave_spawns_incoming,
 		"next_enemy_uid": game.next_enemy_uid,
 		"next_item_uid": game.next_item_uid,
+		"crystal_pressure_event_index": game.crystal_pressure_event_index,
+		"floor_enemy_spawn_types": game.floor_enemy_spawn_types.duplicate(),
 	}
 	if include_rooms:
 		snapshot["rooms"] = game.rooms.duplicate(true)
+		snapshot["network_simulation_seed"] = game.network_simulation_seed
+		snapshot["rng_state"] = game.rng.state
 		snapshot["global_item_card_states"] = game.global_item_card_states.duplicate(true)
 		snapshot["global_item_passive_timers"] = game.global_item_passive_timers.duplicate(true)
 		snapshot["hero_owner_peer_ids"] = game.hero_owner_peer_ids.duplicate(true)
@@ -223,6 +229,11 @@ static func receive_network_projectile_visual(game: Node, projectile: Dictionary
 	if game.authoritative_simulation_active():
 		return
 	game.projectiles.append(projectile.duplicate(true))
+
+static func receive_network_world_command(game: Node, hero_index: int, world_position: Vector2) -> void:
+	if game.authoritative_simulation_active() or game.can_local_control_hero_index(hero_index):
+		return
+	game.execute_world_command_for_hero(hero_index, world_position, false)
 
 static func receive_lobby_ready_confirmation(game: Node, ready: bool) -> void:
 	if game.authoritative_simulation_active():
@@ -273,11 +284,14 @@ static func apply_network_snapshot(game: Node, snapshot: Dictionary) -> void:
 	game.pending_room_constructions = Array(snapshot.get("pending_room_constructions", [])).duplicate(true)
 	game.global_item_card_states = Dictionary(snapshot.get("global_item_card_states", game.global_item_card_states)).duplicate(true)
 	game.global_item_passive_timers = Dictionary(snapshot.get("global_item_passive_timers", game.global_item_passive_timers)).duplicate(true)
-	game.hero_owner_peer_ids = Array(snapshot.get("hero_owner_peer_ids", [])).duplicate(true)
-	if game.hero_owner_peer_ids.size() != game.HERO_COUNT:
-		game.reset_hero_owner_peer_ids()
-	game.rejoin_claimable_hero_indices = Array(snapshot.get("rejoin_claimable_hero_indices", [])).duplicate(true)
-	game.lobby_peer_ready = Dictionary(snapshot.get("lobby_peer_ready", {})).duplicate(true)
+	if snapshot.has("hero_owner_peer_ids"):
+		game.hero_owner_peer_ids = Array(snapshot["hero_owner_peer_ids"]).duplicate(true)
+		if game.hero_owner_peer_ids.size() != game.HERO_COUNT:
+			game.reset_hero_owner_peer_ids()
+	if snapshot.has("rejoin_claimable_hero_indices"):
+		game.rejoin_claimable_hero_indices = Array(snapshot["rejoin_claimable_hero_indices"]).duplicate(true)
+	if snapshot.has("lobby_peer_ready"):
+		game.lobby_peer_ready = Dictionary(snapshot["lobby_peer_ready"]).duplicate(true)
 	game.lobby_game_started = bool(snapshot.get("lobby_game_started", game.lobby_game_started))
 	game.opening_room = snapshot.get("opening_room", game.INVALID_ROOM)
 	game.opening_origin_room = snapshot.get("opening_origin_room", game.INVALID_ROOM)
@@ -291,13 +305,17 @@ static func apply_network_snapshot(game: Node, snapshot: Dictionary) -> void:
 	game.industry = int(snapshot.get("industry", game.industry))
 	game.science = int(snapshot.get("science", game.science))
 	game.research_reroll_count = maxi(int(snapshot.get("research_reroll_count", game.research_reroll_count)), 0)
-	game.minor_module_levels = game.normalized_minor_module_levels(Dictionary(snapshot.get("minor_module_levels", game.initialized_minor_module_levels())).duplicate(true))
-	game.major_module_levels = game.normalized_major_module_levels(Dictionary(snapshot.get("major_module_levels", game.initialized_major_module_levels())).duplicate(true))
-	game.active_research = Dictionary(snapshot.get("active_research", {})).duplicate(true)
+	if snapshot.has("minor_module_levels"):
+		game.minor_module_levels = game.normalized_minor_module_levels(Dictionary(snapshot["minor_module_levels"]).duplicate(true))
+	if snapshot.has("major_module_levels"):
+		game.major_module_levels = game.normalized_major_module_levels(Dictionary(snapshot["major_module_levels"]).duplicate(true))
+	if snapshot.has("active_research"):
+		game.active_research = Dictionary(snapshot["active_research"]).duplicate(true)
 	game.opened_rooms = int(snapshot.get("opened_rooms", game.opened_rooms))
 	game.wave_index = int(snapshot.get("wave_index", game.wave_index))
 	game.doors_opened = int(snapshot.get("doors_opened", game.doors_opened))
 	game.floor_major_modules_built_count = maxi(int(snapshot.get("floor_major_modules_built_count", game.estimate_floor_major_modules_built_count())), 0)
+	game.crystal_pressure_event_index = maxi(int(snapshot.get("crystal_pressure_event_index", game.crystal_pressure_event_index)), 0)
 	game.game_over = bool(snapshot.get("game_over", game.game_over))
 	game.status_message = String(snapshot.get("status_message", game.status_message))
 	game.crystal_ground_room = snapshot.get("crystal_ground_room", game.INVALID_ROOM)
@@ -306,6 +324,8 @@ static func apply_network_snapshot(game: Node, snapshot: Dictionary) -> void:
 	game.door_wave_spawns_incoming = bool(snapshot.get("door_wave_spawns_incoming", false))
 	game.next_enemy_uid = int(snapshot.get("next_enemy_uid", game.next_enemy_uid))
 	game.next_item_uid = int(snapshot.get("next_item_uid", game.next_item_uid))
+	if snapshot.has("floor_enemy_spawn_types"):
+		game.floor_enemy_spawn_types = Array(snapshot["floor_enemy_spawn_types"])
 	var hero_states: Array = Array(snapshot.get("heroes", []))
 	if not hero_states.is_empty() and game.heroes.is_empty():
 		game.spawn_heroes()
@@ -330,6 +350,11 @@ static func apply_network_snapshot(game: Node, snapshot: Dictionary) -> void:
 	game.update_hud()
 	game.update_network_ui()
 	game.queue_redraw()
+	if snapshot.has("network_simulation_seed"):
+		game.network_simulation_seed = int(snapshot["network_simulation_seed"])
+		game.rng.seed = game.network_simulation_seed
+	if snapshot.has("rng_state"):
+		game.rng.state = int(snapshot["rng_state"])
 
 static func process_client_pending_local_requests(game: Node) -> void:
 	if game.authoritative_simulation_active():
@@ -456,6 +481,8 @@ static func apply_hero_snapshots(game: Node, hero_states: Array) -> void:
 			if not hero.network_position_initialized or hero.global_position.distance_to(host_position) > 140.0:
 				hero.global_position = host_position
 				hero.network_position_initialized = true
+			else:
+				hero.global_position = hero.global_position.lerp(host_position, 0.45)
 			hero.destination = Vector2(hero_state.get("destination", host_position))
 			hero.move_steps.clear()
 		hero.queue_redraw()
@@ -491,6 +518,8 @@ static func apply_enemy_snapshots(game: Node, enemy_states: Array) -> void:
 		if not enemy.network_position_initialized or enemy.global_position.distance_to(host_position) > 140.0:
 			enemy.global_position = host_position
 			enemy.network_position_initialized = true
+		else:
+			enemy.global_position = enemy.global_position.lerp(host_position, 0.45)
 		enemy.destination = Vector2(enemy_state.get("destination", host_position))
 		enemy.move_steps.clear()
 		if bool(enemy_state.get("death_started", false)):
@@ -526,7 +555,7 @@ static func server_request_world_command(game: Node, hero_index: int, world_posi
 	if not peer_can_control_hero(game, sender_peer_id, hero_index):
 		return
 	game.execute_world_command_for_hero(hero_index, world_position, false)
-	broadcast_network_snapshot(game, false)
+	game.broadcast_network_world_command(hero_index, world_position)
 
 static func server_request_network_full_snapshot(game: Node) -> void:
 	if not game.multiplayer.is_server():
@@ -542,8 +571,13 @@ static func server_request_room_loot(game: Node, hero_index: int, room_coord: Ve
 	var sender_peer_id: int = game.multiplayer.get_remote_sender_id()
 	if not peer_can_control_hero(game, sender_peer_id, hero_index):
 		return
-	game.request_room_loot_for_hero(hero_index, room_coord, false)
-	broadcast_network_snapshot(game, false)
+	game.execute_room_loot_command(hero_index, room_coord)
+	game.broadcast_network_room_loot_command(hero_index, room_coord)
+
+static func receive_network_room_loot_command(game: Node, hero_index: int, room_coord: Vector2i) -> void:
+	if game.authoritative_simulation_active() or game.can_local_control_hero_index(hero_index):
+		return
+	game.execute_room_loot_command(hero_index, room_coord)
 
 static func server_request_room_light(game: Node, hero_index: int, room_coord: Vector2i) -> void:
 	if not game.multiplayer.is_server():
@@ -560,8 +594,13 @@ static func server_request_room_construction(game: Node, hero_index: int, room_c
 	var sender_peer_id: int = game.multiplayer.get_remote_sender_id()
 	if not peer_can_control_hero(game, sender_peer_id, hero_index):
 		return
-	game.request_room_construction_for_hero(hero_index, room_coord, module_type)
-	broadcast_network_snapshot(game)
+	if game.execute_room_construction_command(hero_index, room_coord, module_type):
+		game.broadcast_network_room_construction_command(hero_index, room_coord, module_type)
+
+static func receive_network_room_construction_command(game: Node, hero_index: int, room_coord: Vector2i, module_type: String) -> void:
+	if game.authoritative_simulation_active() or game.can_local_control_hero_index(hero_index):
+		return
+	game.execute_room_construction_command(hero_index, room_coord, module_type)
 
 static func server_request_room_merchant_action(game: Node, hero_index: int, room_coord: Vector2i, action_kind: String, item_or_offer_uid: int) -> void:
 	if not game.multiplayer.is_server():
@@ -646,6 +685,7 @@ static func server_request_pick_up_crystal(game: Node, hero_index: int) -> void:
 	game.crystal_ground_room = game.INVALID_ROOM
 	game.crystal_prompt_visible = false
 	game.crystal_pressure_timer_left = game.CRYSTAL_PRESSURE_PICKUP_DELAY
+	game.crystal_pressure_event_index = 0
 	game.update_hero_combat_movement_mode()
 	game.status_message = "%s picked up the crystal. Dark rooms will agitate every %.0f seconds." % [hero.hero_name, game.CRYSTAL_PRESSURE_INTERVAL]
 	game.update_hud()

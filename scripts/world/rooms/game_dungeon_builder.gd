@@ -94,6 +94,7 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 	game.crystal_ground_room = game.crystal_room
 	game.crystal_prompt_visible = false
 	game.crystal_pressure_timer_left = 0.0
+	game.crystal_pressure_event_index = 0
 	game.door_wave_auto_heal_pending = false
 	game.door_wave_healing_active = false
 	game.door_wave_major_payout_pending = false
@@ -446,6 +447,8 @@ static func create_room(game: Node, room_coord: Vector2i, template_id: String, d
 		"research_crystal_spent": false,
 		"research_obelisk_health": 0.0,
 		"neurostun_time_left": 0.0,
+		"blight_pulse_time_left": 0.0,
+		"blight_pulse_strength": 0.0,
 		"warning_timer_left": 0.0,
 		"color_filter_id": "",
 		"ground_items": [],

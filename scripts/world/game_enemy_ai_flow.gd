@@ -17,26 +17,32 @@ const TARGET_CATEGORY_MAJOR_MODULE: String = "major_module"
 const TARGET_CATEGORY_MINOR_MODULE: String = "minor_module"
 const TARGET_CATEGORY_GENERATOR_CRYSTAL: String = "generator_crystal"
 const TARGET_CATEGORY_HOSTILE_ENEMY: String = "hostile_enemy"
-const ROOM_PATH_DISTANCE_CACHE_FRAME_META: StringName = &"enemy_room_path_distance_cache_frame"
-const ROOM_PATH_DISTANCE_CACHE_VALUE_META: StringName = &"enemy_room_path_distance_cache_value"
+const ROOM_PATH_CACHE_FRAME_META: StringName = &"enemy_room_path_cache_frame"
+const ROOM_PATH_CACHE_VALUE_META: StringName = &"enemy_room_path_cache_value"
 
-static func room_path_distance_cached(game: Node, from_room: Vector2i, to_room: Vector2i) -> int:
-	if from_room == to_room:
-		return 0
+static func room_path_cached(game: Node, from_room: Vector2i, to_room: Vector2i) -> Array[Vector2i]:
 	var physics_frame: int = Engine.get_physics_frames()
-	var cache_frame: int = int(game.get_meta(ROOM_PATH_DISTANCE_CACHE_FRAME_META, -1))
+	var cache_frame: int = int(game.get_meta(ROOM_PATH_CACHE_FRAME_META, -1))
 	var cache: Dictionary = {}
 	if cache_frame == physics_frame:
-		cache = game.get_meta(ROOM_PATH_DISTANCE_CACHE_VALUE_META, {})
+		cache = game.get_meta(ROOM_PATH_CACHE_VALUE_META, {})
 	else:
-		game.set_meta(ROOM_PATH_DISTANCE_CACHE_FRAME_META, physics_frame)
+		game.set_meta(ROOM_PATH_CACHE_FRAME_META, physics_frame)
 	var cache_key: String = "%d:%d|%d:%d" % [from_room.x, from_room.y, to_room.x, to_room.y]
 	if cache.has(cache_key):
-		return int(cache[cache_key])
-	var distance_value: int = int(game.room_path_distance(from_room, to_room))
-	cache[cache_key] = distance_value
-	game.set_meta(ROOM_PATH_DISTANCE_CACHE_VALUE_META, cache)
-	return distance_value
+		var cached_path: Array = cache[cache_key]
+		var typed_path: Array[Vector2i] = []
+		for room_coord_variant in cached_path:
+			typed_path.append(Vector2i(room_coord_variant))
+		return typed_path
+	var path: Array[Vector2i] = game.find_path(from_room, to_room, true)
+	cache[cache_key] = path
+	game.set_meta(ROOM_PATH_CACHE_VALUE_META, cache)
+	return path
+
+static func room_path_distance_cached(game: Node, from_room: Vector2i, to_room: Vector2i) -> int:
+	var path: Array[Vector2i] = room_path_cached(game, from_room, to_room)
+	return path.size() - 1 if not path.is_empty() else 99999
 
 static func targetable_room_actors(game: Node, room_coord: Vector2i, strict: bool) -> Array:
 	if room_coord == game.INVALID_ROOM:
@@ -56,8 +62,15 @@ static func targetable_room_actors(game: Node, room_coord: Vector2i, strict: boo
 		room_actors.append(summon)
 	return room_actors
 
-static func adaptive_enemy_ai_think_interval(game: Node, _active_enemy_count: int) -> float:
+static func fixed_enemy_ai_think_interval(game: Node) -> float:
 	return float(game.ENEMY_AI_THINK_INTERVAL)
+
+static func initial_enemy_think_delay(enemy: Variant, think_interval: float) -> float:
+	if enemy == null or not is_instance_valid(enemy) or think_interval <= 0.0:
+		return 0.0
+	var enemy_uid: int = maxi(int(enemy.enemy_uid), 0)
+	var phase_bucket: int = posmod(enemy_uid * 37 + 11, 101)
+	return think_interval * float(phase_bucket) / 101.0
 
 static func deterministic_ai_budget_defer(enemy: Variant, defer_min: float, defer_max: float) -> float:
 	if defer_max <= defer_min:
@@ -108,42 +121,53 @@ static func hostile_enemy_candidate_for_converted(game: Node, converted_enemy: V
 		return false
 	return true
 
-static func apply_hero_enemy_auras(game: Node, active_enemies: Array) -> void:
-	for enemy in active_enemies:
+static func refresh_room_status_effects(game: Node) -> void:
+	var effects_by_room: Dictionary = {}
+	for room_coord_variant in game.rooms.keys():
+		var room_coord: Vector2i = Vector2i(room_coord_variant)
+		var room: Dictionary = game.rooms[room_coord]
+		effects_by_room[room_coord] = {
+			"hero_attack_damage_multiplier": 1.0,
+			"hostile_enemy_damage_taken_multiplier": 1.0,
+			"enemy_move_speed_multiplier": 0.58 if float(room.get("neurostun_time_left", 0.0)) > 0.0 else 1.0,
+			"has_targetable_hero": false,
+		}
+	for hero in game.heroes:
+		if not game.hero_is_active(hero) or not hero_is_enemy_targetable(game, hero):
+			continue
+		var hero_room: Vector2i = hero_room_for_enemy_targeting(game, hero)
+		if effects_by_room.has(hero_room):
+			effects_by_room[hero_room]["has_targetable_hero"] = true
+	for enemy_variant in game.enemies:
+		var enemy: Variant = enemy_variant
+		if not game.enemy_is_active(enemy) or enemy_is_converted(enemy):
+			continue
+		var room_coord: Vector2i = Vector2i(enemy.current_room)
+		if not effects_by_room.has(room_coord):
+			continue
+		var effects: Dictionary = effects_by_room[room_coord]
+		var enemy_def: Dictionary = GAME_ENEMY_DEFS.enemy_role_definition(enemy.enemy_role)
+		if maxf(float(enemy_def.get("hero_aura_radius", 0.0)), 0.0) > 0.0:
+			effects["hero_attack_damage_multiplier"] = minf(float(effects["hero_attack_damage_multiplier"]), clampf(float(enemy_def.get("hero_aura_attack_damage_multiplier", 1.0)), 0.1, 1.0))
+		if not (enemy.has_method("has_active_status_effect") and bool(enemy.has_active_status_effect())) and maxf(float(enemy_def.get("ally_aura_radius", 0.0)), 0.0) > 0.0:
+			effects["hostile_enemy_damage_taken_multiplier"] = minf(float(effects["hostile_enemy_damage_taken_multiplier"]), clampf(float(enemy_def.get("ally_aura_damage_taken_multiplier", 1.0)), 0.1, 1.0))
+		effects_by_room[room_coord] = effects
+	for room_coord_variant in effects_by_room.keys():
+		var effects: Dictionary = effects_by_room[room_coord_variant]
+		if bool(effects["has_targetable_hero"]):
+			effects["enemy_move_speed_multiplier"] = float(effects["enemy_move_speed_multiplier"]) * 0.72
+		effects.erase("has_targetable_hero")
+		effects_by_room[room_coord_variant] = effects
+	game.room_status_effects_by_room = effects_by_room
+	for enemy_variant in game.enemies:
+		var enemy: Variant = enemy_variant
+		if not game.enemy_is_active(enemy) or not enemy.has_method("clear_allied_defence_aura"):
+			continue
+		enemy.clear_allied_defence_aura()
 		if enemy_is_converted(enemy):
 			continue
-		var enemy_def: Dictionary = GAME_ENEMY_DEFS.enemy_role_definition(enemy.enemy_role)
-		var aura_radius: float = maxf(float(enemy_def.get("hero_aura_radius", 0.0)), 0.0)
-		if aura_radius <= 0.0:
-			continue
-		for hero in game.heroes:
-			if not game.hero_is_active(hero) or not hero.has_method("apply_enemy_aura"):
-				continue
-			if Vector2i(hero.current_room) != Vector2i(enemy.current_room) or hero.global_position.distance_to(enemy.global_position) > aura_radius:
-				continue
-			hero.apply_enemy_aura(float(enemy_def.get("hero_aura_attack_damage_multiplier", 1.0)), 0.5)
-
-static func apply_enemy_defensive_auras(game: Node, active_enemies: Array) -> void:
-	for ally in active_enemies:
-		if ally.has_method("clear_allied_defence_aura"):
-			ally.clear_allied_defence_aura()
-	for enemy in active_enemies:
-		if enemy_is_converted(enemy):
-			continue
-		if enemy.has_method("has_active_status_effect") and bool(enemy.has_active_status_effect()):
-			continue
-		var enemy_def: Dictionary = GAME_ENEMY_DEFS.enemy_role_definition(enemy.enemy_role)
-		var aura_radius: float = maxf(float(enemy_def.get("ally_aura_radius", 0.0)), 0.0)
-		if aura_radius <= 0.0:
-			continue
-		var damage_taken_multiplier: float = float(enemy_def.get("ally_aura_damage_taken_multiplier", 1.0))
-		for ally in active_enemies:
-			if ally == enemy or enemy_is_converted(ally):
-				continue
-			if Vector2i(ally.current_room) != Vector2i(enemy.current_room) or ally.global_position.distance_to(enemy.global_position) > aura_radius:
-				continue
-			if ally.has_method("apply_allied_defence_aura"):
-				ally.apply_allied_defence_aura(damage_taken_multiplier)
+		var effects: Dictionary = game.room_status_effects(Vector2i(enemy.current_room))
+		enemy.apply_allied_defence_aura(float(effects.get("hostile_enemy_damage_taken_multiplier", 1.0)))
 
 static func converted_enemy_is_familiar(converted_enemy: Variant) -> bool:
 	if converted_enemy == null or not is_instance_valid(converted_enemy):
@@ -155,19 +179,27 @@ static func converted_enemy_is_familiar(converted_enemy: Variant) -> bool:
 	return summon_behavior == "familiar_strongest" and summon_card_id != "spiritual_weapon_card"
 
 static func advance_enemy_routes(game: Node, delta: float) -> void:
+	var trace_enabled: bool = bool(game.PERF_TRACE_LOG_ENABLED)
+	var trace_start_us: int = Time.get_ticks_usec() if trace_enabled else 0
 	var active_enemies: Array = []
 	for enemy_variant in game.enemies:
 		if game.enemy_is_active(enemy_variant):
 			active_enemies.append(enemy_variant)
-	apply_hero_enemy_auras(game, active_enemies)
-	apply_enemy_defensive_auras(game, active_enemies)
-	var think_interval: float = adaptive_enemy_ai_think_interval(game, active_enemies.size())
+	if trace_enabled:
+		game.perf_trace_add_us("ai_collect", Time.get_ticks_usec() - trace_start_us)
+		trace_start_us = Time.get_ticks_usec()
+	var think_interval: float = fixed_enemy_ai_think_interval(game)
 	var pathfind_budget: int = maxi(1, int(game.ENEMY_AI_PATHFIND_PER_TICK_BUDGET))
 	var defer_min: float = maxf(float(game.ENEMY_AI_BUDGET_DEFER_MIN), 0.0)
 	var defer_max: float = maxf(float(game.ENEMY_AI_BUDGET_DEFER_MAX), defer_min)
 	for enemy in active_enemies:
+		if trace_enabled:
+			trace_start_us = Time.get_ticks_usec()
 		if enemy.has_method("set_situational_speed_multiplier"):
 			enemy.set_situational_speed_multiplier(enemy_situational_speed_multiplier(game, enemy))
+		if trace_enabled:
+			game.perf_trace_add_us("ai_enemy_state", Time.get_ticks_usec() - trace_start_us)
+			trace_start_us = Time.get_ticks_usec()
 		var cooldown_tick_scale: float = 1.0
 		if enemy.has_method("attack_cooldown_tick_scale"):
 			cooldown_tick_scale = maxf(float(enemy.attack_cooldown_tick_scale()), 0.0)
@@ -194,14 +226,10 @@ static func advance_enemy_routes(game: Node, delta: float) -> void:
 				entered_room = true
 			else:
 				continue
-		var target_needs_refresh: bool = not enemy_is_feared(enemy) and enemy_ai_target_needs_refresh(game, enemy)
-		if target_needs_refresh:
-			enemy.remove_meta(ENEMY_AI_TARGET_CHOICE_META)
-			enemy.set_meta(ENEMY_AI_THINK_TIMER_META, 0.0)
 		var route_update_due: bool = true
 		if think_interval > 0.0:
 			if not enemy.has_meta(ENEMY_AI_THINK_TIMER_META):
-				enemy.set_meta(ENEMY_AI_THINK_TIMER_META, game.rng.randf() * think_interval)
+					enemy.set_meta(ENEMY_AI_THINK_TIMER_META, initial_enemy_think_delay(enemy, think_interval))
 			var think_timer_left: float = maxf(float(enemy.get_meta(ENEMY_AI_THINK_TIMER_META, 0.0)) - delta, 0.0)
 			if think_timer_left > 0.0:
 				enemy.set_meta(ENEMY_AI_THINK_TIMER_META, think_timer_left)
@@ -210,12 +238,24 @@ static func advance_enemy_routes(game: Node, delta: float) -> void:
 				enemy.set_meta(ENEMY_AI_THINK_TIMER_META, think_interval)
 		elif enemy.has_meta(ENEMY_AI_THINK_TIMER_META):
 			enemy.remove_meta(ENEMY_AI_THINK_TIMER_META)
-		var target_choice: Dictionary = {}
+		var target_choice: Dictionary = enemy_target_choice(game, enemy)
+		var should_refresh_target: bool = entered_room or route_update_due or target_choice.is_empty()
+		var target_needs_refresh: bool = false
+		if should_refresh_target and not enemy_is_feared(enemy):
+			target_needs_refresh = enemy_ai_target_needs_refresh(game, enemy)
+			if target_needs_refresh:
+				enemy.remove_meta(ENEMY_AI_TARGET_CHOICE_META)
+				target_choice = {}
+		if trace_enabled:
+			game.perf_trace_add_us("ai_target_validation", Time.get_ticks_usec() - trace_start_us)
+			trace_start_us = Time.get_ticks_usec()
 		if not enemy_is_feared(enemy):
-			target_choice = enemy_target_choice(game, enemy)
-			if target_needs_refresh or (route_update_due and target_choice.is_empty()):
+			if target_needs_refresh or (should_refresh_target and target_choice.is_empty()):
 				target_choice = calculate_enemy_target_choice(game, enemy)
 				enemy.set_meta(ENEMY_AI_TARGET_CHOICE_META, target_choice)
+		if trace_enabled:
+			game.perf_trace_add_us("ai_target_selection", Time.get_ticks_usec() - trace_start_us)
+			trace_start_us = Time.get_ticks_usec()
 		var target_room: Vector2i = target_room_for_enemy(game, enemy, target_choice)
 		if target_room == game.INVALID_ROOM:
 			enemy.move_steps.clear()
@@ -247,7 +287,14 @@ static func advance_enemy_routes(game: Node, delta: float) -> void:
 			enemy.move_steps.clear()
 			resolve_enemy_attack(game, enemy, target_choice)
 			continue
-		if route_update_due and (enemy.move_steps.is_empty() or not game.enemy_move_plan_matches(enemy, target_room, target_position)):
+		var move_plan_reaches_target_room: bool = false
+		if not enemy.move_steps.is_empty():
+			var final_step: Dictionary = enemy.move_steps[enemy.move_steps.size() - 1]
+			move_plan_reaches_target_room = Vector2i(final_step.get("room", game.INVALID_ROOM)) == target_room
+		var move_plan_needs_refresh: bool = enemy.move_steps.is_empty() or not move_plan_reaches_target_room
+		if enemy.current_room == target_room:
+			move_plan_needs_refresh = move_plan_needs_refresh or not game.enemy_move_plan_matches(enemy, target_room, target_position)
+		if route_update_due and move_plan_needs_refresh:
 			if enemy.current_room == target_room:
 				var target_room_path: Array[Vector2i] = [target_room]
 				game.issue_enemy_steps(enemy, game.build_steps_for_path(target_room_path, enemy.global_position, target_position))
@@ -255,13 +302,15 @@ static func advance_enemy_routes(game: Node, delta: float) -> void:
 				if pathfind_budget <= 0 and not entered_room:
 					enemy.set_meta(ENEMY_AI_THINK_TIMER_META, deterministic_ai_budget_defer(enemy, defer_min, defer_max))
 					continue
-				var path: Array[Vector2i] = game.find_path(enemy.current_room, target_room, true)
+				var path: Array[Vector2i] = room_path_cached(game, enemy.current_room, target_room)
 				if not entered_room:
 					pathfind_budget -= 1
 				if path.size() <= 1:
 					enemy.move_steps.clear()
 					continue
 				game.issue_enemy_steps(enemy, game.build_steps_for_path(path, enemy.global_position, target_position))
+		if trace_enabled:
+			game.perf_trace_add_us("ai_navigation", Time.get_ticks_usec() - trace_start_us)
 		if enemy.move_steps.is_empty():
 			continue
 		var next_step: Dictionary = enemy.move_steps[0]
@@ -290,7 +339,7 @@ static func enemy_room_goal_position(game: Node, enemy: Variant, room_coord: Vec
 		return game.clamp_point_to_room(enemy.global_position, room_coord)
 	if room_coord == target_room:
 		return enemy_target_position(game, enemy)
-	var path: Array[Vector2i] = game.find_path(room_coord, target_room, true)
+	var path: Array[Vector2i] = room_path_cached(game, room_coord, target_room)
 	if path.size() > 1:
 		return game.doorway_navigation_position(room_coord, path[1])
 	return game.clamp_point_to_room(enemy.global_position, room_coord)
@@ -620,11 +669,10 @@ static func enemy_situational_speed_multiplier(game: Node, enemy: Variant) -> fl
 	var room_coord: Vector2i = enemy.current_room
 	var enemy_def: Dictionary = GAME_ENEMY_DEFS.enemy_role_definition(enemy.enemy_role)
 	var ignore_room_opponent_slowdown: bool = bool(enemy_def.get("ignore_room_opponent_slowdown", false))
-	var has_opponents: bool = room_coord != game.INVALID_ROOM and not enemy_targetable_heroes_in_room(game, room_coord).is_empty()
-	var multiplier: float = 1.0 if ignore_room_opponent_slowdown or not has_opponents else 0.72
-	if game.rooms.has(room_coord) and float(game.rooms[room_coord].get("neurostun_time_left", 0.0)) > 0.0:
-		multiplier *= 0.58
-	return multiplier
+	var effects: Dictionary = game.room_status_effects(room_coord)
+	if ignore_room_opponent_slowdown:
+		return 1.0
+	return float(effects.get("enemy_move_speed_multiplier", 1.0))
 
 static func major_module_target_position(game: Node, room_coord: Vector2i) -> Vector2:
 	if not game.rooms.has(room_coord):

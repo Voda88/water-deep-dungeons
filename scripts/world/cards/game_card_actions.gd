@@ -2019,7 +2019,7 @@ static func cast_haste_spell(game: Node, hero: Variant, target_room: Vector2i, h
 			continue
 		if not game.hero_is_active(room_hero):
 			continue
-		var hero_attack_damage: float = float(room_hero.current_attack_damage())
+		var hero_attack_damage: float = game.hero_room_attack_damage(room_hero)
 		if best_target == null or hero_attack_damage > best_attack_damage:
 			best_target = room_hero
 			best_attack_damage = hero_attack_damage

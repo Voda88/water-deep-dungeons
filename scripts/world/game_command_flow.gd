@@ -225,7 +225,8 @@ static func try_open_pending_room_loot_request(game: Node, hero: Variant) -> boo
 		return false
 	clear_pending_room_loot_request(game, hero.hero_index)
 	hero.player_command_locked = false
-	game.open_room_loot_inventory(hero, room_coord)
+	if not game.multiplayer_session_active() or game.can_local_control_hero_index(hero.hero_index):
+		game.open_room_loot_inventory(hero, room_coord)
 	return true
 
 static func try_execute_pending_room_action_request(game: Node, hero: Variant) -> bool:
@@ -515,7 +516,7 @@ static func handle_world_tap(game: Node, world_position: Vector2, screen_positio
 		return
 	execute_world_command_for_hero(game, game.selected_hero_index, world_position, true)
 	if game.multiplayer_session_active() and game.multiplayer.is_server():
-		game.broadcast_network_snapshot()
+		game.broadcast_network_world_command(game.selected_hero_index, world_position)
 
 static func execute_world_command_for_hero(game: Node, hero_index: int, world_position: Vector2, update_local_selection: bool) -> void:
 	if hero_index < 0 or hero_index >= game.heroes.size():
@@ -570,6 +571,34 @@ static func execute_world_command_for_hero(game: Node, hero_index: int, world_po
 static func request_room_loot(game: Node, room_coord: Vector2i) -> void:
 	request_room_loot_for_hero(game, game.selected_hero_index, room_coord)
 
+static func execute_room_loot_command(game: Node, hero_index: int, room_coord: Vector2i) -> void:
+	if hero_index < 0 or hero_index >= game.heroes.size():
+		return
+	var hero: Variant = game.heroes[hero_index]
+	if hero == null or not is_instance_valid(hero):
+		return
+	if not game.rooms.has(room_coord) or not game.rooms[room_coord]["opened"]:
+		return
+	clear_pending_room_action_request(game, hero.hero_index)
+	var command_room: Vector2i = game.interrupt_hero_orders(hero)
+	if command_room == room_coord:
+		if not game.multiplayer_session_active() or game.can_local_control_hero_index(hero.hero_index):
+			game.open_room_loot_inventory(hero, room_coord)
+		return
+	var path: Array[Vector2i] = game.find_path(command_room, room_coord, true)
+	if path.size() <= 1:
+		game.status_message = "No open route to that room's loot."
+		game.update_hud()
+		game.queue_redraw()
+		return
+	game.pending_room_loot_requests[hero.hero_index] = {
+		"room": room_coord,
+	}
+	game.issue_hero_steps(hero, game.build_steps_for_path(path, hero.global_position, game.loot_focus_position(room_coord)))
+	game.status_message = "%s moving to loot %s." % [hero.hero_name, game.room_title(room_coord)]
+	game.update_hud()
+	game.queue_redraw()
+
 static func request_room_loot_for_hero(game: Node, hero_index: int, room_coord: Vector2i, open_inventory_on_arrival: bool = true) -> void:
 	if hero_index < 0 or hero_index >= game.heroes.size():
 		return
@@ -579,35 +608,10 @@ static func request_room_loot_for_hero(game: Node, hero_index: int, room_coord: 
 	if not game.rooms.has(room_coord) or not game.rooms[room_coord]["opened"]:
 		return
 	if game.multiplayer_session_active() and not game.authoritative_simulation_active():
-		clear_pending_room_action_request(game, hero.hero_index)
-		game.pending_room_loot_requests[hero.hero_index] = {
-			"room": room_coord,
-		}
+		execute_room_loot_command(game, hero_index, room_coord)
 		game.server_request_room_loot.rpc_id(game.NETWORK_HOST_PEER_ID, hero_index, room_coord)
-		game.status_message = "%s moving to loot %s." % [hero.hero_name, game.room_title(room_coord)]
-		game.update_hud()
-		game.queue_redraw()
 		return
-	clear_pending_room_action_request(game, hero.hero_index)
-	var command_room: Vector2i = game.interrupt_hero_orders(hero)
-	if command_room == room_coord:
-		if open_inventory_on_arrival:
-			game.open_room_loot_inventory(hero, room_coord)
-		return
-	var path: Array[Vector2i] = game.find_path(command_room, room_coord, true)
-	if path.size() <= 1:
-		game.status_message = "No open route to that room's loot."
-		game.update_hud()
-		game.queue_redraw()
-		return
-	if open_inventory_on_arrival:
-		game.pending_room_loot_requests[hero.hero_index] = {
-			"room": room_coord,
-		}
-	game.issue_hero_steps(hero, game.build_steps_for_path(path, hero.global_position, game.loot_focus_position(room_coord)))
-	game.status_message = "%s moving to loot %s." % [hero.hero_name, game.room_title(room_coord)]
-	game.update_hud()
-	game.queue_redraw()
+	execute_room_loot_command(game, hero_index, room_coord)
 
 static func hero_ready_for_room_action(game: Node, hero: Variant, room_coord: Vector2i) -> bool:
 	return hero != null and is_instance_valid(hero) and game.rooms.has(room_coord) and hero.current_room == room_coord and hero.pending_room == game.HERO_INVALID_ROOM and hero.is_idle() and hero.move_steps.is_empty() and game.room_rect(room_coord).has_point(hero.global_position)
@@ -733,6 +737,16 @@ static func request_room_research_for_hero(game: Node, hero_index: int, room_coo
 static func request_room_construction(game: Node, room_coord: Vector2i, module_type: String) -> bool:
 	return request_room_construction_for_hero(game, game.selected_hero_index, room_coord, module_type)
 
+static func execute_room_construction_command(game: Node, hero_index: int, room_coord: Vector2i, module_type: String) -> bool:
+	if hero_index < 0 or hero_index >= game.heroes.size():
+		return false
+	var hero: Variant = game.heroes[hero_index]
+	if hero == null or not is_instance_valid(hero):
+		return false
+	if hero_ready_for_room_action(game, hero, room_coord):
+		return game.queue_room_construction(room_coord, module_type)
+	return request_deferred_room_action_for_hero(game, hero_index, room_coord, "build", module_type)
+
 static func request_room_construction_for_hero(game: Node, hero_index: int, room_coord: Vector2i, module_type: String) -> bool:
 	if hero_index < 0 or hero_index >= game.heroes.size():
 		return false
@@ -740,14 +754,11 @@ static func request_room_construction_for_hero(game: Node, hero_index: int, room
 	if hero == null or not is_instance_valid(hero):
 		return false
 	if game.multiplayer_session_active() and not game.authoritative_simulation_active():
-		game.server_request_room_construction.rpc_id(game.NETWORK_HOST_PEER_ID, hero_index, room_coord, module_type)
-		game.status_message = "%s moving to build in %s." % [hero.hero_name, game.room_title(room_coord)]
-		game.update_hud()
-		game.queue_redraw()
-		return true
-	if hero_ready_for_room_action(game, hero, room_coord):
-		return game.queue_room_construction(room_coord, module_type)
-	return request_deferred_room_action_for_hero(game, hero_index, room_coord, "build", module_type)
+		var accepted: bool = execute_room_construction_command(game, hero_index, room_coord, module_type)
+		if accepted:
+			game.server_request_room_construction.rpc_id(game.NETWORK_HOST_PEER_ID, hero_index, room_coord, module_type)
+		return accepted
+	return execute_room_construction_command(game, hero_index, room_coord, module_type)
 
 static func request_room_merchant_buy(game: Node, room_coord: Vector2i, offer_uid: int) -> bool:
 	return request_room_merchant_buy_for_hero(game, game.selected_hero_index, room_coord, offer_uid)

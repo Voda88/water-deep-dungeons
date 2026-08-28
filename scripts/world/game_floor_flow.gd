@@ -803,6 +803,7 @@ static func advance_wave_recovery(game: Node, delta: float) -> void:
 	var dismissed_summons: int = dismiss_temporary_summons_on_calm(game) if calm_now else 0
 	if calm_now and bool(game.door_wave_spawns_incoming):
 		game.door_wave_spawns_incoming = false
+		game.broadcast_network_snapshot(true)
 	var has_pending_room_rewards: bool = not game.pending_door_open_income.is_empty()
 	var started_recovery_now: bool = false
 	if calm_now and game.door_wave_auto_heal_pending:

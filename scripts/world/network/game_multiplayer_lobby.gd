@@ -444,6 +444,8 @@ static func start_host_session(game: Node) -> void:
 		game.update_hud()
 		return
 	game.multiplayer.multiplayer_peer = peer
+	game.network_simulation_seed = game.rng.randi()
+	game.rng.seed = game.network_simulation_seed
 	redistribute_multiplayer_hero_owners(game)
 	if not game.lobby_game_started:
 		sync_lobby_peer_ready_states(game, true)

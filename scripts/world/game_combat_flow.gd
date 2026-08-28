@@ -41,6 +41,25 @@ const PHYSICAL_CARD_COMBO_FLATFOOTED_MOVE_MULTIPLIER: float = 0.82
 const PHYSICAL_CARD_COMBO_FLATFOOTED_ATTACK_SPEED_MULTIPLIER: float = 0.82
 const PHYSICAL_CARD_COMBO_FLATFOOTED_DAMAGE_TAKEN_MULTIPLIER: float = 1.5
 const CLERIC_MEND_REPAIR_PER_SECOND: float = 5.0
+const BLIGHT_GAS_PULSE_DURATION: float = 0.52
+
+static func door_wave_spawn_rng(game: Node, room_coord: Vector2i, spawn_order: int) -> RandomNumberGenerator:
+	var spawn_rng: RandomNumberGenerator = RandomNumberGenerator.new()
+	var seed_text: String = "%d:%d:%d:%d:%d:%d" % [
+		int(game.network_simulation_seed),
+		int(game.floor_index),
+		int(game.wave_index),
+		room_coord.x,
+		room_coord.y,
+		spawn_order,
+	]
+	spawn_rng.seed = int(hash(seed_text))
+	return spawn_rng
+
+static func crystal_pressure_spawn_rng(game: Node, event_index: int) -> RandomNumberGenerator:
+	var spawn_rng: RandomNumberGenerator = RandomNumberGenerator.new()
+	spawn_rng.seed = int(hash("%d:%d:%d" % [int(game.network_simulation_seed), int(game.floor_index), event_index]))
+	return spawn_rng
 
 static func hero_is_combo_class(game: Node, hero: Variant) -> bool:
 	return hero != null and is_instance_valid(hero) and String(hero.hero_class_id) == game.HERO_CLASS_ROGUE
@@ -442,12 +461,13 @@ static func launch_wave(game: Node, entered_room: Vector2i) -> void:
 	var chosen_rooms: Array[Vector2i] = []
 	var delayed_room_order: int = 0
 	var planned_spawn_batches: int = 0
+	var wave_rng: RandomNumberGenerator = door_wave_spawn_rng(game, entered_room, -1)
 	if dark_rooms.has(entered_room):
 		chosen_rooms.append(entered_room)
 		dark_rooms.erase(entered_room)
 		var bonus_spawn_room_count: int = mini(wave_strength_bonus, dark_rooms.size())
 		while chosen_rooms.size() < 1 + bonus_spawn_room_count and not dark_rooms.is_empty():
-			var picked_room: Vector2i = pick_spawn_room(game, dark_rooms, priority_dark_rooms)
+			var picked_room: Vector2i = pick_spawn_room(game, dark_rooms, priority_dark_rooms, wave_rng)
 			if picked_room == game.INVALID_ROOM:
 				break
 			chosen_rooms.append(picked_room)
@@ -471,7 +491,7 @@ static func launch_wave(game: Node, entered_room: Vector2i) -> void:
 		var spawn_room_count: int = mini(1 + wave_strength_bonus, dark_room_count)
 		var total_wave_points: int = base_wave_points + wave_strength_bonus
 		while chosen_rooms.size() < spawn_room_count and not dark_rooms.is_empty():
-			var picked_room: Vector2i = pick_spawn_room(game, dark_rooms, priority_dark_rooms)
+			var picked_room: Vector2i = pick_spawn_room(game, dark_rooms, priority_dark_rooms, wave_rng)
 			if picked_room == game.INVALID_ROOM:
 				break
 			chosen_rooms.append(picked_room)
@@ -535,14 +555,15 @@ static func advance_single_wave_spawn_build(game: Node, pending_build: Dictionar
 		return false
 	var phase: String = String(pending_build.get("phase", "plan"))
 	if phase == "plan":
-		var spawn_plan: Array[String] = build_enemy_spawn_plan(game, maxi(int(pending_build.get("wave_points", 0)), 1), false)
+		var spawn_rng: RandomNumberGenerator = door_wave_spawn_rng(game, room_coord, int(pending_build.get("spawn_order", 0)))
+		var spawn_plan: Array[String] = build_enemy_spawn_plan(game, maxi(int(pending_build.get("wave_points", 0)), 1), false, spawn_rng)
 		if spawn_plan.is_empty():
 			return false
 		pending_build["spawn_plan"] = spawn_plan
 		pending_build["positions"] = []
-		pending_build["cluster_anchor"] = centered_spawn_anchor(game, room_coord)
+		pending_build["cluster_anchor"] = centered_spawn_anchor(game, room_coord, spawn_rng)
 		pending_build["cluster_radius"] = spawn_cluster_radius_for_room(game, room_coord, spawn_plan.size())
-		pending_build["cluster_base_angle"] = game.rng.randf() * TAU
+		pending_build["cluster_base_angle"] = spawn_rng.randf() * TAU
 		pending_build["phase"] = "positions"
 		return true
 	var spawn_plan_untyped: Array = Array(pending_build.get("spawn_plan", []))
@@ -829,35 +850,39 @@ static func trigger_crystal_pressure(game: Node) -> void:
 	for room_coord in dark_rooms:
 		if bool(game.rooms[room_coord].get("feature_spawn_priority", false)):
 			priority_dark_rooms.append(room_coord)
-	var chosen_room: Vector2i = pick_spawn_room(game, dark_rooms, priority_dark_rooms)
+	var pressure_rng: RandomNumberGenerator = crystal_pressure_spawn_rng(game, game.crystal_pressure_event_index)
+	game.crystal_pressure_event_index += 1
+	var chosen_room: Vector2i = pick_spawn_room(game, dark_rooms, priority_dark_rooms, pressure_rng)
 	if chosen_room == game.INVALID_ROOM:
-		chosen_room = dark_rooms[game.rng.randi_range(0, dark_rooms.size() - 1)]
+		chosen_room = dark_rooms[pressure_rng.randi_range(0, dark_rooms.size() - 1)]
 	var pressure_spawn_points: int = game.CRYSTAL_PRESSURE_ENEMIES_PER_ROOM
-	var queued_count: int = queue_pressure_spawn(game, chosen_room, pressure_spawn_points, remaining_capacity)
+	var queued_count: int = queue_pressure_spawn(game, chosen_room, pressure_spawn_points, remaining_capacity, pressure_rng)
 	game.crystal_pressure_timer_left = crystal_pressure_interval_for_dark_room_count(game, dark_rooms.size())
 	if queued_count <= 0:
 		return
 	game.status_message = "The crystal agitates %s." % game.room_title(chosen_room)
 	game.update_hud()
 
-static func pick_spawn_room(game: Node, dark_rooms: Array[Vector2i], priority_dark_rooms: Array[Vector2i]) -> Vector2i:
+static func pick_spawn_room(game: Node, dark_rooms: Array[Vector2i], priority_dark_rooms: Array[Vector2i], random_source: RandomNumberGenerator = null) -> Vector2i:
 	if dark_rooms.is_empty():
 		return game.INVALID_ROOM
-	if not priority_dark_rooms.is_empty() and game.rng.randf() < 0.7:
-		return priority_dark_rooms[game.rng.randi_range(0, priority_dark_rooms.size() - 1)]
-	return dark_rooms[game.rng.randi_range(0, dark_rooms.size() - 1)]
+	var spawn_rng: RandomNumberGenerator = random_source if random_source != null else game.rng
+	if not priority_dark_rooms.is_empty() and spawn_rng.randf() < 0.7:
+		return priority_dark_rooms[spawn_rng.randi_range(0, priority_dark_rooms.size() - 1)]
+	return dark_rooms[spawn_rng.randi_range(0, dark_rooms.size() - 1)]
 
-static func queue_pressure_spawn(game: Node, room_coord: Vector2i, count: int, max_spawn_entities: int = -1) -> int:
+static func queue_pressure_spawn(game: Node, room_coord: Vector2i, count: int, max_spawn_entities: int = -1, random_source: RandomNumberGenerator = null) -> int:
 	if not game.rooms.has(room_coord) or count <= 0:
 		return 0
-	var spawn_plan: Array[String] = build_enemy_spawn_plan(game, count, true)
+	var spawn_rng: RandomNumberGenerator = random_source if random_source != null else game.rng
+	var spawn_plan: Array[String] = build_enemy_spawn_plan(game, count, true, spawn_rng)
 	if max_spawn_entities >= 0 and spawn_plan.size() > max_spawn_entities:
 		spawn_plan.resize(max_spawn_entities)
 	if spawn_plan.is_empty():
 		return 0
-	var cluster_anchor: Vector2 = centered_spawn_anchor(game, room_coord)
+	var cluster_anchor: Vector2 = centered_spawn_anchor(game, room_coord, spawn_rng)
 	var cluster_radius: float = spawn_cluster_radius_for_room(game, room_coord, spawn_plan.size())
-	var cluster_base_angle: float = game.rng.randf() * TAU
+	var cluster_base_angle: float = spawn_rng.randf() * TAU
 	var clustered_positions: Array = build_spawn_positions(game, room_coord, spawn_plan.size(), cluster_anchor, cluster_radius, cluster_base_angle)
 	var marker_lead: float = maxf(float(game.WAVE_PRESPAWN_MARKER_LEAD), 0.0)
 	var first_spawn_delay: float = maxf(float(game.CRYSTAL_PRESSURE_WARNING_DURATION), 0.0) + marker_lead
@@ -890,13 +915,14 @@ static func enemy_wave_point_cost(game: Node, enemy_type: String) -> int:
 static func enemy_spawn_weight(game: Node, enemy_type: String, pressure_spawn: bool = false) -> float:
 	return GAME_ENEMY_DEFS.enemy_spawn_weight(enemy_type, pressure_spawn)
 
-static func weighted_enemy_type_choice(game: Node, candidates: Array[String], pressure_spawn: bool = false) -> String:
+static func weighted_enemy_type_choice(game: Node, candidates: Array[String], pressure_spawn: bool = false, random_source: RandomNumberGenerator = null) -> String:
 	if candidates.is_empty():
 		return game.ENEMY_TYPE_ORC
 	var total_weight: float = 0.0
 	for enemy_type in candidates:
 		total_weight += enemy_spawn_weight(game, enemy_type, pressure_spawn)
-	var roll: float = game.rng.randf() * maxf(total_weight, 0.001)
+	var spawn_rng: RandomNumberGenerator = random_source if random_source != null else game.rng
+	var roll: float = spawn_rng.randf() * maxf(total_weight, 0.001)
 	for enemy_type in candidates:
 		roll -= enemy_spawn_weight(game, enemy_type, pressure_spawn)
 		if roll <= 0.0:
@@ -1005,7 +1031,7 @@ static func release_enemy_to_pool(game: Node, enemy: Variant) -> void:
 		enemy.set_physics_process(false)
 	game.enemy_pool_available.append(enemy)
 
-static func build_enemy_spawn_plan(game: Node, budget: int, pressure_spawn: bool = false) -> Array[String]:
+static func build_enemy_spawn_plan(game: Node, budget: int, pressure_spawn: bool = false, random_source: RandomNumberGenerator = null) -> Array[String]:
 	var remaining: int = maxi(1, budget)
 	var plan: Array[String] = []
 	var floor_spawn_candidates: Array[String] = enemy_spawn_candidates_for_floor(game)
@@ -1026,7 +1052,7 @@ static func build_enemy_spawn_plan(game: Node, budget: int, pressure_spawn: bool
 					candidates.append(fallback_enemy_type)
 		if candidates.is_empty():
 			candidates = [game.ENEMY_TYPE_ORC]
-		var chosen_type: String = weighted_enemy_type_choice(game, candidates, pressure_spawn)
+		var chosen_type: String = weighted_enemy_type_choice(game, candidates, pressure_spawn, random_source)
 		var pack_size: int = enemy_pack_size(game, chosen_type)
 		for _pack_index in range(pack_size):
 			plan.append(chosen_type)
@@ -1067,12 +1093,13 @@ static func clamp_point_to_spawn_center_area(game: Node, room_coord: Vector2i, w
 		clampf(world_position.y, center_rect.position.y, center_rect.position.y + center_rect.size.y)
 	)
 
-static func centered_spawn_anchor(game: Node, room_coord: Vector2i) -> Vector2:
+static func centered_spawn_anchor(game: Node, room_coord: Vector2i, random_source: RandomNumberGenerator = null) -> Vector2:
 	var center_anchor: Vector2 = game.room_walkable_center(room_coord)
 	if SPAWN_CENTER_ANCHOR_JITTER <= 0.0:
 		return clamp_point_to_spawn_center_area(game, room_coord, center_anchor)
-	var jitter_angle: float = game.rng.randf() * TAU
-	var jitter_distance: float = game.rng.randf() * SPAWN_CENTER_ANCHOR_JITTER
+	var spawn_rng: RandomNumberGenerator = random_source if random_source != null else game.rng
+	var jitter_angle: float = spawn_rng.randf() * TAU
+	var jitter_distance: float = spawn_rng.randf() * SPAWN_CENTER_ANCHOR_JITTER
 	var jittered_anchor: Vector2 = center_anchor + Vector2(cos(jitter_angle), sin(jitter_angle)) * jitter_distance
 	return clamp_point_to_spawn_center_area(game, room_coord, jittered_anchor)
 
@@ -1507,6 +1534,11 @@ static func process_modules(game: Node, delta: float) -> void:
 		var room: Dictionary = game.rooms[room_coord]
 		var cleric_mender_count: int = int(cleric_menders_by_room.get(room_coord, 0))
 		var room_targetable_enemies: Array = Array(targetable_enemies_by_room.get(room_coord, []))
+		var blight_pulse_was_active: bool = float(room.get("blight_pulse_time_left", 0.0)) > 0.0
+		var blight_pulse_time_left: float = maxf(float(room.get("blight_pulse_time_left", 0.0)) - delta, 0.0)
+		var blight_pulse_progress: float = 1.0 - blight_pulse_time_left / BLIGHT_GAS_PULSE_DURATION
+		room["blight_pulse_time_left"] = blight_pulse_time_left
+		room["blight_pulse_strength"] = sin(PI * clampf(blight_pulse_progress, 0.0, 1.0)) if blight_pulse_time_left > 0.0 else 0.0
 		room["neurostun_time_left"] = maxf(float(room.get("neurostun_time_left", 0.0)) - delta, 0.0)
 		if float(room.get("neurostun_time_left", 0.0)) <= 0.0:
 			room["neurostun_damage_per_second"] = 0.0
@@ -1527,6 +1559,8 @@ static func process_modules(game: Node, delta: float) -> void:
 			apply_cleric_mend_to_room(game, room, delta, cleric_mender_count)
 		if not room["opened"] or not room["lit"]:
 			game.rooms[room_coord] = room
+			if blight_pulse_was_active:
+				game.sync_static_room_instance(room_coord)
 			continue
 		var slot_positions: Array = game.minor_slot_positions(room_coord)
 		for module_index in range(room["minor_modules"].size()):
@@ -1549,7 +1583,6 @@ static func process_modules(game: Node, delta: float) -> void:
 			match module_type:
 				game.MINOR_MODULE_BLIGHT_GAS:
 					var gas_hit: bool = false
-					var gas_visual_target: Variant = module_targets[0] if not module_targets.is_empty() else null
 					var gas_slow_duration: float = 1.4 + float(clampi(game.minor_module_level(module_type), 1, 4)) * 0.2
 					var gas_damage_per_second: float = game.minor_module_damage(module_type)
 					for enemy_variant in module_targets:
@@ -1566,21 +1599,8 @@ static func process_modules(game: Node, delta: float) -> void:
 					if gas_hit:
 						room["neurostun_time_left"] = maxf(float(room.get("neurostun_time_left", 0.0)), gas_slow_duration)
 						room["neurostun_damage_per_second"] = maxf(float(room.get("neurostun_damage_per_second", 0.0)), gas_damage_per_second)
+						room["blight_pulse_time_left"] = BLIGHT_GAS_PULSE_DURATION
 						module_data["cooldown"] = game.minor_module_cooldown(module_type)
-						if gas_visual_target != null and is_instance_valid(gas_visual_target):
-							spawn_module_visual_projectile(game, "gas_glob", slot_position, gas_visual_target.global_position, game.minor_module_color(module_type), 3.8, 980.0)
-						game.projectiles.append({
-							"kind": "gas_pulse",
-							"position": slot_position,
-							"previous": slot_position,
-							"target_position": slot_position,
-							"color": game.minor_module_color(module_type),
-							"radius": 74.0,
-							"impact_radius": 74.0,
-							"lifetime_left": 0.24,
-							"blast_duration": 0.24,
-							"width": 3.0,
-						})
 				game.MINOR_MODULE_RUNEBURST_MORTAR:
 					var mortar_target: Variant = module_targets[0] if not module_targets.is_empty() else null
 					if mortar_target != null:
@@ -1653,6 +1673,8 @@ static func process_modules(game: Node, delta: float) -> void:
 					spawn_projectile(game, slot_position, turret_target, game.minor_module_damage(module_type), game.minor_module_attack_definition(module_type), "Crossbow")
 			room["minor_modules"][module_index] = module_data
 		game.rooms[room_coord] = room
+		if blight_pulse_was_active or float(room.get("blight_pulse_time_left", 0.0)) > 0.0:
+			game.sync_static_room_instance(room_coord)
 
 static func collect_cleric_menders_by_room(game: Node) -> Dictionary:
 	var menders_by_room: Dictionary = {}
@@ -1710,7 +1732,7 @@ static func execute_attack(game: Node, attacker: Variant, target: Variant, attac
 	var target_position: Vector2 = game.clamp_point_to_room(target.global_position, attack_room)
 	var enemy_definition: Dictionary = GAME_ENEMY_DEFS.enemy_role_definition(attacker.enemy_role) if game.is_enemy_actor(attacker) else {}
 	var source_label: String = String(attacker.hero_name) if game.is_hero_actor(attacker) else String(enemy_definition.get("attack_label", String(attacker.enemy_role).capitalize()))
-	var damage: float = float(attacker.current_attack_damage()) if game.is_hero_actor(attacker) else float(attacker.attack_damage)
+	var damage: float = game.hero_room_attack_damage(attacker) if game.is_hero_actor(attacker) else float(attacker.attack_damage)
 	attacker.trigger_attack(target_position, String(definition.get("visual_style", "")))
 	match String(definition.get("delivery", "melee")):
 		"fireball":
@@ -1789,7 +1811,6 @@ static func spawn_projectile(game: Node, origin: Vector2, target: Variant, damag
 	else:
 		apply_projectile_curve(projectile, origin, target_position, float(projectile["speed"]), float(definition.get("projectile_curve_offset", 0.0)))
 	game.projectiles.append(projectile)
-	game.broadcast_network_projectile_visual(projectile)
 
 static func spawn_module_visual_projectile(game: Node, projectile_kind: String, origin: Vector2, target_position: Vector2, color: Color, width: float, speed: float) -> void:
 	if origin.distance_to(target_position) <= 6.0:

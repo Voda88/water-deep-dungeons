@@ -46,6 +46,9 @@ static func current_room_color_filter_id(room: Node) -> String:
 			return "seeded_blue"
 	return ""
 
+static func blight_pulse_strength(room: Node) -> float:
+	return clampf(float(room.runtime_room.get("blight_pulse_strength", 0.0)), 0.0, 1.0)
+
 static func color_filter_preset(filter_id: String) -> Dictionary:
 	return Dictionary(ROOM_COLOR_FILTER_PRESETS.get(filter_id, {}))
 
@@ -157,6 +160,9 @@ static func sync_backdrop_visuals(room: Node) -> void:
 	var palette: Dictionary = room_theme_palette(room, current_theme_id(room), current_lit(room), current_crystal(room))
 	var filter_id: String = current_room_color_filter_id(room)
 	var base_fill: Color = apply_color_filter(Color(palette.get("base_fill", room.PREVIEW_BACKGROUND)), filter_id)
+	var blight_strength: float = blight_pulse_strength(room)
+	if blight_strength > 0.0:
+		base_fill = base_fill.lerp(Color("b9f6b5"), 0.34 * blight_strength)
 	var scry_revealed: bool = bool(room.get("runtime_scry_revealed"))
 	if scry_revealed:
 		base_fill = base_fill.lerp(Color("5ea9d7"), 0.42)
@@ -171,6 +177,9 @@ static func sync_backdrop_visuals(room: Node) -> void:
 static func sync_tilemap_lighting(room: Node) -> void:
 	var lit: bool = current_lit(room)
 	var room_modulate: Color = room_lit_modulate_color(room) if lit else room_dark_modulate_color(room)
+	var blight_strength: float = blight_pulse_strength(room)
+	if blight_strength > 0.0:
+		room_modulate = room_modulate.lerp(Color("c8ffc2"), 0.36 * blight_strength)
 	var scry_revealed: bool = bool(room.get("runtime_scry_revealed"))
 	if scry_revealed:
 		room_modulate = room_modulate.lerp(Color(0.58, 0.86, 1.0, room_modulate.a), 0.38)

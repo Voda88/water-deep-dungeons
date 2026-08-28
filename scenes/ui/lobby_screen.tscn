@@ -17,6 +17,19 @@ anchor_top = 0.05
 anchor_right = 0.96
 anchor_bottom = 0.95
 
+[node name="DebugLink" type="Button" parent="."]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -136.0
+offset_top = 14.0
+offset_right = -18.0
+offset_bottom = 46.0
+grow_horizontal = 0
+theme_override_font_sizes/font_size = 14
+flat = true
+text = "Debug"
+
 [node name="RootVBox" type="VBoxContainer" parent="Panel"]
 theme_override_constants/separation = 10
 
@@ -144,3 +157,49 @@ text = "Load Game"
 custom_minimum_size = Vector2(168, 44)
 theme_override_font_sizes/font_size = 18
 text = "Close Lobby"
+
+[node name="DebugView" type="ColorRect" parent="."]
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0.03, 0.06, 0.08, 1)
+
+[node name="BackButton" type="Button" parent="DebugView"]
+anchors_preset = 0
+anchor_left = 0.04
+anchor_top = 0.05
+offset_right = 108.0
+offset_bottom = 36.0
+theme_override_font_sizes/font_size = 14
+flat = true
+text = "Back"
+
+[node name="Panel" type="PanelContainer" parent="DebugView"]
+anchors_preset = 0
+anchor_left = 0.12
+anchor_top = 0.14
+anchor_right = 0.88
+anchor_bottom = 0.86
+
+[node name="VBox" type="VBoxContainer" parent="DebugView/Panel"]
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="DebugView/Panel/VBox"]
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 24
+text = "Debug Research"
+
+[node name="UnlockAllButton" type="Button" parent="DebugView/Panel/VBox"]
+custom_minimum_size = Vector2(0, 38)
+theme_override_font_sizes/font_size = 15
+text = "Unlock All I"
+
+[node name="ModuleGrid" type="GridContainer" parent="DebugView/Panel/VBox"]
+size_flags_vertical = 3
+columns = 2
+theme_override_constants/h_separation = 10
+theme_override_constants/v_separation = 10
