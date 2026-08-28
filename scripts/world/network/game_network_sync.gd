@@ -62,6 +62,17 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 			"haste_move_speed_multiplier": hero.haste_move_speed_multiplier,
 			"haste_attack_cooldown_multiplier": hero.haste_attack_cooldown_multiplier,
 			"haste_time_left": hero.haste_time_left,
+			"enemy_slow_amount": hero.enemy_slow_amount,
+			"enemy_slow_time_left": hero.enemy_slow_time_left,
+			"enemy_flatfooted_time_left": hero.enemy_flatfooted_time_left,
+			"enemy_flatfooted_duration": hero.enemy_flatfooted_duration,
+			"enemy_flatfooted_damage_taken_multiplier": hero.enemy_flatfooted_damage_taken_multiplier,
+			"enemy_aura_attack_damage_multiplier": hero.enemy_aura_attack_damage_multiplier,
+			"enemy_aura_time_left": hero.enemy_aura_time_left,
+			"expose_stacks": hero.expose_stacks,
+			"expose_time_left": hero.expose_time_left,
+			"fragility_time_left": hero.fragility_time_left,
+			"heal_flash_time_left": hero.heal_flash_time_left,
 			"scorcher_channel_active": hero.scorcher_channel_active,
 			"scorcher_channel_room": hero.scorcher_channel_room,
 			"scorcher_channel_direction": hero.scorcher_channel_direction,
@@ -75,10 +86,12 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 			"operate_room": hero.operate_room,
 			"operate_started_at_door": hero.operate_started_at_door,
 			"operate_attuned": hero.operate_attuned,
+			"operate_turns_left": hero.operate_turns_left,
 			"applied_poisons": hero.applied_poisons.duplicate(true),
 			"hand_cards": hero.hand_cards.duplicate(true),
 			"attack_damage": hero.attack_damage,
 			"defence": hero.defence,
+			"wit": hero.wit,
 			"basic_attack_knockback": hero.basic_attack_knockback,
 			"attack_range": hero.attack_range,
 			"attack_cooldown": hero.attack_cooldown,
@@ -351,6 +364,17 @@ static func apply_hero_snapshots(game: Node, hero_states: Array) -> void:
 		hero.haste_move_speed_multiplier = float(hero_state.get("haste_move_speed_multiplier", hero.haste_move_speed_multiplier))
 		hero.haste_attack_cooldown_multiplier = float(hero_state.get("haste_attack_cooldown_multiplier", hero.haste_attack_cooldown_multiplier))
 		hero.haste_time_left = float(hero_state.get("haste_time_left", hero.haste_time_left))
+		hero.enemy_slow_amount = clampf(float(hero_state.get("enemy_slow_amount", hero.enemy_slow_amount)), 0.0, 0.9)
+		hero.enemy_slow_time_left = maxf(float(hero_state.get("enemy_slow_time_left", hero.enemy_slow_time_left)), 0.0)
+		hero.enemy_flatfooted_time_left = maxf(float(hero_state.get("enemy_flatfooted_time_left", hero.enemy_flatfooted_time_left)), 0.0)
+		hero.enemy_flatfooted_duration = maxf(float(hero_state.get("enemy_flatfooted_duration", hero.enemy_flatfooted_duration)), 0.0)
+		hero.enemy_flatfooted_damage_taken_multiplier = clampf(float(hero_state.get("enemy_flatfooted_damage_taken_multiplier", hero.enemy_flatfooted_damage_taken_multiplier)), 1.0, 4.0)
+		hero.enemy_aura_attack_damage_multiplier = clampf(float(hero_state.get("enemy_aura_attack_damage_multiplier", hero.enemy_aura_attack_damage_multiplier)), 0.1, 1.0)
+		hero.enemy_aura_time_left = maxf(float(hero_state.get("enemy_aura_time_left", hero.enemy_aura_time_left)), 0.0)
+		hero.expose_stacks = clampi(int(hero_state.get("expose_stacks", hero.expose_stacks)), 0, 3)
+		hero.expose_time_left = maxf(float(hero_state.get("expose_time_left", hero.expose_time_left)), 0.0)
+		hero.fragility_time_left = maxf(float(hero_state.get("fragility_time_left", hero.fragility_time_left)), 0.0)
+		hero.heal_flash_time_left = maxf(float(hero_state.get("heal_flash_time_left", hero.heal_flash_time_left)), 0.0)
 		hero.scorcher_channel_active = bool(hero_state.get("scorcher_channel_active", hero.scorcher_channel_active))
 		hero.scorcher_channel_room = hero_state.get("scorcher_channel_room", hero.scorcher_channel_room)
 		hero.scorcher_channel_direction = Vector2(hero_state.get("scorcher_channel_direction", hero.scorcher_channel_direction))
@@ -364,12 +388,14 @@ static func apply_hero_snapshots(game: Node, hero_states: Array) -> void:
 		hero.operate_room = hero_state.get("operate_room", hero.operate_room)
 		hero.operate_started_at_door = int(hero_state.get("operate_started_at_door", hero.operate_started_at_door))
 		hero.operate_attuned = bool(hero_state.get("operate_attuned", hero.operate_attuned))
+		hero.operate_turns_left = clampi(int(hero_state.get("operate_turns_left", hero.operate_turns_left)), 0, 1)
 		hero.applied_poisons = Array(hero_state.get("applied_poisons", hero.applied_poisons)).duplicate(true)
 		hero.hand_cards = Array(hero_state.get("hand_cards", hero.hand_cards)).duplicate(true)
 		hero.move_speed = float(hero_state.get("move_speed", hero.move_speed))
 		hero.max_health = float(hero_state.get("max_health", hero.max_health))
 		hero.attack_damage = float(hero_state.get("attack_damage", hero.attack_damage))
 		hero.defence = float(hero_state.get("defence", hero.defence))
+		hero.wit = maxf(float(hero_state.get("wit", hero.wit)), 0.0)
 		hero.basic_attack_knockback = maxf(float(hero_state.get("basic_attack_knockback", hero.basic_attack_knockback)), 0.0)
 		hero.attack_range = float(hero_state.get("attack_range", hero.attack_range))
 		hero.attack_cooldown = float(hero_state.get("attack_cooldown", hero.attack_cooldown))
@@ -585,6 +611,12 @@ static func server_request_exit_floor(game: Node, hero_index: int) -> void:
 		return
 	var hero: Variant = game.heroes[hero_index]
 	if hero != game.crystal_holder or not game.all_heroes_in_exit_room():
+		return
+	if game.floor_index >= game.TOTAL_FLOORS:
+		game.game_over = true
+		game.status_message = "The dungeon is conquered. All 10 floors are clear."
+		game.update_hud()
+		broadcast_network_snapshot(game)
 		return
 	game.floor_index += 1
 	game.dust = 24

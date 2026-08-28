@@ -2,6 +2,7 @@ extends CharacterBody2D
 class_name DungeonEnemy
 
 const GAME_ENEMY_DEFS: GDScript = preload("res://scripts/content/game_enemy_defs.gd")
+const GAME_STATUS_EFFECTS: GDScript = preload("res://scripts/actors/game_status_effects.gd")
 
 const INVALID_ROOM: Vector2i = Vector2i(-99, -99)
 const TYPE_ORC_RIDER: String = "orc_rider"
@@ -12,8 +13,10 @@ const TYPE_DEMON_A: String = "demon_a"
 const TYPE_DEMON_D: String = "demon_d"
 const TYPE_WRAITH: String = "wraith"
 const TYPE_ORC_SHAMAN: String = TYPE_WRAITH
+const TYPE_DEATH_KNIGHT: String = "death_knight"
 const TYPE_SKELETON_ARCHER: String = "skeleton_archer"
 const TYPE_SPIRITUAL_WEAPON: String = "spiritual_weapon"
+const TYPE_SLIME: String = "slime"
 const FAMILIAR_SUMMON_CARD_ID: String = "find_familiar_card"
 const FAMILIAR_ATTACK_SWOOP_DURATION: float = 0.34
 const FAMILIAR_ATTACK_SWOOP_DISTANCE: float = 58.0
@@ -23,8 +26,6 @@ const SPRITE_FRAME_SIZE: Vector2i = Vector2i(100, 100)
 const MELEE_IMPACT_FRAME: float = 2.0
 const MELEE_ATTACK_FPS: float = 13.0
 const MELEE_ATTACK_SPEED_SCALE: float = 0.82
-const ENEMY_ATTACK_DAMAGE_MULTIPLIER: float = 0.5
-const ENEMY_ATTACK_COOLDOWN_MULTIPLIER: float = 0.5
 const OVERKILL_KNOCKBACK_FORCE_PER_DAMAGE: float = 18.0
 const OVERKILL_KNOCKBACK_MAX_FORCE: float = 620.0
 const OVERKILL_KNOCKBACK_DURATION_PER_DAMAGE: float = 0.008
@@ -68,6 +69,7 @@ var recovering_slow_attack_speed_multiplier: float = 1.0
 var flatfooted_time_left: float = 0.0
 var flatfooted_duration: float = 0.0
 var flatfooted_damage_taken_multiplier: float = 1.0
+var allied_aura_damage_taken_multiplier: float = 1.0
 var hold_person_time_left: float = 0.0
 var hold_person_duration: float = 0.0
 var fear_time_left: float = 0.0
@@ -215,6 +217,7 @@ func set_visual_scale_multiplier(multiplier: float) -> void:
 func apply_role_visuals() -> void:
 	if animated_sprite == null:
 		return
+	animated_sprite.visible = enemy_role != TYPE_SLIME
 	if enemy_role == TYPE_SPIRITUAL_WEAPON:
 		animated_sprite.modulate = Color(1.0, 0.94, 0.68, 0.98)
 	else:
@@ -347,14 +350,33 @@ func apply_recovering_slow_debuff(duration: float, move_multiplier: float, attac
 	queue_redraw()
 
 func flatfooted_strength() -> float:
-	if flatfooted_time_left <= 0.0 or flatfooted_duration <= 0.0:
-		return 0.0
-	return clampf(flatfooted_time_left / flatfooted_duration, 0.0, 1.0)
+	return GAME_STATUS_EFFECTS.flatfooted_strength(flatfooted_time_left, flatfooted_duration)
 
 func current_flatfooted_damage_taken_multiplier() -> float:
-	var flatfooted_multiplier: float = lerpf(1.0, flatfooted_damage_taken_multiplier, flatfooted_strength())
+	var flatfooted_multiplier: float = GAME_STATUS_EFFECTS.flatfooted_damage_taken_multiplier(flatfooted_time_left, flatfooted_duration, flatfooted_damage_taken_multiplier)
 	var turned_multiplier: float = lerpf(1.0, turn_undead_damage_taken_multiplier, turn_undead_strength())
 	return maxf(flatfooted_multiplier, turned_multiplier)
+
+func current_damage_taken_multiplier() -> float:
+	return current_flatfooted_damage_taken_multiplier() * allied_aura_damage_taken_multiplier
+
+func clear_allied_defence_aura() -> void:
+	allied_aura_damage_taken_multiplier = 1.0
+
+func apply_allied_defence_aura(damage_taken_multiplier: float) -> void:
+	if death_started:
+		return
+	allied_aura_damage_taken_multiplier = minf(allied_aura_damage_taken_multiplier, clampf(damage_taken_multiplier, 0.1, 1.0))
+
+func has_active_status_effect() -> bool:
+	return recovering_slow_time_left > 0.0 \
+		or flatfooted_time_left > 0.0 \
+		or hold_person_time_left > 0.0 \
+		or fear_time_left > 0.0 \
+		or turn_undead_time_left > 0.0 \
+		or calm_emotions_time_left > 0.0 \
+		or rooted_time_left > 0.0 \
+		or converted_time_left > 0.0
 
 func is_flatfooted() -> bool:
 	return flatfooted_time_left > 0.0 and not death_started
@@ -363,9 +385,10 @@ func apply_flatfooted_debuff(duration: float, move_multiplier: float, attack_spe
 	if duration <= 0.0 or death_started:
 		return
 	apply_recovering_slow_debuff(duration, move_multiplier, attack_speed_multiplier)
-	flatfooted_duration = maxf(flatfooted_duration, duration)
-	flatfooted_time_left = maxf(flatfooted_time_left, duration)
-	flatfooted_damage_taken_multiplier = maxf(flatfooted_damage_taken_multiplier, clampf(damage_taken_multiplier, 1.0, 4.0))
+	var flatfooted_state: Dictionary = GAME_STATUS_EFFECTS.refresh_flatfooted_state(flatfooted_time_left, flatfooted_duration, flatfooted_damage_taken_multiplier, duration, damage_taken_multiplier)
+	flatfooted_time_left = float(flatfooted_state["time_left"])
+	flatfooted_duration = float(flatfooted_state["duration"])
+	flatfooted_damage_taken_multiplier = float(flatfooted_state["damage_taken_multiplier"])
 	queue_redraw()
 
 func hold_person_strength() -> float:
@@ -480,6 +503,10 @@ func overlay_redraw_interval() -> float:
 
 func has_dynamic_overlay_visuals() -> bool:
 	if throw_active:
+		return true
+	if enemy_role == "warlock" and not is_converted():
+		return true
+	if enemy_role == TYPE_DEATH_KNIGHT and not has_active_status_effect():
 		return true
 	if enemy_role == TYPE_SPIRITUAL_WEAPON or bool(get_meta("temporary_summon", false)):
 		return true
@@ -714,6 +741,7 @@ func deactivate_for_pool() -> void:
 	flatfooted_time_left = 0.0
 	flatfooted_duration = 0.0
 	flatfooted_damage_taken_multiplier = 1.0
+	allied_aura_damage_taken_multiplier = 1.0
 	hold_person_time_left = 0.0
 	hold_person_duration = 0.0
 	fear_time_left = 0.0
@@ -820,7 +848,8 @@ func begin_death() -> void:
 	pending_room = INVALID_ROOM
 	destination = global_position
 	velocity = Vector2.ZERO
-	clear_throw_state()
+	if not throw_active:
+		clear_throw_state()
 	if collision_shape != null:
 		collision_shape.disabled = true
 	collision_layer = 0
@@ -832,6 +861,8 @@ func begin_death() -> void:
 
 func _on_animated_sprite_animation_finished() -> void:
 	if death_started and animated_sprite != null and animated_sprite.animation == "death":
+		if throw_active:
+			return
 		if pool_managed:
 			set_physics_process(false)
 		else:
@@ -848,8 +879,9 @@ func set_role(role_name: String) -> void:
 	enemy_role = String(role_def.get("id", TYPE_ORC))
 	move_speed = float(role_def.get("move_speed", 48.0))
 	max_health = float(role_def.get("max_health", 34.0))
-	attack_damage = float(role_def.get("attack_damage", 10.0)) * ENEMY_ATTACK_DAMAGE_MULTIPLIER
-	attack_cooldown = maxf(float(role_def.get("attack_cooldown", 1.0)) * ENEMY_ATTACK_COOLDOWN_MULTIPLIER, 0.05)
+	var attack_damage_override: float = maxf(float(role_def.get("attack_damage_override", 0.0)), 0.0)
+	attack_damage = attack_damage_override if attack_damage_override > 0.0 else float(role_def.get("attack_damage", 10.0))
+	attack_cooldown = maxf(float(role_def.get("attack_cooldown", 1.0)), 0.05)
 	attack_range = float(role_def.get("attack_range", 70.0))
 	weight = float(role_def.get("weight", 1.28))
 	body_color = role_def.get("body_color", Color("7fad5b"))
@@ -863,6 +895,7 @@ func set_role(role_name: String) -> void:
 	flatfooted_time_left = 0.0
 	flatfooted_duration = 0.0
 	flatfooted_damage_taken_multiplier = 1.0
+	allied_aura_damage_taken_multiplier = 1.0
 	hold_person_time_left = 0.0
 	hold_person_duration = 0.0
 	fear_time_left = 0.0
@@ -922,13 +955,20 @@ func take_damage(amount: float, hit_direction: Vector2 = Vector2.ZERO) -> bool:
 		return true
 	if enemy_role == TYPE_SPIRITUAL_WEAPON:
 		return false
-	var applied_damage: float = maxf(amount, 0.0) * current_flatfooted_damage_taken_multiplier()
+	var applied_damage: float = maxf(amount, 0.0) * current_damage_taken_multiplier()
 	var health_before: float = current_health
 	current_health = maxf(current_health - applied_damage, 0.0)
 	if applied_damage > 0.0 and turn_undead_time_left > 0.0:
 		clear_turn_undead_debuff(true)
 	clear_calm_emotions()
 	hurt_effect_left = maxf(hurt_effect_left, 0.22)
+	if enemy_role == TYPE_SLIME \
+	and not bool(get_meta("slime_has_split", false)) \
+	and health_before > max_health * 0.5 \
+	and current_health > 0.0 \
+	and current_health <= max_health * 0.5:
+		set_meta("slime_split_pending", true)
+		set_meta("slime_split_health", current_health)
 	if current_health <= 0.0:
 		begin_death()
 		var overkill_damage: float = maxf(applied_damage - health_before, 0.0)
@@ -940,10 +980,19 @@ func take_damage(amount: float, hit_direction: Vector2 = Vector2.ZERO) -> bool:
 func _physics_process(delta: float) -> void:
 	var had_dynamic_overlay_before: bool = has_dynamic_overlay_visuals()
 	if death_started:
-		var corpse_impulse: Vector2 = advance_knockback(delta)
-		velocity = corpse_impulse
-		move_and_slide()
-		clamp_to_knockback_bounds()
+		if throw_active:
+			advance_thrown_motion(delta, had_dynamic_overlay_before)
+			if not throw_active:
+				if pool_managed:
+					set_physics_process(false)
+				else:
+					queue_free()
+				return
+		else:
+			var corpse_impulse: Vector2 = advance_knockback(delta)
+			velocity = corpse_impulse
+			move_and_slide()
+			clamp_to_knockback_bounds()
 		if animated_sprite != null and animated_sprite.animation != "death":
 			animated_sprite.speed_scale = 1.0
 			animated_sprite.play("death")
@@ -954,7 +1003,10 @@ func _physics_process(delta: float) -> void:
 	rooted_time_left = maxf(rooted_time_left - delta, 0.0)
 	converted_time_left = maxf(converted_time_left - delta, 0.0)
 	recovering_slow_time_left = maxf(recovering_slow_time_left - delta, 0.0)
-	flatfooted_time_left = maxf(flatfooted_time_left - delta, 0.0)
+	var flatfooted_state: Dictionary = GAME_STATUS_EFFECTS.advance_flatfooted_state(flatfooted_time_left, flatfooted_duration, flatfooted_damage_taken_multiplier, delta)
+	flatfooted_time_left = float(flatfooted_state["time_left"])
+	flatfooted_duration = float(flatfooted_state["duration"])
+	flatfooted_damage_taken_multiplier = float(flatfooted_state["damage_taken_multiplier"])
 	hold_person_time_left = maxf(hold_person_time_left - delta, 0.0)
 	fear_time_left = maxf(fear_time_left - delta, 0.0)
 	turn_undead_time_left = maxf(turn_undead_time_left - delta, 0.0)
@@ -977,9 +1029,6 @@ func _physics_process(delta: float) -> void:
 		recovering_slow_duration = 0.0
 		recovering_slow_move_multiplier = 1.0
 		recovering_slow_attack_speed_multiplier = 1.0
-	if flatfooted_time_left <= 0.0 and flatfooted_duration > 0.0:
-		flatfooted_duration = 0.0
-		flatfooted_damage_taken_multiplier = 1.0
 	if hold_person_time_left <= 0.0 and hold_person_duration > 0.0:
 		hold_person_duration = 0.0
 	if fear_time_left <= 0.0 and fear_duration > 0.0:
@@ -1054,10 +1103,26 @@ func draw_summon_particles(primary_color: Color, secondary_color: Color) -> void
 func _draw() -> void:
 	var has_summon_particles: bool = enemy_role == TYPE_SPIRITUAL_WEAPON or bool(get_meta("temporary_summon", false))
 	var reduced_animations: bool = should_reduce_animations()
+	if enemy_role == TYPE_SLIME:
+		var slime_radius: float = 23.0 * visual_scale_multiplier
+		draw_circle(Vector2(0.0, 3.0), slime_radius, Color("4bae69"))
+		draw_circle(Vector2(-7.0, -5.0) * visual_scale_multiplier, slime_radius * 0.42, Color("91e888"))
+		draw_circle(Vector2(-7.5, 1.0) * visual_scale_multiplier, 2.4 * visual_scale_multiplier, Color("173d35"))
+		draw_circle(Vector2(7.5, 1.0) * visual_scale_multiplier, 2.4 * visual_scale_multiplier, Color("173d35"))
 	if enemy_role != TYPE_SPIRITUAL_WEAPON:
 		var health_ratio: float = clampf(current_health / maxf(max_health, 0.001), 0.0, 1.0)
 		draw_rect(Rect2(Vector2(-18.0, -31.0), Vector2(36.0, 4.0)), Color(0.08, 0.1, 0.11, 0.9), true)
 		draw_rect(Rect2(Vector2(-18.0, -31.0), Vector2(36.0 * health_ratio, 4.0)), Color(0.98, 0.48, 0.42, 0.95), true)
+	if enemy_role == "warlock" and not is_converted():
+		var aura_pulse: float = 0.5 if reduced_animations else 0.5 + 0.5 * sin(float(Time.get_ticks_msec()) * 0.006)
+		var aura_radius: float = 132.0 + aura_pulse * 4.0
+		draw_circle(Vector2.ZERO, aura_radius, Color(0.66, 0.34, 0.96, 0.035 + aura_pulse * 0.025))
+		draw_arc(Vector2.ZERO, aura_radius, 0.0, TAU, 56, Color(0.78, 0.5, 1.0, 0.34 + aura_pulse * 0.16), 1.6, true)
+	if enemy_role == TYPE_DEATH_KNIGHT and not has_active_status_effect():
+		var defence_pulse: float = 0.5 if reduced_animations else 0.5 + 0.5 * sin(float(Time.get_ticks_msec()) * 0.005)
+		var defence_radius: float = 150.0 + defence_pulse * 4.0
+		draw_circle(Vector2.ZERO, defence_radius, Color(0.38, 0.66, 0.92, 0.035 + defence_pulse * 0.025))
+		draw_arc(Vector2.ZERO, defence_radius, 0.0, TAU, 56, Color(0.54, 0.78, 1.0, 0.32 + defence_pulse * 0.16), 1.6, true)
 	if has_summon_particles and not reduced_animations:
 		draw_summon_particles(summon_particle_primary_color(), summon_particle_secondary_color())
 	elif has_summon_particles:

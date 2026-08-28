@@ -1,6 +1,7 @@
 extends RefCounted
 
 const GAME_ENEMY_TARGET_PRIORITY_DEFS: GDScript = preload("res://scripts/content/game_enemy_target_priority_defs.gd")
+const GAME_ENEMY_DEFS: GDScript = preload("res://scripts/content/game_enemy_defs.gd")
 
 const ROOM_TARGET_LOCK_ACTOR_KEY_META: StringName = &"room_target_lock_actor_key"
 const ROOM_TARGET_LOCK_ROOM_META: StringName = &"room_target_lock_room"
@@ -14,6 +15,7 @@ const TARGET_CATEGORY_RANGED: String = "ranged_target"
 const TARGET_CATEGORY_MELEE: String = "melee_target"
 const TARGET_CATEGORY_RESEARCH_CRYSTAL: String = "research_crystal"
 const TARGET_CATEGORY_MAJOR_MODULE: String = "major_module"
+const TARGET_CATEGORY_MINOR_MODULE: String = "minor_module"
 const TARGET_CATEGORY_GENERATOR_CRYSTAL: String = "generator_crystal"
 const TARGETABLE_ACTOR_CACHE_FRAME_META: StringName = &"enemy_targetable_actor_cache_frame"
 const TARGETABLE_ACTOR_CACHE_VALUE_META: StringName = &"enemy_targetable_actor_cache_value"
@@ -247,6 +249,43 @@ static func hostile_enemy_candidate_for_converted(game: Node, converted_enemy: V
 		return false
 	return true
 
+static func apply_hero_enemy_auras(game: Node, active_enemies: Array) -> void:
+	for enemy in active_enemies:
+		if enemy_is_converted(enemy) or String(enemy.enemy_role) != GAME_ENEMY_DEFS.TYPE_WARLOCK:
+			continue
+		var warlock_def: Dictionary = GAME_ENEMY_DEFS.enemy_role_definition(enemy.enemy_role)
+		var aura_radius: float = maxf(float(warlock_def.get("hero_aura_radius", 0.0)), 0.0)
+		if aura_radius <= 0.0:
+			continue
+		for hero in game.heroes:
+			if not game.hero_is_active(hero) or not hero.has_method("apply_enemy_aura"):
+				continue
+			if Vector2i(hero.current_room) != Vector2i(enemy.current_room) or hero.global_position.distance_to(enemy.global_position) > aura_radius:
+				continue
+			hero.apply_enemy_aura(float(warlock_def.get("hero_aura_attack_damage_multiplier", 1.0)), 0.5)
+
+static func apply_enemy_defensive_auras(game: Node, active_enemies: Array) -> void:
+	for ally in active_enemies:
+		if ally.has_method("clear_allied_defence_aura"):
+			ally.clear_allied_defence_aura()
+	for enemy in active_enemies:
+		if enemy_is_converted(enemy) or String(enemy.enemy_role) != game.ENEMY_TYPE_DEATH_KNIGHT:
+			continue
+		if enemy.has_method("has_active_status_effect") and bool(enemy.has_active_status_effect()):
+			continue
+		var death_knight_def: Dictionary = GAME_ENEMY_DEFS.enemy_role_definition(enemy.enemy_role)
+		var aura_radius: float = maxf(float(death_knight_def.get("ally_aura_radius", 0.0)), 0.0)
+		if aura_radius <= 0.0:
+			continue
+		var damage_taken_multiplier: float = float(death_knight_def.get("ally_aura_damage_taken_multiplier", 1.0))
+		for ally in active_enemies:
+			if ally == enemy or enemy_is_converted(ally):
+				continue
+			if Vector2i(ally.current_room) != Vector2i(enemy.current_room) or ally.global_position.distance_to(enemy.global_position) > aura_radius:
+				continue
+			if ally.has_method("apply_allied_defence_aura"):
+				ally.apply_allied_defence_aura(damage_taken_multiplier)
+
 static func strongest_hostile_enemy_for_converted(game: Node, converted_enemy: Variant) -> Variant:
 	if converted_enemy == null or not is_instance_valid(converted_enemy):
 		return null
@@ -328,6 +367,8 @@ static func advance_enemy_routes(game: Node, delta: float) -> void:
 	for enemy_variant in game.enemies:
 		if game.enemy_is_active(enemy_variant):
 			active_enemies.append(enemy_variant)
+	apply_hero_enemy_auras(game, active_enemies)
+	apply_enemy_defensive_auras(game, active_enemies)
 	var enemy_spatial_hash: Dictionary = {}
 	if active_enemies.size() > 1:
 		enemy_spatial_hash = build_enemy_spatial_hash(active_enemies, ENEMY_SOFT_SEPARATION_CELL_SIZE)
@@ -437,18 +478,29 @@ static func target_room_for_enemy(game: Node, enemy: Variant) -> Vector2i:
 		return Vector2i(enemy.current_room) if converted_enemy_target(game, enemy) != null else game.INVALID_ROOM
 	if enemy_is_feared(enemy):
 		return Vector2i(enemy.current_room)
+	if String(enemy.enemy_role) == game.ENEMY_TYPE_SLIME:
+		var slime_room: Vector2i = Vector2i(enemy.current_room)
+		if not enemy_targetable_heroes_in_room_strict(game, slime_room).is_empty():
+			return slime_room
+		if should_target_active_minor_module(game, enemy):
+			return slime_room
+		var minor_module_room: Vector2i = find_nearest_minor_module_room(game, slime_room)
+		if minor_module_room != game.INVALID_ROOM:
+			return minor_module_room
+		var slime_hero_target: Variant = priority_target_hero(game, enemy)
+		return hero_room_for_enemy_targeting(game, slime_hero_target) if slime_hero_target != null else game.INVALID_ROOM
 	var local_target: Variant = local_enemy_override_target(game, enemy)
 	var role_target: Variant = priority_target_hero(game, enemy)
 	if local_target != null:
 		return hero_room_for_enemy_targeting(game, local_target)
+	if should_target_active_major_module(game, enemy):
+		return Vector2i(enemy.current_room)
 	match String(enemy.enemy_role):
-		game.ENEMY_TYPE_ORC_RIDER:
+		game.ENEMY_TYPE_ORC_RIDER, game.ENEMY_TYPE_DEATH_KNIGHT:
 			if role_target == null:
 				return game.crystal_room
 			return hero_room_for_enemy_targeting(game, role_target)
 		game.ENEMY_TYPE_SKELETON_ARCHER:
-			if enemy_targetable_heroes_in_room_strict(game, Vector2i(enemy.current_room)).is_empty() and room_has_active_major_module(game, Vector2i(enemy.current_room)):
-				return Vector2i(enemy.current_room)
 			if role_target == null:
 				return game.crystal_room
 			return hero_room_for_enemy_targeting(game, role_target)
@@ -467,14 +519,9 @@ static func target_room_for_enemy(game: Node, enemy: Variant) -> Vector2i:
 		game.ENEMY_TYPE_GOLEM:
 			return golem_objective_room(game, enemy)
 		game.ENEMY_TYPE_DEMON_D:
-			return game.crystal_room
+			return power_crystal_target_room(game)
 		game.ENEMY_TYPE_BAT:
-			var crystal_carrier: Variant = game.crystal_holder
-			if hero_is_enemy_targetable(game, crystal_carrier):
-				return hero_room_for_enemy_targeting(game, crystal_carrier)
-			if game.crystal_ground_room != game.INVALID_ROOM and game.rooms.has(game.crystal_ground_room):
-				return game.crystal_ground_room
-			return game.crystal_room
+			return power_crystal_target_room(game)
 		_:
 			return game.crystal_room
 
@@ -499,20 +546,27 @@ static func enemy_target_position(game: Node, enemy: Variant) -> Vector2:
 		return game.clamp_point_to_room(enemy.global_position, enemy.current_room)
 	if enemy_is_feared(enemy):
 		return feared_enemy_target_position(game, enemy)
+	if String(enemy.enemy_role) == game.ENEMY_TYPE_SLIME:
+		var slime_hero_target: Variant = priority_target_hero(game, enemy)
+		if slime_hero_target != null and hero_is_in_room(game, slime_hero_target, enemy.current_room):
+			return slime_hero_target.global_position
+		if should_target_active_minor_module(game, enemy):
+			return minor_module_target_position(game, Vector2i(enemy.current_room), enemy.global_position)
+		return game.clamp_point_to_room(enemy.global_position, enemy.current_room)
 	var local_target: Variant = local_enemy_override_target(game, enemy)
 	var role_target: Variant = priority_target_hero(game, enemy)
 	if local_target != null:
 		if String(enemy.enemy_role) == game.ENEMY_TYPE_SKELETON_ARCHER or String(enemy.enemy_role) == game.ENEMY_TYPE_WRAITH:
 			return skeleton_archer_goal_position(game, enemy)
 		return local_target.global_position
+	if should_target_active_major_module(game, enemy):
+		return major_module_target_position(game, Vector2i(enemy.current_room))
 	match String(enemy.enemy_role):
 		game.ENEMY_TYPE_ORC_RIDER:
 			if role_target != null:
 				return role_target.global_position
 			return game.clamp_point_to_room(enemy.global_position, enemy.current_room)
 		game.ENEMY_TYPE_SKELETON_ARCHER:
-			if enemy_targetable_heroes_in_room_strict(game, Vector2i(enemy.current_room)).is_empty() and room_has_active_major_module(game, Vector2i(enemy.current_room)):
-				return game.major_slot_position(enemy.current_room)
 			if role_target != null:
 				if hero_is_in_room(game, role_target, enemy.current_room):
 					return skeleton_archer_goal_position(game, enemy)
@@ -535,12 +589,9 @@ static func enemy_target_position(game: Node, enemy: Variant) -> Vector2:
 		game.ENEMY_TYPE_GOLEM:
 			return golem_objective_position(game, enemy)
 		game.ENEMY_TYPE_DEMON_D:
-			return game.crystal_world_position()
+			return power_crystal_target_position(game)
 		game.ENEMY_TYPE_BAT:
-			var crystal_carrier: Variant = game.crystal_holder
-			if hero_is_enemy_targetable(game, crystal_carrier):
-				return crystal_carrier.global_position
-			return game.crystal_world_position()
+			return power_crystal_target_position(game)
 		_:
 			return game.crystal_world_position()
 
@@ -548,7 +599,7 @@ static func enemy_attack_start_distance(game: Node, enemy: Variant) -> float:
 	if enemy == null or not is_instance_valid(enemy):
 		return 18.0
 	match String(enemy.enemy_role):
-		game.ENEMY_TYPE_ORC_RIDER, game.ENEMY_TYPE_ORC, game.ENEMY_TYPE_GOLEM, game.ENEMY_TYPE_BAT, game.ENEMY_TYPE_DEMON_A, game.ENEMY_TYPE_DEMON_D, game.ENEMY_TYPE_SKELETON, game.ENEMY_TYPE_SKELETON_ARMORED, game.ENEMY_TYPE_SKELETON_GREATSWORD, game.ENEMY_TYPE_SPIRITUAL_WEAPON:
+		game.ENEMY_TYPE_ORC_RIDER, game.ENEMY_TYPE_DEATH_KNIGHT, game.ENEMY_TYPE_ORC, game.ENEMY_TYPE_GOLEM, game.ENEMY_TYPE_BAT, game.ENEMY_TYPE_DEMON_A, game.ENEMY_TYPE_DEMON_D, game.ENEMY_TYPE_SKELETON, game.ENEMY_TYPE_SKELETON_ARMORED, game.ENEMY_TYPE_SKELETON_GREATSWORD, game.ENEMY_TYPE_SPIRITUAL_WEAPON, game.ENEMY_TYPE_SLIME:
 			return maxf(float(enemy.get("attack_range")), 18.0)
 		_:
 			return 18.0
@@ -634,13 +685,6 @@ static func hero_is_enemy_targetable(game: Node, hero: Variant) -> bool:
 				return false
 	return float(hero.invulnerability_time_left) <= 0.0
 
-static func actor_carrying_crystal(game: Node, actor: Variant) -> bool:
-	if actor == null or not is_instance_valid(actor):
-		return false
-	if game.is_hero_actor(actor):
-		return bool(actor.carrying_crystal)
-	return false
-
 static func actor_target_label(game: Node, actor: Variant) -> String:
 	if actor == null or not is_instance_valid(actor):
 		return "a target"
@@ -654,22 +698,17 @@ static func actor_target_label(game: Node, actor: Variant) -> String:
 static func enemy_target_category_priority_for_role(_game: Node, enemy_role: String) -> Dictionary:
 	return GAME_ENEMY_TARGET_PRIORITY_DEFS.priority_table_for_role(enemy_role)
 
-static func enemy_targeting_rule_for_role(enemy_role: String) -> Dictionary:
-	return GAME_ENEMY_TARGET_PRIORITY_DEFS.targeting_rule_for_role(enemy_role)
-
 static func enemy_target_category_for_actor(game: Node, actor: Variant) -> String:
 	if actor == null or not is_instance_valid(actor):
 		return ""
-	if actor_carrying_crystal(game, actor):
-		return TARGET_CATEGORY_RESEARCH_CRYSTAL
 	if hero_is_long_range_target(game, actor):
 		return TARGET_CATEGORY_RANGED
 	return TARGET_CATEGORY_MELEE
 
 static func category_priority_rank(priority_table: Dictionary, category: String) -> int:
-	# Priority 0 explicitly disables this category for the caller.
+	# Negative priorities explicitly disable this category for the caller.
 	var rank: int = int(priority_table.get(category, 0))
-	if rank <= 0:
+	if rank < 0:
 		return 999
 	return rank
 
@@ -867,9 +906,7 @@ static func local_enemy_override_target(game: Node, enemy: Variant) -> Variant:
 	var priority_table: Dictionary = enemy_target_category_priority_for_role(game, enemy_role)
 	if category_priority_rank(priority_table, TARGET_CATEGORY_MELEE) >= 999 and category_priority_rank(priority_table, TARGET_CATEGORY_RANGED) >= 999:
 		return null
-	if bool(enemy_targeting_rule_for_role(enemy_role).get("lock_room_target", false)):
-		return locked_room_target_hero(game, enemy)
-	return choose_target_from_actor_candidates(game, enemy, room_heroes, priority_table)
+	return locked_room_target_hero(game, enemy)
 
 static func cached_priority_target_hero(enemy: Variant) -> Variant:
 	if enemy == null or not is_instance_valid(enemy):
@@ -900,27 +937,46 @@ static func priority_target_hero(game: Node, enemy: Variant) -> Variant:
 	if category_priority_rank(priority_table, TARGET_CATEGORY_MELEE) >= 999 and category_priority_rank(priority_table, TARGET_CATEGORY_RANGED) >= 999:
 		set_cached_priority_target_hero(enemy, null)
 		return null
-	var rule: Dictionary = enemy_targeting_rule_for_role(enemy_role)
 	var cached_target: Variant = cached_priority_target_hero(enemy)
 	if hero_is_enemy_targetable(game, cached_target):
-		if not bool(rule.get("lock_room_target", false)) or hero_is_in_room(game, cached_target, Vector2i(enemy.current_room)):
+		if hero_is_in_room(game, cached_target, Vector2i(enemy.current_room)):
 			return cached_target
 	var room_heroes: Array = enemy_room_hero_candidates(game, enemy)
 	if not room_heroes.is_empty():
-		var room_target: Variant = null
-		if bool(rule.get("lock_room_target", false)):
-			room_target = locked_room_target_hero(game, enemy)
-		else:
-			room_target = choose_target_from_actor_candidates(game, enemy, room_heroes, priority_table)
+		var room_target: Variant = locked_room_target_hero(game, enemy)
 		if room_target != null:
 			set_cached_priority_target_hero(enemy, room_target)
 			return room_target
-	if not bool(rule.get("allow_path_target", true)):
-		set_cached_priority_target_hero(enemy, null)
-		return null
 	var resolved_target: Variant = choose_path_target_from_actor_candidates(game, enemy, enemy_targetable_actor_candidates(game), priority_table)
 	set_cached_priority_target_hero(enemy, resolved_target)
 	return resolved_target
+
+static func should_target_active_major_module(game: Node, enemy: Variant) -> bool:
+	if enemy == null or not is_instance_valid(enemy):
+		return false
+	var priority_table: Dictionary = enemy_target_category_priority_for_role(game, String(enemy.enemy_role))
+	if category_priority_rank(priority_table, TARGET_CATEGORY_MAJOR_MODULE) >= 999:
+		return false
+	var room_coord: Vector2i = Vector2i(enemy.current_room)
+	if not room_has_active_major_module(game, room_coord):
+		return false
+	return enemy_targetable_heroes_in_room_strict(game, room_coord).is_empty()
+
+static func should_target_active_minor_module(game: Node, enemy: Variant) -> bool:
+	if enemy == null or not is_instance_valid(enemy):
+		return false
+	var priority_table: Dictionary = enemy_target_category_priority_for_role(game, String(enemy.enemy_role))
+	if category_priority_rank(priority_table, TARGET_CATEGORY_MINOR_MODULE) >= 999:
+		return false
+	var room_coord: Vector2i = Vector2i(enemy.current_room)
+	if not game.rooms.has(room_coord):
+		return false
+	if not enemy_targetable_heroes_in_room_strict(game, room_coord).is_empty():
+		return false
+	for module_data_variant in Array(game.rooms[room_coord].get("minor_modules", [])):
+		if float(Dictionary(module_data_variant).get("health", 0.0)) > 0.0:
+			return true
+	return false
 
 static func enemy_situational_speed_multiplier(game: Node, enemy: Variant) -> float:
 	if enemy == null or not is_instance_valid(enemy):
@@ -999,6 +1055,27 @@ static func major_module_target_position(game: Node, room_coord: Vector2i) -> Ve
 		return game.room_walkable_center(room_coord)
 	return game.major_slot_position(room_coord)
 
+static func minor_module_target_position(game: Node, room_coord: Vector2i, origin: Vector2) -> Vector2:
+	if not game.rooms.has(room_coord):
+		return origin
+	var room: Dictionary = game.rooms[room_coord]
+	var slot_positions: Array = game.minor_slot_positions(room_coord)
+	var closest_position: Vector2 = game.room_walkable_center(room_coord)
+	var closest_distance: float = INF
+	for module_data_variant in Array(room.get("minor_modules", [])):
+		var module_data: Dictionary = Dictionary(module_data_variant)
+		if float(module_data.get("health", 0.0)) <= 0.0:
+			continue
+		var slot_index: int = int(module_data.get("slot_index", -1))
+		if slot_index < 0 or slot_index >= slot_positions.size():
+			continue
+		var slot_position: Vector2 = Vector2(slot_positions[slot_index])
+		var distance_value: float = origin.distance_to(slot_position)
+		if distance_value < closest_distance:
+			closest_position = slot_position
+			closest_distance = distance_value
+	return closest_position
+
 static func active_research_room(game: Node) -> Vector2i:
 	if game.active_research.is_empty():
 		return game.INVALID_ROOM
@@ -1009,27 +1086,38 @@ static func active_research_room(game: Node) -> Vector2i:
 		return game.INVALID_ROOM
 	return research_room
 
+static func power_crystal_target_room(game: Node) -> Vector2i:
+	if game.crystal_holder != null and is_instance_valid(game.crystal_holder):
+		return hero_room_for_enemy_targeting(game, game.crystal_holder)
+	if game.crystal_ground_room != game.INVALID_ROOM and game.rooms.has(game.crystal_ground_room):
+		return game.crystal_ground_room
+	return game.crystal_room
+
+static func power_crystal_target_position(game: Node) -> Vector2:
+	return game.crystal_world_position()
+
 static func golem_objective_room(game: Node, enemy: Variant) -> Vector2i:
 	if enemy == null or not is_instance_valid(enemy):
 		return game.crystal_room
 	var research_room: Vector2i = active_research_room(game)
 	if research_room == game.INVALID_ROOM:
 		return game.crystal_room
-	var crystal_distance: int = room_path_distance_cached(game, Vector2i(enemy.current_room), game.crystal_room)
+	var crystal_room: Vector2i = power_crystal_target_room(game)
+	var crystal_distance: int = room_path_distance_cached(game, Vector2i(enemy.current_room), crystal_room)
 	var research_distance: int = room_path_distance_cached(game, Vector2i(enemy.current_room), research_room)
 	if research_distance < crystal_distance:
 		return research_room
 	if research_distance == crystal_distance:
 		var research_world_distance: float = enemy.global_position.distance_to(game.room_center(research_room))
-		var crystal_world_distance: float = enemy.global_position.distance_to(game.room_center(game.crystal_room))
+		var crystal_world_distance: float = enemy.global_position.distance_to(power_crystal_target_position(game))
 		if research_world_distance < crystal_world_distance:
 			return research_room
-	return game.crystal_room
+	return crystal_room
 
 static func golem_objective_position(game: Node, enemy: Variant) -> Vector2:
 	var objective_room: Vector2i = golem_objective_room(game, enemy)
-	if objective_room == game.crystal_room:
-		return game.crystal_world_position()
+	if objective_room == power_crystal_target_room(game):
+		return power_crystal_target_position(game)
 	if game.rooms.has(objective_room):
 		return game.major_slot_position(objective_room)
 	return game.crystal_world_position()
@@ -1046,6 +1134,9 @@ static func preferred_golem_major_module_room(game: Node, enemy: Variant) -> Vec
 
 static func apply_enemy_crystal_strike(game: Node, enemy: Variant) -> void:
 	if enemy == null or not is_instance_valid(enemy):
+		return
+	if game.crystal_holder != null and is_instance_valid(game.crystal_holder):
+		game.queue_pending_melee_attack(enemy, game.crystal_holder, enemy.attack_damage, enemy.melee_impact_delay(), String(enemy.enemy_role).capitalize())
 		return
 	game.apply_crystal_damage_from_enemy(enemy)
 
@@ -1070,30 +1161,60 @@ static func resolve_enemy_attack(game: Node, enemy: Variant) -> void:
 		return
 	var local_target: Variant = local_enemy_override_target(game, enemy)
 	var role_target: Variant = priority_target_hero(game, enemy)
+	if String(enemy.enemy_role) == game.ENEMY_TYPE_SLIME:
+		var slime_target: Variant = local_target if local_target != null else role_target
+		if slime_target != null and hero_is_in_room(game, slime_target, enemy.current_room):
+			enemy.trigger_attack(slime_target.global_position)
+			game.queue_pending_melee_attack(enemy, slime_target, enemy.attack_damage, enemy.melee_impact_delay(), "A slime")
+			game.status_message = "A slime lashes at %s." % actor_target_label(game, slime_target)
+			enemy.attack_cooldown_left = enemy.attack_cooldown
+			game.update_hud()
+			return
+		if not should_target_active_minor_module(game, enemy):
+			return
+		var slime_target_position: Vector2 = minor_module_target_position(game, Vector2i(enemy.current_room), enemy.global_position)
+		enemy.trigger_attack(slime_target_position)
+		if not damage_minor_module(game, enemy.current_room, enemy.attack_damage, "A slime"):
+			return
+		enemy.attack_cooldown_left = enemy.attack_cooldown
+		game.update_hud()
+		return
+	if should_target_active_major_module(game, enemy):
+		enemy.trigger_attack(major_module_target_position(game, Vector2i(enemy.current_room)))
+		if not game.damage_module(enemy.current_room, enemy.attack_damage, true, String(enemy.enemy_role).capitalize()):
+			return
+		enemy.attack_cooldown_left = enemy.attack_cooldown
+		game.update_hud()
+		return
 	match String(enemy.enemy_role):
-		game.ENEMY_TYPE_ORC_RIDER:
-			var orc_rider_target: Variant = local_target if local_target != null else role_target
-			if orc_rider_target == null or not hero_is_in_room(game, orc_rider_target, enemy.current_room):
+		game.ENEMY_TYPE_ORC_RIDER, game.ENEMY_TYPE_DEATH_KNIGHT:
+			var armored_target: Variant = local_target if local_target != null else role_target
+			if armored_target == null or not hero_is_in_room(game, armored_target, enemy.current_room):
 				return
-			enemy.trigger_attack(orc_rider_target.global_position)
-			game.queue_pending_melee_attack(enemy, orc_rider_target, enemy.attack_damage, enemy.melee_impact_delay(), "An armored orc")
-			game.status_message = "An armored orc lunges at %s." % actor_target_label(game, orc_rider_target)
+			enemy.trigger_attack(armored_target.global_position)
+			var attacker_label: String = "A death knight" if String(enemy.enemy_role) == game.ENEMY_TYPE_DEATH_KNIGHT else "An armored orc"
+			game.queue_pending_melee_attack(enemy, armored_target, enemy.attack_damage, enemy.melee_impact_delay(), attacker_label)
+			game.status_message = "%s lunges at %s." % [attacker_label, actor_target_label(game, armored_target)]
 		game.ENEMY_TYPE_SKELETON_ARCHER:
 			var archer_target: Variant = local_target if local_target != null else role_target
 			if archer_target != null and hero_is_in_room(game, archer_target, enemy.current_room):
 				enemy.trigger_attack(archer_target.global_position)
 				game.spawn_laser_projectile(enemy.global_position, archer_target, enemy.attack_damage, Color("dbe5c8"), 3.2, 980.0)
 				game.status_message = "A skeleton archer looses an arrow at %s." % actor_target_label(game, archer_target)
-			elif enemy_targetable_heroes_in_room_strict(game, Vector2i(enemy.current_room)).is_empty() and room_has_active_major_module(game, Vector2i(enemy.current_room)):
-				enemy.trigger_attack(game.major_slot_position(enemy.current_room))
-				if not game.damage_module(enemy.current_room, enemy.attack_damage, true, "Skeleton archers"):
-					return
 			elif enemy.current_room == game.crystal_room:
 				enemy.trigger_attack(game.room_center(game.crystal_room))
 				apply_enemy_crystal_strike(game, enemy)
 				game.status_message = "Skeleton archers are peppering the crystal."
 			else:
 				return
+		game.ENEMY_TYPE_ARCHER_IMP:
+			var imp_target: Variant = local_target if local_target != null else role_target
+			if imp_target == null or not hero_is_in_room(game, imp_target, enemy.current_room):
+				return
+			var imp_def: Dictionary = GAME_ENEMY_DEFS.enemy_role_definition(enemy.enemy_role)
+			enemy.trigger_attack(imp_target.global_position)
+			game.spawn_arrow_projectile(enemy.global_position, imp_target, enemy.attack_damage, Color("ff956a"), 2.8, 1060.0, 0, 0, int(imp_def.get("expose_stacks_per_hit", 1)), float(imp_def.get("expose_duration", 6.0)))
+			game.status_message = "An archer imp marks %s." % actor_target_label(game, imp_target)
 		game.ENEMY_TYPE_ORC:
 			var orc_target: Variant = local_target if local_target != null else role_target
 			if orc_target != null and hero_is_in_room(game, orc_target, enemy.current_room):
@@ -1106,19 +1227,19 @@ static func resolve_enemy_attack(game: Node, enemy: Variant) -> void:
 				game.status_message = "Orcs are striking the crystal."
 			else:
 				return
+		"hellhound", "warlock":
+			var skirmisher_target: Variant = local_target if local_target != null else role_target
+			if skirmisher_target == null or not hero_is_in_room(game, skirmisher_target, enemy.current_room):
+				return
+			enemy.trigger_attack(skirmisher_target.global_position)
+			game.queue_pending_melee_attack(enemy, skirmisher_target, enemy.attack_damage, enemy.melee_impact_delay(), "A %s" % String(enemy.enemy_role))
+			game.status_message = "A %s attacks %s." % [String(enemy.enemy_role), actor_target_label(game, skirmisher_target)]
 		game.ENEMY_TYPE_BAT:
-			var crystal_carrier: Variant = game.crystal_holder
-			if hero_is_enemy_targetable(game, crystal_carrier) and hero_is_in_room(game, crystal_carrier, enemy.current_room):
-				enemy.trigger_attack(crystal_carrier.global_position)
-				game.queue_pending_melee_attack(enemy, crystal_carrier, enemy.attack_damage, enemy.melee_impact_delay(), "Bats")
-				game.status_message = "Bats dive at %s." % crystal_carrier.hero_name
-			else:
-				var crystal_target_room: Vector2i = game.crystal_ground_room if game.crystal_ground_room != game.INVALID_ROOM else game.crystal_room
-				if enemy.current_room != crystal_target_room:
-					return
-				enemy.trigger_attack(game.crystal_world_position())
-				apply_enemy_crystal_strike(game, enemy)
-				game.status_message = "Bats dive at the crystal."
+			if enemy.current_room != power_crystal_target_room(game):
+				return
+			enemy.trigger_attack(power_crystal_target_position(game))
+			apply_enemy_crystal_strike(game, enemy)
+			game.status_message = "Bats dive at the crystal."
 		game.ENEMY_TYPE_GOLEM:
 			if local_target != null and hero_is_in_room(game, local_target, enemy.current_room):
 				enemy.trigger_attack(local_target.global_position)
@@ -1126,18 +1247,18 @@ static func resolve_enemy_attack(game: Node, enemy: Variant) -> void:
 				game.status_message = "A golem hammers %s." % actor_target_label(game, local_target)
 			else:
 				var target_room: Vector2i = golem_objective_room(game, enemy)
-				if target_room == enemy.current_room and target_room != game.crystal_room:
+				if target_room == enemy.current_room and target_room != power_crystal_target_room(game):
 					enemy.trigger_attack(game.major_slot_position(enemy.current_room))
 					game.status_message = "A flame golem is assaulting a research crystal."
-				elif enemy.current_room == game.crystal_room:
-					enemy.trigger_attack(game.room_center(game.crystal_room))
+				elif enemy.current_room == power_crystal_target_room(game):
+					enemy.trigger_attack(power_crystal_target_position(game))
 					apply_enemy_crystal_strike(game, enemy)
 					game.status_message = "A golem is pounding the crystal."
 				else:
 					return
 		game.ENEMY_TYPE_DEMON_D:
-			if enemy.current_room == game.crystal_room:
-				enemy.trigger_attack(game.room_center(game.crystal_room))
+			if enemy.current_room == power_crystal_target_room(game):
+				enemy.trigger_attack(power_crystal_target_position(game))
 				apply_enemy_crystal_strike(game, enemy)
 				game.status_message = "A raider demon is carving into the crystal."
 			else:
@@ -1190,6 +1311,24 @@ static func find_nearest_major_module_room(game: Node, from_room: Vector2i) -> V
 			closest_room = room_coord
 	return closest_room
 
+static func find_nearest_minor_module_room(game: Node, from_room: Vector2i) -> Vector2i:
+	var closest_room: Vector2i = game.INVALID_ROOM
+	var closest_path_length: int = 9999
+	for room_coord_variant in game.rooms.keys():
+		var room_coord: Vector2i = room_coord_variant
+		var room: Dictionary = game.rooms[room_coord]
+		if not bool(room.get("opened", false)):
+			continue
+		for module_data_variant in Array(room.get("minor_modules", [])):
+			if float(Dictionary(module_data_variant).get("health", 0.0)) <= 0.0:
+				continue
+			var path_length: int = room_path_distance_cached(game, from_room, room_coord)
+			if path_length < closest_path_length:
+				closest_room = room_coord
+				closest_path_length = path_length
+			break
+	return closest_room
+
 static func damage_module(game: Node, room_coord: Vector2i, amount: float, major_only: bool = false, attacker_label: String = "Enemies") -> bool:
 	if not game.rooms.has(room_coord):
 		return false
@@ -1221,4 +1360,26 @@ static func damage_module(game: Node, room_coord: Vector2i, amount: float, major
 	else:
 		room["minor_modules"][module_index] = module_data
 		game.status_message = "%s is damaging a turret in %s." % [attacker_label, game.room_title(room_coord)]
+	return true
+
+static func damage_minor_module(game: Node, room_coord: Vector2i, amount: float, attacker_label: String = "Enemies") -> bool:
+	if not game.rooms.has(room_coord):
+		return false
+	var room: Dictionary = game.rooms[room_coord]
+	var active_indices: Array[int] = []
+	for module_index in range(room["minor_modules"].size()):
+		if float(room["minor_modules"][module_index].get("health", 0.0)) > 0.0:
+			active_indices.append(module_index)
+	if active_indices.is_empty():
+		return false
+	var module_index: int = active_indices[game.rng.randi_range(0, active_indices.size() - 1)]
+	var module_data: Dictionary = Dictionary(room["minor_modules"][module_index])
+	module_data["health"] = maxf(float(module_data["health"]) - amount, 0.0)
+	if float(module_data["health"]) <= 0.0:
+		game.cancel_pending_minor_construction(room_coord, int(module_data.get("slot_index", -1)))
+		room["minor_modules"].remove_at(module_index)
+		game.status_message = "%s destroyed a minor module in %s." % [attacker_label, game.room_title(room_coord)]
+	else:
+		room["minor_modules"][module_index] = module_data
+		game.status_message = "%s is dissolving a minor module in %s." % [attacker_label, game.room_title(room_coord)]
 	return true

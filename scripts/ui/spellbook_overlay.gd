@@ -5,6 +5,7 @@ signal close_requested
 signal slots_changed(slotted_spells: Array)
 
 const BACKDROP_COLOR: Color = Color(0.03, 0.06, 0.08, 0.9)
+const ORNATE_PANEL_STYLE: StyleBox = preload("res://resources/ui/ornate_panel_style.tres")
 const PANEL_FILL: Color = Color("0d151b")
 const PANEL_OUTLINE: Color = Color("7d8fb8")
 const SLOT_FILL: Color = Color("1d2d35")
@@ -36,6 +37,7 @@ var slot_capacity: int = 0
 var slot_counts_by_level: Array[int] = []
 var spell_entries: Array = []
 var spell_entries_by_id: Dictionary = {}
+var card_icon_cache: Dictionary = {}
 var slot_rows: Array = []
 var selected_spell_id: String = ""
 var pointer_local: Vector2 = Vector2.ZERO
@@ -193,8 +195,7 @@ func _draw() -> void:
 	backdrop.a *= 1.0 - minf(absf(swipe_close_offset_y) / SWIPE_CLOSE_MAX_OFFSET, 1.0) * 0.35
 	draw_rect(Rect2(Vector2.ZERO, size), backdrop, true)
 	var panel: Rect2 = panel_rect()
-	draw_rect(panel, PANEL_FILL, true)
-	draw_rect(panel, PANEL_OUTLINE, false, 2.0)
+	draw_style_box(ORNATE_PANEL_STYLE, panel)
 	draw_header(font)
 	draw_slots(font)
 	draw_description(font)
@@ -283,14 +284,31 @@ func draw_spell_card(card_rect: Rect2, spell_id: String, font: Font, compact: bo
 	draw_rect(card_rect, CARD_OUTLINE, false, 1.5)
 	var level_value: int = int(entry.get("level", 1))
 	draw_string(font, card_rect.position + Vector2(10.0, 20.0), "L%d" % level_value, HORIZONTAL_ALIGNMENT_LEFT, 34.0, 12, Color("ffe28a"))
+	var icon_texture: Texture2D = card_icon_texture(entry)
+	if icon_texture != null:
+		var icon_size: float = 22.0 if compact else 28.0
+		var icon_rect: Rect2 = Rect2(card_rect.position + Vector2(card_rect.size.x - icon_size - 8.0, 6.0), Vector2.ONE * icon_size)
+		draw_texture_rect(icon_texture, icon_rect, false, Color.WHITE, false)
 	var title_y: float = 38.0 if compact else 30.0
-	draw_string(font, card_rect.position + Vector2(10.0, title_y), String(entry.get("name", spell_id)), HORIZONTAL_ALIGNMENT_LEFT, card_rect.size.x - 18.0, 15 if compact else 16, CARD_TEXT)
+	var title_width: float = card_rect.size.x - (40.0 if icon_texture != null else 18.0)
+	draw_string(font, card_rect.position + Vector2(10.0, title_y), String(entry.get("name", spell_id)), HORIZONTAL_ALIGNMENT_LEFT, title_width, 15 if compact else 16, CARD_TEXT)
 	if compact:
 		return
 	var prepared_count: int = prepared_copies_for_spell(spell_id)
 	var description_lines: Array = Array(entry.get("description_lines", []))
 	var detail_line: String = "Prepared x%d" % prepared_count if prepared_count > 0 else (String(description_lines[0]) if not description_lines.is_empty() else "")
 	draw_string(font, card_rect.position + Vector2(10.0, card_rect.size.y - 14.0), detail_line, HORIZONTAL_ALIGNMENT_LEFT, card_rect.size.x - 18.0, 12, CARD_SUBTEXT)
+
+func card_icon_texture(entry: Dictionary) -> Texture2D:
+	var icon_path: String = String(entry.get("icon_path", ""))
+	if icon_path == "":
+		return null
+	if card_icon_cache.has(icon_path):
+		return card_icon_cache[icon_path]
+	var icon_resource: Resource = load(icon_path)
+	var icon_texture: Texture2D = icon_resource if icon_resource is Texture2D else null
+	card_icon_cache[icon_path] = icon_texture
+	return icon_texture
 
 func draw_dragged_spell(font: Font) -> void:
 	var drag_rect: Rect2 = Rect2(pointer_local - available_card_size() * 0.5, available_card_size())

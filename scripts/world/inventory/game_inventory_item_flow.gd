@@ -129,17 +129,17 @@ static func default_inventory_items_for_class(game: Node, class_id: String) -> A
 	match class_id:
 		game.HERO_CLASS_WIZARD:
 			items.append(make_inventory_item(game, "spellbook", base_anchor))
-			items.append(make_inventory_item(game, "rogue_emergency_snack", base_anchor + Vector2i(1, 0)))
+			items.append(make_inventory_item(game, "emergency_snack", base_anchor + Vector2i(1, 0)))
 			items.append(make_inventory_item(game, "arcana_conduit", base_anchor + Vector2i(1, 1)))
 		game.HERO_CLASS_CLERIC:
 			items.append(make_inventory_item(game, "holy_symbol", base_anchor))
-			items.append(make_inventory_item(game, "rogue_emergency_snack", base_anchor + Vector2i(1, 0)))
+			items.append(make_inventory_item(game, "emergency_snack", base_anchor + Vector2i(1, 0)))
 		game.HERO_CLASS_ROGUE:
 			items.append(make_inventory_item(game, "rogue_bandolier", base_anchor))
-			items.append(make_inventory_item(game, "rogue_emergency_snack", base_anchor + Vector2i(0, 1)))
+			items.append(make_inventory_item(game, "emergency_snack", base_anchor + Vector2i(0, 1)))
 		_:
 			items.append(make_inventory_item(game, "silver_gauntlets", base_anchor))
-			items.append(make_inventory_item(game, "fighter_emergency_snack", base_anchor + Vector2i(1, 0)))
+			items.append(make_inventory_item(game, "emergency_snack", base_anchor + Vector2i(1, 0)))
 	return items
 
 static func roll_ground_item_id(game: Node) -> String:

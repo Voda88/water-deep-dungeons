@@ -41,6 +41,8 @@ static func spawn_heroes(game: Node) -> void:
 			hero.set_permanently_dead_hidden()
 		else:
 			hero.restore_health()
+		if not hero.fighter_rage_filled.is_connected(game._on_hero_fighter_rage_filled.bind(hero)):
+			hero.fighter_rage_filled.connect(game._on_hero_fighter_rage_filled.bind(hero))
 		game.heroes.append(hero)
 	if game.selected_hero_index >= game.heroes.size():
 		game.selected_hero_index = 0

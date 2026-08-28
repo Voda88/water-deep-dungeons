@@ -57,10 +57,10 @@ static func rebuild_hero_bar(game: Node) -> void:
 		portrait_rect.anchor_top = 0.0
 		portrait_rect.anchor_right = 1.0
 		portrait_rect.anchor_bottom = 1.0
-		portrait_rect.offset_left = -10.0
-		portrait_rect.offset_top = -6.0
-		portrait_rect.offset_right = 10.0
-		portrait_rect.offset_bottom = -12.0
+		portrait_rect.offset_left = 16.0
+		portrait_rect.offset_top = 6.0
+		portrait_rect.offset_right = -16.0
+		portrait_rect.offset_bottom = -44.0
 		portrait_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		portrait_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		hero_button.add_child(portrait_rect)

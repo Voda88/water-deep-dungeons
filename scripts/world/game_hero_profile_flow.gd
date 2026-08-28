@@ -2,19 +2,39 @@ extends RefCounted
 
 const GAME_INVENTORY_ITEM_FLOW: GDScript = preload("res://scripts/world/inventory/game_inventory_item_flow.gd")
 
+static var hero_portrait_icon_cache: Dictionary = {}
+
 static func hero_portrait_texture(game: Node, class_id: String) -> Texture2D:
 	if game.hero_portrait_cache.has(class_id):
 		return game.hero_portrait_cache[class_id]
 	var portrait_path: String = game.HERO_SCRIPT.portrait_path_for_class(class_id)
 	var source_texture_resource: Resource = load(portrait_path)
 	if not (source_texture_resource is Texture2D):
-		return null
+		portrait_path = game.HERO_SCRIPT.sprite_profile_for_class(class_id).get("idle_path", "")
+		source_texture_resource = load(portrait_path)
+		if not (source_texture_resource is Texture2D):
+			return null
 	var source_image: Image = source_texture_resource.get_image()
-	var portrait: Image = source_image.get_region(Rect2i(0, 0, 100, 100))
+	var portrait: Image = source_image
+	if source_image.get_width() != source_image.get_height():
+		portrait = source_image.get_region(Rect2i(0, 0, 100, 100))
 	portrait.convert(Image.FORMAT_RGBA8)
 	var texture: ImageTexture = ImageTexture.create_from_image(portrait)
 	game.hero_portrait_cache[class_id] = texture
 	return texture
+
+static func hero_portrait_icon_texture(game: Node, class_id: String, icon_size: int = 42) -> Texture2D:
+	var cache_key: String = "%s-%d" % [class_id, icon_size]
+	if hero_portrait_icon_cache.has(cache_key):
+		return hero_portrait_icon_cache[cache_key]
+	var portrait_texture: Texture2D = hero_portrait_texture(game, class_id)
+	if portrait_texture == null:
+		return null
+	var portrait_image: Image = portrait_texture.get_image()
+	portrait_image.resize(icon_size, icon_size, Image.INTERPOLATE_LANCZOS)
+	var icon_texture: ImageTexture = ImageTexture.create_from_image(portrait_image)
+	hero_portrait_icon_cache[cache_key] = icon_texture
+	return icon_texture
 
 static func hero_profile_class_id(game: Node, hero_index: int) -> String:
 	game.ensure_hero_profiles()
@@ -63,6 +83,7 @@ static func apply_hero_class_to_node(game: Node, hero: Variant, class_id: String
 		float(class_def.get("max_health", 100.0)),
 		float(class_def.get("attack_damage", 20.0)),
 		float(class_def.get("defence", 0.0)),
+		float(class_def.get("wit", 0.0)),
 		float(class_def.get("attack_range", 150.0)),
 		float(class_def.get("attack_cooldown", 0.55)),
 		String(class_def.get("attack_style", "laser")),

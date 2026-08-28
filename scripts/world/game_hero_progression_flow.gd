@@ -16,6 +16,7 @@ static func hero_level_stat_bonuses(game: Node, level_value: int, class_id: Stri
 		"defence": 0.0,
 		"defense": 0.0,
 		"speed": 0.0,
+		"wit": 0.0,
 	}
 	for step_level in range(2, maxi(level_value, 1) + 1):
 		var gain: Dictionary = GAME_HERO_LEVEL_DEFS.level_up_stat_gain_for_class_level(resolved_class_id, step_level)
@@ -23,6 +24,7 @@ static func hero_level_stat_bonuses(game: Node, level_value: int, class_id: Stri
 		totals["attack"] = float(totals.get("attack", 0.0)) + float(gain.get("attack", 0.0))
 		totals["defence"] = float(totals.get("defence", 0.0)) + float(gain.get("defence", 0.0))
 		totals["speed"] = float(totals.get("speed", 0.0)) + float(gain.get("speed", 0.0))
+		totals["wit"] = float(totals.get("wit", 0.0)) + float(gain.get("wit", 0.0))
 	totals["defense"] = float(totals.get("defence", 0.0))
 	return totals
 
@@ -309,9 +311,10 @@ static func build_level_up_reward_lines(game: Node, hero: Variant) -> Array[Stri
 	var attack_gain: int = int(round(float(next_bonus.get("attack", 0.0)) - float(current_bonus.get("attack", 0.0))))
 	var defence_gain: int = int(round(float(next_bonus.get("defence", 0.0)) - float(current_bonus.get("defence", 0.0))))
 	var speed_gain: int = int(round(float(next_bonus.get("speed", 0.0)) - float(current_bonus.get("speed", 0.0))))
+	var wit_gain: int = int(round(float(next_bonus.get("wit", 0.0)) - float(current_bonus.get("wit", 0.0))))
 	var next_pack_size: Vector2i = hero_next_pack_size(game, hero)
 	var unlock_names: Array[String] = hero_next_level_unlock_names(game, hero)
-	reward_lines.append("Stats +%d hp  +%d dmg  +%d def  +%d spd" % [health_gain, attack_gain, defence_gain, speed_gain])
+	reward_lines.append("Stats +%d hp  +%d dmg  +%d def  +%d spd  +%d wit" % [health_gain, attack_gain, defence_gain, speed_gain, wit_gain])
 	reward_lines.append("Pack %dx%d inventory module" % [next_pack_size.x, next_pack_size.y])
 	if unlock_names.is_empty():
 		reward_lines.append("Passive ability: none this level")
@@ -361,6 +364,7 @@ static func build_inventory_stat_lines(game: Node, hero: Variant, items: Array) 
 	stat_lines.append("Defence %d" % int(round(hero.base_defence + float(level_bonuses.get("defence", 0.0)) + float(bonuses.get("defence", bonuses.get("defense", 0.0))))))
 	stat_lines.append("Health %d" % int(round(hero.base_max_health + float(level_bonuses.get("health", 0.0)) + float(bonuses["health"]))))
 	stat_lines.append("Speed %d" % int(round(hero.base_move_speed + float(level_bonuses.get("speed", 0.0)) + float(bonuses["speed"]))))
+	stat_lines.append("Wit %d" % int(round(hero.base_wit + float(level_bonuses.get("wit", 0.0)))))
 	stat_lines.append("Hand inf")
 	stat_lines.append("Synergies %d" % int(bonuses["synergies"]))
 	stat_lines.append("Space %d/%d" % [used_cells, game.inventory_capacity(hero.pack_modules)])
@@ -489,6 +493,7 @@ static func apply_inventory_stats_to_hero(game: Node, hero: Variant) -> void:
 		int(bonuses["synergies"]),
 		float(bonuses.get("basic_attack_knockback", 0.0))
 	)
+	hero.wit = maxf(hero.base_wit + float(level_bonuses.get("wit", 0.0)), 0.0)
 	game.sync_hero_card_sources(hero, bonuses)
 	game.sync_hero_passive_combat_sources(hero, bonuses)
 	if hero.hero_index >= 0 and hero.hero_index < game.hero_profiles.size():

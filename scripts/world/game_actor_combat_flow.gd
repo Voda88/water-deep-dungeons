@@ -1,5 +1,7 @@
 extends RefCounted
 
+const GAME_ENEMY_DEFS: GDScript = preload("res://scripts/content/game_enemy_defs.gd")
+
 const UNIFIED_KNOCKBACK_FLATFOOTED_DURATION: float = 4.0
 const UNIFIED_KNOCKBACK_FLATFOOTED_MOVE_MULTIPLIER: float = 0.72
 const UNIFIED_KNOCKBACK_FLATFOOTED_ATTACK_SPEED_MULTIPLIER: float = 0.78
@@ -221,6 +223,9 @@ static func advance_pending_melee_attacks(game: Node, delta: float) -> void:
 			incoming_damage = game.adjusted_incoming_damage_for_hero(target, incoming_damage)
 			var previous_rage: int = int(target.fighter_rage)
 			defeated = target.take_damage(incoming_damage, false)
+			if game.is_enemy_actor(attacker) and String(attacker.enemy_role) == GAME_ENEMY_DEFS.TYPE_HELLHOUND and target.has_method("apply_enemy_flatfooted"):
+				var hellhound_def: Dictionary = GAME_ENEMY_DEFS.enemy_role_definition(attacker.enemy_role)
+				target.apply_enemy_flatfooted(float(hellhound_def.get("hero_slow_per_hit", 0.0)), float(hellhound_def.get("hero_slow_max", 0.0)), float(hellhound_def.get("hero_slow_duration", 0.0)), float(hellhound_def.get("hero_flatfooted_damage_taken_multiplier", 1.5)))
 			game.maybe_show_fighter_rage_popup(target, previous_rage)
 			if defeated and game.try_auto_cast_fatal_shield(target, incoming_damage):
 				continue

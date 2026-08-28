@@ -1,7 +1,7 @@
 extends RefCounted
 
 static func build_item_defs() -> Dictionary:
-	return {
+	var definitions: Dictionary = {
 		"axe": {
 			"name": "Razor Boomerang",
 			"short": "RBM",
@@ -73,60 +73,12 @@ static func build_item_defs() -> Dictionary:
 			],
 			"hand_card": {"card_id": "cloak_of_shadows_card", "door_interval": 2, "generation_mode": "door_interval", "cooldown_scales_with_item_level": true, "initial_queued_cards": 1, "max_stored_cards": 1},
 		},
-		"fighter_emergency_snack": {
-			"name": "Field Ration",
-			"short": "FR",
+		"emergency_snack": {
+			"name": "Emergency Snack",
+			"short": "SNK",
 			"item_level": 0,
 			"size": Vector2i(1, 1),
 			"color": Color("ffd79c"),
-			"description_lines": ["Starter snack", "Level 0: unlimited uses", "Adds Emergency Snack"],
-			"tags": ["food"],
-			"hand_card": {
-				"card_id": "emergency_snack_card",
-				"door_interval": 1,
-				"generation_mode": "door_interval",
-				"initial_queued_cards": 1,
-				"max_stored_cards": 1,
-			},
-		},
-		"cleric_emergency_snack": {
-			"name": "Blessed Wafer",
-			"short": "BW",
-			"item_level": 0,
-			"size": Vector2i(1, 1),
-			"color": Color("f1e3a4"),
-			"description_lines": ["Starter snack", "Level 0: unlimited uses", "Adds Emergency Snack"],
-			"tags": ["food"],
-			"hand_card": {
-				"card_id": "emergency_snack_card",
-				"door_interval": 1,
-				"generation_mode": "door_interval",
-				"initial_queued_cards": 1,
-				"max_stored_cards": 1,
-			},
-		},
-		"rogue_emergency_snack": {
-			"name": "Pocket Jerky",
-			"short": "PJ",
-			"item_level": 0,
-			"size": Vector2i(1, 1),
-			"color": Color("ffbf92"),
-			"description_lines": ["Starter snack", "Level 0: unlimited uses", "Adds Emergency Snack"],
-			"tags": ["food"],
-			"hand_card": {
-				"card_id": "emergency_snack_card",
-				"door_interval": 1,
-				"generation_mode": "door_interval",
-				"initial_queued_cards": 1,
-				"max_stored_cards": 1,
-			},
-		},
-		"wizard_emergency_snack": {
-			"name": "Mana Biscuit",
-			"short": "MB",
-			"item_level": 0,
-			"size": Vector2i(1, 1),
-			"color": Color("d7c6ff"),
 			"description_lines": ["Starter snack", "Level 0: unlimited uses", "Adds Emergency Snack"],
 			"tags": ["food"],
 			"hand_card": {
@@ -464,3 +416,7 @@ static func build_item_defs() -> Dictionary:
 			"hand_card": {"card_id": "animate_dead_card", "generation_mode": "single", "phase_override": "any", "learnable_spell_scroll": true, "consume_item_on_play": true, "max_stored_cards": 1, "name_override": "Animate Dead Scroll", "description_lines_override": ["Summon three temporary skeleton allies", "Cleric prepares by level; wizard can study in calm mode"]},
 		},
 	}
+	for item_id_variant in definitions.keys():
+		var item_id: String = String(item_id_variant)
+		definitions[item_id]["icon_path"] = "res://assets/generated/items/%s.png" % item_id
+	return definitions

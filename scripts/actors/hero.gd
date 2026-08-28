@@ -1,6 +1,9 @@
 extends CharacterBody2D
 class_name Hero
 
+signal fighter_rage_filled
+
+const GAME_STATUS_EFFECTS: GDScript = preload("res://scripts/actors/game_status_effects.gd")
 const INVALID_ROOM: Vector2i = Vector2i(-99, -99)
 const SPRITE_FRAME_SIZE: Vector2i = Vector2i(100, 100)
 const MELEE_IMPACT_FRAME: float = 2.0
@@ -12,40 +15,37 @@ const FIGHTER_RAGE_MAX_START: int = 6
 const FIGHTER_RAGE_HITS_PER_POINT: int = 2
 const HERO_SPRITE_PROFILES := {
 	"fighter": {
-		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Knight/Knight/Knight_Idle.png",
-		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Knight/Knight/Knight_Walk.png",
-		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Knight/Knight/Knight_Hurt.png",
-		"attack_melee_path": "res://assets/characters/packs/pack01/characters_split_100x100/Knight/Knight/Knight_Attack01.png",
-		"attack_ranged_path": "res://assets/characters/packs/pack01/characters_split_100x100/Knight/Knight/Knight_Attack02.png",
-		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Knight/Knight/Knight_Death.png",
-		"portrait_path": "res://assets/characters/packs/pack01/characters_split_100x100/Knight/Knight/Knight_Idle.png",
+		"idle_path": "res://assets/characters/heroes/fighter/Knight_Idle.png",
+		"walk_path": "res://assets/characters/heroes/fighter/Knight_Walk.png",
+		"attack_melee_path": "res://assets/characters/heroes/fighter/Knight_Attack01.png",
+		"attack_rage_path": "res://assets/characters/heroes/fighter/Knight_Attack03.png",
+		"attack_ranged_path": "res://assets/characters/heroes/fighter/Knight_Attack02.png",
+		"death_path": "res://assets/characters/heroes/fighter/Knight_Death.png",
+		"portrait_path": "res://assets/generated/hero-icons/fighter.png",
 	},
 	"cleric": {
-		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Priest/Priest/Priest_Idle.png",
-		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Priest/Priest/Priest_Walk.png",
-		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Priest/Priest/Priest_Hurt.png",
-		"attack_melee_path": "res://assets/characters/packs/pack01/characters_split_100x100/Priest/Priest/Priest_Attack.png",
-		"attack_ranged_path": "res://assets/characters/packs/pack01/characters_split_100x100/Priest/Priest/Priest_Heal.png",
-		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Priest/Priest/Priest_Death.png",
-		"portrait_path": "res://assets/characters/packs/pack01/characters_split_100x100/Priest/Priest/Priest_Idle.png",
+		"idle_path": "res://assets/characters/heroes/cleric/Priest_Idle.png",
+		"walk_path": "res://assets/characters/heroes/cleric/Priest_Walk.png",
+		"attack_melee_path": "res://assets/characters/heroes/cleric/Priest_Attack.png",
+		"attack_ranged_path": "res://assets/characters/heroes/cleric/Priest_Heal.png",
+		"death_path": "res://assets/characters/heroes/cleric/Priest_Death.png",
+		"portrait_path": "res://assets/generated/hero-icons/cleric.png",
 	},
 	"rogue": {
-		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Swordsman/Swordsman/Swordsman_Idle.png",
-		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Swordsman/Swordsman/Swordsman_Walk.png",
-		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Swordsman/Swordsman/Swordsman_Hurt.png",
-		"attack_melee_path": "res://assets/characters/packs/pack01/characters_split_100x100/Swordsman/Swordsman/Swordsman_Attack01.png",
-		"attack_ranged_path": "res://assets/characters/packs/pack01/characters_split_100x100/Swordsman/Swordsman/Swordsman_Attack02.png",
-		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Swordsman/Swordsman/Swordsman_Death.png",
-		"portrait_path": "res://assets/characters/packs/pack01/characters_split_100x100/Swordsman/Swordsman/Swordsman_Idle.png",
+		"idle_path": "res://assets/characters/heroes/rogue/Swordsman_Idle.png",
+		"walk_path": "res://assets/characters/heroes/rogue/Swordsman_Walk.png",
+		"attack_melee_path": "res://assets/characters/heroes/rogue/Swordsman_Attack01.png",
+		"attack_ranged_path": "res://assets/characters/heroes/rogue/Swordsman_Attack02.png",
+		"death_path": "res://assets/characters/heroes/rogue/Swordsman_Death.png",
+		"portrait_path": "res://assets/generated/hero-icons/rogue.png",
 	},
 	"wizard": {
-		"idle_path": "res://assets/characters/packs/pack01/characters_split_100x100/Wizard/Wizard/Wizard_Idle.png",
-		"walk_path": "res://assets/characters/packs/pack01/characters_split_100x100/Wizard/Wizard/Wizard_Walk.png",
-		"hurt_path": "res://assets/characters/packs/pack01/characters_split_100x100/Wizard/Wizard/Wizard_Hurt.png",
-		"attack_melee_path": "res://assets/characters/packs/pack01/characters_split_100x100/Wizard/Wizard/Wizard_Attack01.png",
-		"attack_ranged_path": "res://assets/characters/packs/pack01/characters_split_100x100/Wizard/Wizard/Wizard_Attack02.png",
-		"death_path": "res://assets/characters/packs/pack01/characters_split_100x100/Wizard/Wizard/Wizard_Death.png",
-		"portrait_path": "res://assets/characters/packs/pack01/characters_split_100x100/Wizard/Wizard/Wizard_Idle.png",
+		"idle_path": "res://assets/characters/heroes/wizard/Wizard_Idle.png",
+		"walk_path": "res://assets/characters/heroes/wizard/Wizard_Walk.png",
+		"attack_melee_path": "res://assets/characters/heroes/wizard/Wizard_Attack01.png",
+		"attack_ranged_path": "res://assets/characters/heroes/wizard/Wizard_Attack02.png",
+		"death_path": "res://assets/characters/heroes/wizard/Wizard_Death.png",
+		"portrait_path": "res://assets/generated/hero-icons/wizard.png",
 	},
 }
 
@@ -76,6 +76,7 @@ var base_move_speed: float = 0.0
 var base_max_health: float = 0.0
 var base_attack_damage: float = 0.0
 var base_defence: float = 0.0
+var base_wit: float = 0.0
 var base_attack_range: float = 0.0
 var base_attack_cooldown: float = 0.0
 var base_max_hand_size: int = 4
@@ -86,6 +87,7 @@ var pack_modules: Array = []
 var inventory_items: Array = []
 var synergy_count: int = 0
 var basic_attack_knockback: float = 0.0
+var wit: float = 0.0
 var current_health: float = 0.0
 var cooldown_left: float = 0.0
 var current_room: Vector2i = Vector2i.ZERO
@@ -120,6 +122,18 @@ var food_move_speed_time_left: float = 0.0
 var haste_move_speed_multiplier: float = 1.0
 var haste_attack_cooldown_multiplier: float = 1.0
 var haste_time_left: float = 0.0
+var enemy_slow_amount: float = 0.0
+var enemy_slow_time_left: float = 0.0
+var enemy_flatfooted_time_left: float = 0.0
+var enemy_flatfooted_duration: float = 0.0
+var enemy_flatfooted_damage_taken_multiplier: float = 1.0
+var enemy_aura_attack_damage_multiplier: float = 1.0
+var enemy_aura_time_left: float = 0.0
+var leadership_aura_attack_damage_multiplier: float = 1.0
+var expose_stacks: int = 0
+var expose_time_left: float = 0.0
+var fragility_time_left: float = 0.0
+var heal_flash_time_left: float = 0.0
 var scorcher_channel_active: bool = false
 var scorcher_channel_room: Vector2i = INVALID_ROOM
 var scorcher_channel_direction: Vector2 = Vector2.RIGHT
@@ -133,6 +147,7 @@ var skulking_visual_active: bool = false
 var operate_room: Vector2i = INVALID_ROOM
 var operate_started_at_door: int = -1
 var operate_attuned: bool = false
+var operate_turns_left: int = 0
 var applied_poisons: Array = []
 var hand_cards: Array = []
 var card_generation_timers: Dictionary = {}
@@ -169,6 +184,7 @@ func _ready() -> void:
 	base_max_health = max_health
 	base_attack_damage = attack_damage
 	base_defence = defence
+	base_wit = wit
 	base_attack_range = attack_range
 	base_attack_cooldown = attack_cooldown
 	base_max_hand_size = max_hand_size
@@ -221,15 +237,17 @@ static func shared_hero_sprite_frames(class_id: String) -> SpriteFrames:
 	var profile: Dictionary = sprite_profile_for_class(class_id)
 	var idle_texture: Texture2D = load_sprite_texture(profile, "idle_path", "idle_path")
 	var walk_texture: Texture2D = load_sprite_texture(profile, "walk_path", "walk_path")
-	var hurt_texture: Texture2D = load_sprite_texture(profile, "hurt_path", "hurt_path")
 	var attack_melee_texture: Texture2D = load_sprite_texture(profile, "attack_melee_path", "attack_melee_path")
+	var attack_rage_texture: Texture2D = attack_melee_texture
+	if class_id == FIGHTER_CLASS_ID:
+		attack_rage_texture = load_sprite_texture(profile, "attack_rage_path", "attack_melee_path")
 	var attack_ranged_texture: Texture2D = load_sprite_texture(profile, "attack_ranged_path", "attack_ranged_path")
 	var death_texture: Texture2D = load_sprite_texture(profile, "death_path", "death_path")
 	var frames: SpriteFrames = SpriteFrames.new()
 	build_strip_animation(frames, "idle", idle_texture, strip_frame_count(idle_texture, 6), 7.0, true)
 	build_strip_animation(frames, "walk", walk_texture, strip_frame_count(walk_texture, 8), 11.0, true)
-	build_strip_animation(frames, "hurt", hurt_texture, strip_frame_count(hurt_texture, 4), 14.0, false)
 	build_strip_animation(frames, "attack_melee", attack_melee_texture, strip_frame_count(attack_melee_texture, 6), 13.0, false)
+	build_strip_animation(frames, "attack_rage", attack_rage_texture, strip_frame_count(attack_rage_texture, 6), 13.0, false)
 	build_strip_animation(frames, "attack_ranged", attack_ranged_texture, strip_frame_count(attack_ranged_texture, 6), 14.0, false)
 	build_strip_animation(frames, "death", death_texture, strip_frame_count(death_texture, 4), 10.0, false)
 	hero_sprite_frames_cache[class_id] = frames
@@ -264,7 +282,11 @@ func apply_sprite_tint() -> void:
 		return
 	var base_tint: Color = sprite_tint_for_class()
 	var buff_tint: Color = active_food_buff_tint()
-	animated_sprite.modulate = Color(base_tint.r * buff_tint.r, base_tint.g * buff_tint.g, base_tint.b * buff_tint.b, base_tint.a)
+	var resolved_tint := Color(base_tint.r * buff_tint.r, base_tint.g * buff_tint.g, base_tint.b * buff_tint.b, base_tint.a)
+	if hurt_effect_left > 0.0:
+		var flash_ratio: float = clampf(hurt_effect_left / 0.22, 0.0, 1.0)
+		resolved_tint = resolved_tint.lerp(Color(1.0, 0.20, 0.20, 1.0), 0.45 + 0.35 * flash_ratio)
+	animated_sprite.modulate = resolved_tint
 
 func should_reduce_animations() -> bool:
 	var host: Node = get_parent()
@@ -277,8 +299,6 @@ func should_reduce_animations() -> bool:
 func desired_sprite_animation(move_offset: Vector2) -> String:
 	if dead_started:
 		return "death"
-	if hurt_effect_left > 0.0:
-		return "hurt"
 	if attack_effect_left > 0.0:
 		return attack_animation_name()
 	if velocity.length() > 8.0 or move_offset.length() > 8.0:
@@ -291,6 +311,8 @@ func animation_name_for_style(style: String = "") -> String:
 		return "attack_ranged"
 	if resolved_style == "heal_cast":
 		return "attack_ranged"
+	if resolved_style == "melee" and hero_class_id == FIGHTER_CLASS_ID and fighter_rage_throw_hits_left > 0 and fighter_rage_throw_level > 0:
+		return "attack_rage"
 	return "attack_melee" if resolved_style == "melee" else "attack_ranged"
 
 func attack_animation_name() -> String:
@@ -300,9 +322,7 @@ func animation_speed_scale_for(animation_name: String) -> float:
 	match animation_name:
 		"walk":
 			return clampf(movement_speed() / maxf(base_move_speed, 1.0), 0.75, 2.2)
-		"attack_melee":
-			return 0.72
-		"attack_ranged":
+		"attack_melee", "attack_rage", "attack_ranged":
 			var base_scale: float = 0.92
 			if animated_sprite != null and animated_sprite.sprite_frames != null and animated_sprite.sprite_frames.has_animation(animation_name):
 				var frame_count: int = animated_sprite.sprite_frames.get_frame_count(animation_name)
@@ -412,10 +432,11 @@ func set_destination(world_position: Vector2) -> void:
 
 func melee_impact_delay() -> float:
 	var attack_frames: SpriteFrames = animated_sprite.sprite_frames if animated_sprite != null else null
+	var animation_name: String = animation_name_for_style("melee")
 	var attack_fps: float = MELEE_ATTACK_FPS
-	if attack_frames != null and attack_frames.has_animation("attack_melee"):
-		attack_fps = attack_frames.get_animation_speed("attack_melee")
-	return MELEE_IMPACT_FRAME / maxf(attack_fps * animation_speed_scale_for("attack_melee"), 0.001)
+	if attack_frames != null and attack_frames.has_animation(animation_name):
+		attack_fps = attack_frames.get_animation_speed(animation_name)
+	return MELEE_IMPACT_FRAME / maxf(attack_fps * animation_speed_scale_for(animation_name), 0.001)
 
 func knockback_recovery_factor() -> float:
 	if knockback_time_left <= 0.0 or knockback_duration <= 0.0:
@@ -493,7 +514,22 @@ func current_attack_cooldown() -> float:
 		cooldown_multiplier *= maxf(food_attack_cooldown_multiplier, 0.1)
 	if haste_time_left > 0.0:
 		cooldown_multiplier *= maxf(haste_attack_cooldown_multiplier, 0.1)
+	if enemy_slow_time_left > 0.0:
+		cooldown_multiplier /= maxf(1.0 - enemy_slow_amount, 0.1)
 	return maxf(attack_cooldown * maxf(cooldown_multiplier, 0.1), 0.08)
+
+func current_attack_damage() -> float:
+	var damage: float = attack_damage
+	if enemy_aura_time_left > 0.0:
+		damage *= clampf(enemy_aura_attack_damage_multiplier, 0.1, 1.0)
+	damage *= clampf(leadership_aura_attack_damage_multiplier, 1.0, 3.0)
+	return damage
+
+func clear_leadership_aura() -> void:
+	leadership_aura_attack_damage_multiplier = 1.0
+
+func apply_leadership_aura(attack_damage_multiplier: float) -> void:
+	leadership_aura_attack_damage_multiplier = maxf(leadership_aura_attack_damage_multiplier, maxf(attack_damage_multiplier, 1.0))
 
 func apply_food_attack_speed_buff(cooldown_multiplier: float, duration: float) -> void:
 	if duration <= 0.0 or cooldown_multiplier <= 0.0:
@@ -536,6 +572,43 @@ func clear_haste_buff() -> void:
 	apply_sprite_tint()
 	queue_redraw()
 
+func apply_enemy_slow(slow_per_hit: float, max_slow: float, duration: float) -> void:
+	if duration <= 0.0 or slow_per_hit <= 0.0:
+		return
+	enemy_slow_amount = clampf(enemy_slow_amount + slow_per_hit, 0.0, clampf(max_slow, 0.0, 0.9))
+	enemy_slow_time_left = maxf(enemy_slow_time_left, duration)
+	queue_redraw()
+
+func apply_enemy_flatfooted(slow_per_hit: float, max_slow: float, duration: float, damage_taken_multiplier: float = 1.5) -> void:
+	if duration <= 0.0:
+		return
+	apply_enemy_slow(slow_per_hit, max_slow, duration)
+	var flatfooted_state: Dictionary = GAME_STATUS_EFFECTS.refresh_flatfooted_state(enemy_flatfooted_time_left, enemy_flatfooted_duration, enemy_flatfooted_damage_taken_multiplier, duration, damage_taken_multiplier)
+	enemy_flatfooted_time_left = float(flatfooted_state["time_left"])
+	enemy_flatfooted_duration = float(flatfooted_state["duration"])
+	enemy_flatfooted_damage_taken_multiplier = float(flatfooted_state["damage_taken_multiplier"])
+	queue_redraw()
+
+func apply_enemy_aura(attack_damage_multiplier: float, duration: float) -> void:
+	if duration <= 0.0:
+		return
+	enemy_aura_attack_damage_multiplier = minf(enemy_aura_attack_damage_multiplier, clampf(attack_damage_multiplier, 0.1, 1.0))
+	enemy_aura_time_left = maxf(enemy_aura_time_left, duration)
+	queue_redraw()
+
+func apply_expose_stack(stacks_to_add: int, max_stacks: int, duration: float) -> void:
+	if stacks_to_add <= 0 or max_stacks <= 0 or duration <= 0.0:
+		return
+	if fragility_time_left > 0.0:
+		return
+	expose_stacks = clampi(expose_stacks + stacks_to_add, 0, max_stacks)
+	expose_time_left = maxf(expose_time_left, duration)
+	if expose_stacks >= max_stacks:
+		expose_stacks = 0
+		expose_time_left = 0.0
+		fragility_time_left = duration
+	queue_redraw()
+
 func advance_food_buffs(delta: float) -> void:
 	if delta <= 0.0:
 		return
@@ -563,11 +636,17 @@ func take_damage(amount: float, allow_lethal_death: bool = true) -> bool:
 		return true
 	if invulnerability_time_left > 0.0:
 		return false
+	if enemy_flatfooted_time_left > 0.0 and amount > 0.0:
+		amount *= GAME_STATUS_EFFECTS.flatfooted_damage_taken_multiplier(enemy_flatfooted_time_left, enemy_flatfooted_duration, enemy_flatfooted_damage_taken_multiplier)
+	if fragility_time_left > 0.0 and amount > 0.0:
+		amount *= 1.5
+	var rage_filled: bool = false
 	if amount > 0.0 and hero_class_id == FIGHTER_CLASS_ID and fighter_rage_max > 0 and fighter_rage_throw_hits_left <= 0:
 		fighter_rage_hit_progress = maxi(fighter_rage_hit_progress, 0) + 1
 		if fighter_rage_hit_progress >= FIGHTER_RAGE_HITS_PER_POINT:
 			gain_fighter_rage(fighter_rage_hit_progress / FIGHTER_RAGE_HITS_PER_POINT)
 			fighter_rage_hit_progress = fighter_rage_hit_progress % FIGHTER_RAGE_HITS_PER_POINT
+			rage_filled = fighter_rage >= fighter_rage_max
 	var remaining_damage: float = mitigated_damage_by_defence(amount)
 	if barrier_amount > 0.0 and remaining_damage > 0.0:
 		var absorbed: float = minf(barrier_amount, remaining_damage)
@@ -579,6 +658,9 @@ func take_damage(amount: float, allow_lethal_death: bool = true) -> bool:
 			barrier_time_left = 0.0
 	current_health = maxf(current_health - remaining_damage, 0.0)
 	hurt_effect_left = maxf(hurt_effect_left, 0.22)
+	apply_sprite_tint()
+	if rage_filled and current_health > 0.0:
+		fighter_rage_filled.emit()
 	if current_health <= 0.0 and allow_lethal_death:
 		begin_death()
 	queue_redraw()
@@ -688,6 +770,7 @@ func heal(amount: float) -> bool:
 	var previous_health: float = current_health
 	current_health = minf(current_health + amount, max_health)
 	if current_health > previous_health:
+		heal_flash_time_left = 0.55
 		queue_redraw()
 	return current_health >= max_health
 
@@ -728,9 +811,21 @@ func apply_inventory_stats(move_bonus: float, health_bonus: float, attack_bonus:
 	food_defence_time_left = maxf(food_defence_time_left, 0.0)
 	food_move_speed_time_left = maxf(food_move_speed_time_left, 0.0)
 	haste_time_left = maxf(haste_time_left, 0.0)
+	enemy_slow_amount = clampf(enemy_slow_amount, 0.0, 0.9)
+	enemy_slow_time_left = maxf(enemy_slow_time_left, 0.0)
+	enemy_flatfooted_time_left = maxf(enemy_flatfooted_time_left, 0.0)
+	enemy_flatfooted_duration = maxf(enemy_flatfooted_duration, 0.0)
+	enemy_flatfooted_damage_taken_multiplier = clampf(enemy_flatfooted_damage_taken_multiplier, 1.0, 4.0)
+	enemy_aura_attack_damage_multiplier = clampf(enemy_aura_attack_damage_multiplier, 0.1, 1.0)
+	enemy_aura_time_left = maxf(enemy_aura_time_left, 0.0)
+	leadership_aura_attack_damage_multiplier = clampf(leadership_aura_attack_damage_multiplier, 1.0, 3.0)
+	expose_stacks = clampi(expose_stacks, 0, 3)
+	expose_time_left = maxf(expose_time_left, 0.0)
+	fragility_time_left = maxf(fragility_time_left, 0.0)
 	if operate_attuned and operate_room == INVALID_ROOM:
 		operate_attuned = false
 	operate_started_at_door = maxi(operate_started_at_door, -1)
+	operate_turns_left = clampi(operate_turns_left, 0, 1)
 	apply_sprite_tint()
 	queue_redraw()
 
@@ -751,18 +846,17 @@ func _on_animated_sprite_animation_finished() -> void:
 	if animated_sprite == null:
 		return
 	match String(animated_sprite.animation):
-		"attack_melee", "attack_ranged":
+		"attack_melee", "attack_rage", "attack_ranged":
 			attack_effect_left = 0.0
-		"hurt":
-			hurt_effect_left = 0.0
 
-func configure_archetype(class_id: String, display_name: String, next_move_speed: float, next_max_health: float, next_attack_damage: float, next_defence: float, next_attack_range: float, next_attack_cooldown: float, next_attack_style: String, next_weight: float, next_melee_windup_duration: float, next_body_color: Color, next_core_color: Color) -> void:
+func configure_archetype(class_id: String, display_name: String, next_move_speed: float, next_max_health: float, next_attack_damage: float, next_defence: float, next_wit: float, next_attack_range: float, next_attack_cooldown: float, next_attack_style: String, next_weight: float, next_melee_windup_duration: float, next_body_color: Color, next_core_color: Color) -> void:
 	hero_class_id = class_id
 	hero_name = display_name
 	move_speed = next_move_speed
 	max_health = next_max_health
 	attack_damage = next_attack_damage
 	defence = maxf(next_defence, 0.0)
+	wit = maxf(next_wit, 0.0)
 	attack_range = next_attack_range
 	attack_cooldown = next_attack_cooldown
 	preferred_attack_style = next_attack_style
@@ -774,6 +868,7 @@ func configure_archetype(class_id: String, display_name: String, next_move_speed
 	base_max_health = next_max_health
 	base_attack_damage = next_attack_damage
 	base_defence = defence
+	base_wit = wit
 	base_attack_range = next_attack_range
 	base_attack_cooldown = next_attack_cooldown
 	base_max_hand_size = max_hand_size
@@ -810,6 +905,8 @@ func movement_speed() -> float:
 		speed *= maxf(food_move_speed_multiplier, 1.0)
 	if haste_time_left > 0.0:
 		speed *= maxf(haste_move_speed_multiplier, 1.0)
+	if enemy_slow_time_left > 0.0:
+		speed *= 1.0 - enemy_slow_amount
 	if evasive_roll_time_left > 0.0:
 		speed *= maxf(evasive_roll_speed_multiplier, 1.0)
 	if carrying_crystal:
@@ -871,6 +968,27 @@ func _physics_process(delta: float) -> void:
 			haste_move_speed_multiplier = 1.0
 			haste_attack_cooldown_multiplier = 1.0
 			apply_sprite_tint()
+	if enemy_slow_time_left > 0.0:
+		enemy_slow_time_left = maxf(enemy_slow_time_left - delta, 0.0)
+		if enemy_slow_time_left <= 0.0:
+			enemy_slow_amount = 0.0
+	if enemy_flatfooted_time_left > 0.0:
+		var flatfooted_state: Dictionary = GAME_STATUS_EFFECTS.advance_flatfooted_state(enemy_flatfooted_time_left, enemy_flatfooted_duration, enemy_flatfooted_damage_taken_multiplier, delta)
+		enemy_flatfooted_time_left = float(flatfooted_state["time_left"])
+		enemy_flatfooted_duration = float(flatfooted_state["duration"])
+		enemy_flatfooted_damage_taken_multiplier = float(flatfooted_state["damage_taken_multiplier"])
+	if enemy_aura_time_left > 0.0:
+		enemy_aura_time_left = maxf(enemy_aura_time_left - delta, 0.0)
+		if enemy_aura_time_left <= 0.0:
+			enemy_aura_attack_damage_multiplier = 1.0
+	if expose_time_left > 0.0:
+		expose_time_left = maxf(expose_time_left - delta, 0.0)
+		if expose_time_left <= 0.0:
+			expose_stacks = 0
+	if fragility_time_left > 0.0:
+		fragility_time_left = maxf(fragility_time_left - delta, 0.0)
+	if heal_flash_time_left > 0.0:
+		heal_flash_time_left = maxf(heal_flash_time_left - delta, 0.0)
 	var offset: Vector2 = destination - global_position
 	var desired_velocity: Vector2 = Vector2.ZERO
 	if offset.length() < 4.0:
@@ -896,14 +1014,48 @@ func _draw() -> void:
 	draw_rect(Rect2(Vector2(-22.0, -38.0), Vector2(44.0, 6.0)), Color("1a2225"), true)
 	draw_rect(Rect2(Vector2(-22.0, -38.0), Vector2(44.0 * health_ratio, 6.0)), Color("8df4b2"), true)
 	if carrying_crystal:
-		draw_colored_polygon(PackedVector2Array([
-			Vector2(0.0, -52.0),
-			Vector2(12.0, -36.0),
-			Vector2(0.0, -20.0),
-			Vector2(-12.0, -36.0),
-		]), Color("ffe7a1"))
+		var crystal_time: float = float(Time.get_ticks_msec()) * 0.001
+		var crystal_center: Vector2 = Vector2(0.0, -36.0 + sin(crystal_time * 2.4) * 1.5)
+		var crystal_angle: float = crystal_time * 1.7
+		var crystal_radius: float = 16.0
+		var crystal_width_scale: float = 0.55 + 0.45 * absf(cos(crystal_angle))
+		var crystal_top: Vector2 = Vector2(0.0, -crystal_radius)
+		var crystal_right: Vector2 = Vector2(crystal_radius * 0.72 * crystal_width_scale, 0.0)
+		var crystal_bottom: Vector2 = Vector2(0.0, crystal_radius)
+		var crystal_left: Vector2 = Vector2(-crystal_radius * 0.72 * crystal_width_scale, 0.0)
+		draw_circle(crystal_center, crystal_radius + 6.0, Color(1.0, 0.72, 0.20, 0.18))
+		var crystal_front_facet: Color = Color("fff0a8") if cos(crystal_angle) >= 0.0 else Color("f8d56d")
+		draw_colored_polygon(PackedVector2Array([crystal_center + crystal_top, crystal_center + crystal_right, crystal_center, crystal_center + crystal_left]), crystal_front_facet)
+		draw_colored_polygon(PackedVector2Array([crystal_center + crystal_left, crystal_center, crystal_center + crystal_bottom]), Color("d88b29"))
+		draw_colored_polygon(PackedVector2Array([crystal_center, crystal_center + crystal_right, crystal_center + crystal_bottom]), Color("f3bd4d"))
+		draw_polyline(PackedVector2Array([crystal_center + crystal_top, crystal_center + crystal_right, crystal_center + crystal_bottom, crystal_center + crystal_left, crystal_center + crystal_top]), Color("fff8d2"), 1.5, true)
 	if selected:
 		draw_arc(Vector2.ZERO, 28.0, 0.0, TAU, 48, Color("f8ff7a"), 4.0, true)
+	if heal_flash_time_left > 0.0:
+		var heal_pulse: float = 0.5 + 0.5 * sin(float(Time.get_ticks_msec()) * 0.034)
+		var heal_ratio: float = heal_flash_time_left / 0.55
+		var heal_radius: float = 24.0 + (1.0 - heal_ratio) * 18.0
+		draw_circle(Vector2.ZERO, heal_radius, Color(0.30, 1.0, 0.48, 0.10 + heal_pulse * 0.12))
+		draw_arc(Vector2.ZERO, heal_radius, 0.0, TAU, 40, Color(0.48, 1.0, 0.62, 0.45 + heal_pulse * 0.42), 2.6, true)
+	if enemy_aura_time_left > 0.0:
+		draw_arc(Vector2.ZERO, 24.0, 0.0, TAU, 40, Color(0.84, 0.52, 1.0, 0.76), 2.0, true)
+	if enemy_slow_time_left > 0.0:
+		var slow_ratio: float = clampf(enemy_slow_amount / 0.48, 0.0, 1.0)
+		draw_arc(Vector2.ZERO, 20.0, -PI * 0.5, -PI * 0.5 + TAU * slow_ratio, 32, Color(0.5, 0.78, 1.0, 0.92), 2.4, true)
+	if enemy_flatfooted_time_left > 0.0:
+		var flatfooted_pulse: float = GAME_STATUS_EFFECTS.flatfooted_strength(enemy_flatfooted_time_left, enemy_flatfooted_duration)
+		draw_circle(Vector2.ZERO, 27.0 + flatfooted_pulse * 2.0, Color(1.0, 0.66, 0.24, 0.10))
+		draw_arc(Vector2.ZERO, 29.0 + flatfooted_pulse * 2.0, 0.0, TAU, 40, Color(1.0, 0.70, 0.28, 0.88), 2.4, true)
+	if expose_stacks > 0:
+		var expose_color: Color = Color(1.0, 0.5, 0.22, 0.95)
+		draw_arc(Vector2.ZERO, 29.0, 0.0, TAU * float(expose_stacks) / 3.0, 36, expose_color, 2.4, true)
+		for stack_index in range(expose_stacks):
+			var stack_angle: float = -PI * 0.5 + TAU * float(stack_index) / 3.0
+			draw_circle(Vector2(cos(stack_angle), sin(stack_angle)) * 29.0, 3.2, expose_color)
+	if fragility_time_left > 0.0:
+		var fragility_pulse: float = 0.5 + 0.5 * sin(float(Time.get_ticks_msec()) * 0.014)
+		draw_circle(Vector2.ZERO, 28.0 + fragility_pulse * 3.0, Color(1.0, 0.32, 0.18, 0.12))
+		draw_arc(Vector2.ZERO, 31.0 + fragility_pulse * 2.0, 0.0, TAU, 44, Color(1.0, 0.48, 0.28, 0.9), 2.8, true)
 	var thrash_active: bool = hero_class_id == FIGHTER_CLASS_ID and fighter_rage_throw_hits_left > 0 and fighter_rage_throw_level > 0
 	if thrash_active:
 		var rage_ratio: float = clampf(float(fighter_rage_throw_level) / float(maxi(fighter_rage_max, 1)), 0.0, 1.0)

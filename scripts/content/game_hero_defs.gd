@@ -5,6 +5,8 @@ const HERO_CLASS_CLERIC: String = "cleric"
 const HERO_CLASS_ROGUE: String = "rogue"
 const HERO_CLASS_WIZARD: String = "wizard"
 const CLERIC_MEND_UNLOCK_LEVEL: int = 2
+const CLERIC_RESTORATION_AURA_UNLOCK_LEVEL: int = 4
+const FIGHTER_LEADERSHIP_AURA_UNLOCK_LEVEL: int = 4
 
 static func hero_class_definition(class_id: String) -> Dictionary:
 	match class_id:
@@ -15,8 +17,9 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 				"title": "Melee Cleric",
 				"move_speed": 150.0,
 				"max_health": 108.0,
-				"attack_damage": 18.0,
+				"attack_damage": 11.7,
 				"defence": 11.0,
+				"wit": 8.0,
 				"attack_range": 70.0,
 				"attack_cooldown": 0.84,
 				"attack_style": "melee",
@@ -35,6 +38,11 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 						"name": "Mend",
 						"detail": "Passively repairs damaged room modules while the cleric is present.",
 					},
+					{
+						"level": CLERIC_RESTORATION_AURA_UNLOCK_LEVEL,
+						"name": "Restoration Aura",
+						"detail": "Passively restores nearby allies while the cleric is present.",
+					},
 				],
 			}
 		HERO_CLASS_ROGUE:
@@ -44,8 +52,9 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 				"title": "Melee Rogue",
 				"move_speed": 286.0,
 				"max_health": 92.0,
-				"attack_damage": 17.0,
+				"attack_damage": 11.05,
 				"defence": 7.0,
+				"wit": 10.0,
 				"attack_range": 70.0,
 				"attack_cooldown": 0.42,
 				"attack_style": "melee",
@@ -61,8 +70,8 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 					},
 					{
 						"level": 3,
-						"name": "Operate (Wit 10)",
-						"detail": "Stay in a lit major-module room for 1 door turn to attune. While attuned, add +10 to that room's major income. Leaving the room breaks attunement.",
+						"name": "Operate",
+						"detail": "Stay in a lit major-module room for 1 door turn to attune. While attuned, add your Wit to that room's major income. Leaving the room breaks attunement.",
 					},
 				],
 			}
@@ -73,8 +82,9 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 				"title": "Ranged Wizard",
 				"move_speed": 100.0,
 				"max_health": 86.0,
-				"attack_damage": 24.0,
+				"attack_damage": 15.6,
 				"defence": 5.0,
+				"wit": 9.0,
 				"attack_range": 320.0,
 				"attack_cooldown": 1.5,
 				"attack_style": "fire_bolt",
@@ -85,8 +95,8 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 				"level_passives": [
 					{
 						"level": 4,
-						"name": "Operate (Wit 9)",
-						"detail": "Stay in a lit major-module room for 1 door turn to attune. While attuned, add +9 to that room's major income. Leaving the room breaks attunement.",
+						"name": "Operate",
+						"detail": "Stay in a lit major-module room for 1 door turn to attune. While attuned, add your Wit to that room's major income. Leaving the room breaks attunement.",
 					},
 				],
 			}
@@ -97,8 +107,9 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 				"title": "Melee Fighter",
 				"move_speed": 100.0,
 				"max_health": 230.0,
-				"attack_damage": 28.0,
+				"attack_damage": 18.2,
 				"defence": 14.0,
+				"wit": 4.0,
 				"attack_range": 70.0,
 				"attack_cooldown": 1.0,
 				"attack_style": "melee",
@@ -111,6 +122,11 @@ static func hero_class_definition(class_id: String) -> Dictionary:
 						"level": 1,
 						"name": "Rage",
 						"detail": "Gain 1 Rage whenever you are hit. Rage caps at 6. Your next physical card gains +5 damage per Rage, while Silver Gauntlets still use their own Thrash Around scaling.",
+					},
+					{
+						"level": FIGHTER_LEADERSHIP_AURA_UNLOCK_LEVEL,
+						"name": "Leadership Aura",
+						"detail": "Nearby allies deal 15% more damage while the fighter is present.",
 					},
 				],
 			}
@@ -150,6 +166,16 @@ static func hero_has_cleric_mend(hero: Variant) -> bool:
 		return false
 	return String(hero.hero_class_id) == HERO_CLASS_CLERIC and int(hero.level) >= CLERIC_MEND_UNLOCK_LEVEL
 
+static func hero_has_cleric_restoration_aura(hero: Variant) -> bool:
+	if hero == null or not is_instance_valid(hero):
+		return false
+	return String(hero.hero_class_id) == HERO_CLASS_CLERIC and int(hero.level) >= CLERIC_RESTORATION_AURA_UNLOCK_LEVEL
+
+static func hero_has_fighter_leadership_aura(hero: Variant) -> bool:
+	if hero == null or not is_instance_valid(hero):
+		return false
+	return String(hero.hero_class_id) == HERO_CLASS_FIGHTER and int(hero.level) >= FIGHTER_LEADERSHIP_AURA_UNLOCK_LEVEL
+
 static func hero_can_operate_major_modules(hero: Variant) -> bool:
 	if hero == null or not is_instance_valid(hero):
 		return false
@@ -182,7 +208,7 @@ static func implemented_spellbook_spells_for_class(class_id: String) -> Array[St
 		HERO_CLASS_WIZARD:
 			return ["magic_missile_card", "shield_card", "scorcher_card", "web_card", "scry_card", "find_familiar_card", "animate_dead_card", "fireball_card", "lightning_bolt_card", "haste_card"]
 		HERO_CLASS_CLERIC:
-			return ["cure_light_wounds_card", "sanctuary_card", "hold_person_card", "fear_card", "calm_emotions_card", "spiritual_weapon_card", "animate_dead_card", "beacon_of_hope_card"]
+			return ["cleric_operate_card", "cure_light_wounds_card", "sanctuary_card", "hold_person_card", "fear_card", "calm_emotions_card", "spiritual_weapon_card", "animate_dead_card", "beacon_of_hope_card"]
 		_:
 			return []
 
@@ -231,6 +257,7 @@ static func spell_overlay_entry(spell_id: String, card_lookup: Callable) -> Dict
 		"id": spell_id,
 		"name": String(card_def.get("name", spell_id.replace("_card", "").replace("_", " ").capitalize())),
 		"level": spell_level(spell_id, card_lookup),
+		"icon_path": String(card_def.get("icon_path", "")),
 		"description_lines": Array(card_def.get("description_lines", [])).duplicate(),
 	}
 

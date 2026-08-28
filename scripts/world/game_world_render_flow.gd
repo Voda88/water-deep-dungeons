@@ -4,6 +4,19 @@ const EFFECT_FRAME_SIZE: Vector2i = Vector2i(100, 100)
 const NECROMANCER_ATTACK_EFFECT: Texture2D = preload("res://assets/characters/packs/pack01/projectiles/magic/Necromancer_Sumon_Effect.png")
 const LOOT_CHEST_TEXTURE: Texture2D = preload("res://assets/dungeon/tileset/doors_lever_chest_animation.png")
 const MERCHANT_DEMONESS_IDLE_TEXTURE: Texture2D = preload("res://assets/characters/packs/pack02/characters_split_100x100/Demoness_A/Demoness_A/Demoness_A_Idle.png")
+const MINOR_SLOT_TEXTURE: Texture2D = preload("res://assets/generated/modules/minor_slot.png")
+const MAJOR_SLOT_TEXTURE: Texture2D = preload("res://assets/generated/modules/major_slot.png")
+const BALLISTA_TURRET_TEXTURE: Texture2D = preload("res://assets/generated/modules/ballista_turret.png")
+const TEAR_GAS_TURRET_TEXTURE: Texture2D = preload("res://assets/generated/modules/tear_gas.png")
+const NEUROSTUN_ARRAY_TEXTURE: Texture2D = preload("res://assets/generated/modules/neurostun_array.png")
+const KIP_CANNON_TEXTURE: Texture2D = preload("res://assets/generated/modules/kip_cannon.png")
+const CONVERSION_TURRET_TEXTURE: Texture2D = preload("res://assets/generated/modules/conversion_turret.png")
+const SALVAGE_SIGIL_TEXTURE: Texture2D = preload("res://assets/generated/modules/salvage_sigil.png")
+const PROVISION_SIGIL_TEXTURE: Texture2D = preload("res://assets/generated/modules/provision_sigil.png")
+const SAGE_SIGIL_TEXTURE: Texture2D = preload("res://assets/generated/modules/sage_sigil.png")
+const FOOD_MODULE_TEXTURE: Texture2D = preload("res://assets/generated/modules/food_module.png")
+const ARCANA_MODULE_TEXTURE: Texture2D = preload("res://assets/generated/modules/arcana_module.png")
+const MATERIALS_MODULE_TEXTURE: Texture2D = preload("res://assets/generated/modules/materials_module.png")
 const LOOT_CHEST_FRAME_SIZE: Vector2i = Vector2i(32, 32)
 const LOOT_CHEST_FRAME_ORIGIN: Vector2i = Vector2i(0, 128)
 const LOOT_CHEST_ANIM_FRAME_COUNT: int = 5
@@ -44,6 +57,25 @@ static func _draw(game: Node) -> void:
 	game.draw_set_transform_matrix(Transform2D.IDENTITY)
 	if trace_draw_parts:
 		game.perf_trace_add_us("draw_screen_ui", Time.get_ticks_usec() - draw_section_start)
+
+static func draw_power_crystal(game: Node, center: Vector2, scale: float = 1.0) -> void:
+	var time_seconds: float = float(Time.get_ticks_msec()) * 0.001
+	var rotation_angle: float = time_seconds * 1.7
+	var bob_offset: float = sin(time_seconds * 2.4) * 2.0 * scale
+	var crystal_center: Vector2 = center + Vector2(0.0, bob_offset)
+	var outer_radius: float = 29.0 * scale
+	var width_scale: float = 0.55 + 0.45 * absf(cos(rotation_angle))
+	game.draw_circle(crystal_center, outer_radius + 10.0 * scale, Color(1.0, 0.72, 0.20, 0.10))
+	game.draw_circle(crystal_center, outer_radius + 4.0 * scale, Color(1.0, 0.82, 0.34, 0.18))
+	var top: Vector2 = Vector2(0.0, -outer_radius)
+	var right: Vector2 = Vector2(outer_radius * 0.72 * width_scale, 0.0)
+	var bottom: Vector2 = Vector2(0.0, outer_radius)
+	var left: Vector2 = Vector2(-outer_radius * 0.72 * width_scale, 0.0)
+	var front_facet: Color = Color("fff0a8") if cos(rotation_angle) >= 0.0 else Color("f8d56d")
+	game.draw_colored_polygon(PackedVector2Array([crystal_center + top, crystal_center + right, crystal_center, crystal_center + left]), front_facet)
+	game.draw_colored_polygon(PackedVector2Array([crystal_center + left, crystal_center, crystal_center + bottom]), Color("d88b29"))
+	game.draw_colored_polygon(PackedVector2Array([crystal_center, crystal_center + right, crystal_center + bottom]), Color("f3bd4d"))
+	game.draw_polyline(PackedVector2Array([crystal_center + top, crystal_center + right, crystal_center + bottom, crystal_center + left, crystal_center + top]), Color("fff8d2"), 2.0 * scale, true)
 
 static func active_hand_drag_target_preview(game: Node) -> Dictionary:
 	if game.active_hand_drag.is_empty():
@@ -727,49 +759,38 @@ static func draw_room_overlays(game: Node, reduce_animations: bool = false) -> v
 			var major_position: Vector2 = game.major_slot_position(room_coord)
 			var show_major_slot: bool = show_slot_guides or highlight_major_slot or (room["major_module_type"] != "" and float(room["major_health"]) > 0.0) or not pending_major.is_empty()
 			if show_major_slot:
-				var major_fill: Color = Color(0.08, 0.12, 0.15, 0.34)
-				var major_outline: Color = Color("182024")
-				if show_slot_guides and not highlight_major_slot:
-					major_fill = Color(0.10, 0.14, 0.16, 0.24)
-					major_outline = Color(0.82, 0.88, 0.92, 0.78)
-				if highlight_major_slot:
-					major_fill = Color(1.0, 0.89, 0.61, 0.16)
-					major_outline = Color("ffe39b")
-				game.draw_rect(Rect2(major_position - Vector2(17.0, 17.0), Vector2(34.0, 34.0)), major_fill, true)
-				game.draw_rect(Rect2(major_position - Vector2(17.0, 17.0), Vector2(34.0, 34.0)), major_outline, false, 2.0)
+				game.draw_texture_rect(MAJOR_SLOT_TEXTURE, Rect2(major_position - Vector2(20.0, 20.0), Vector2(40.0, 40.0)), false)
 			if room["major_module_type"] != "" and float(room["major_health"]) > 0.0:
 				var major_color: Color = Color("f1c26b")
+				var major_texture: Texture2D = MATERIALS_MODULE_TEXTURE
 				match String(room["major_module_type"]):
 					game.MAJOR_MODULE_FOOD:
 						major_color = Color("8ee28a")
+						major_texture = FOOD_MODULE_TEXTURE
 					game.MAJOR_MODULE_SCIENCE:
 						major_color = Color("8bc1ff")
+						major_texture = ARCANA_MODULE_TEXTURE
 					game.MAJOR_MODULE_INDUSTRY:
 						major_color = Color("f1c26b")
-				game.draw_rect(Rect2(major_position - Vector2(14.0, 14.0), Vector2(28.0, 28.0)), major_color, true)
+				game.draw_texture_rect(major_texture, Rect2(major_position - Vector2(24.0, 24.0), Vector2(48.0, 48.0)), false)
 				var major_ratio: float = float(room["major_health"]) / game.MAJOR_MODULE_MAX_HEALTH
 				game.draw_rect(Rect2(major_position + Vector2(-20.0, 22.0), Vector2(40.0, 5.0)), Color("1b1610"), true)
 				game.draw_rect(Rect2(major_position + Vector2(-20.0, 22.0), Vector2(40.0 * major_ratio, 5.0)), major_color.lightened(0.15), true)
+				if not bool(room.get("major_under_construction", false)):
+					var major_yield: int = game.major_module_door_yield(game.major_module_level(String(room["major_module_type"])))
+					var resource_label: String = "Food"
+					if String(room["major_module_type"]) == game.MAJOR_MODULE_INDUSTRY:
+						resource_label = "Mat"
+					elif String(room["major_module_type"]) == game.MAJOR_MODULE_SCIENCE:
+						resource_label = "Arc"
+					var production_pulse: float = 0.5 if reduce_animations else 0.5 + 0.5 * sin(float(Time.get_ticks_msec()) / 250.0 + float(room_coord.x - room_coord.y))
+					game.draw_circle(major_position, 28.0 + production_pulse * 5.0, Color(major_color.r, major_color.g, major_color.b, 0.06 + production_pulse * 0.05))
+					game.draw_arc(major_position, 30.0 + production_pulse * 4.0, 0.0, TAU, 28, Color(major_color.r, major_color.g, major_color.b, 0.48 + production_pulse * 0.22), 1.4, true)
+					game.draw_string(ThemeDB.fallback_font, major_position + Vector2(-34.0, -30.0), "+%d %s" % [major_yield, resource_label], HORIZONTAL_ALIGNMENT_CENTER, 68.0, 12, major_color.lightened(0.28))
 				if bool(room.get("major_under_construction", false)):
 					game.draw_string(ThemeDB.fallback_font, major_position + Vector2(-18.0, -20.0), "BUILD", HORIZONTAL_ALIGNMENT_LEFT, 40.0, 12, Color("fff1b7"))
 			elif game.room_has_research_crystal(room_coord):
-				var pulse_phase: float = fmod(float(Time.get_ticks_msec()) / 1000.0, 1.2) / 1.2
-				game.draw_colored_polygon(PackedVector2Array([
-					major_position + Vector2(0.0, -16.0),
-					major_position + Vector2(14.0, 0.0),
-					major_position + Vector2(0.0, 16.0),
-					major_position + Vector2(-14.0, 0.0),
-				]), Color("87c9ff"))
-				game.draw_arc(major_position, 18.0, 0.0, TAU, 28, Color("d9f4ff"), 2.2, true)
-				if game.room_has_active_research(room_coord) and not reduce_animations:
-					var shimmer: float = 0.5 + 0.5 * sin(float(Time.get_ticks_msec()) / 140.0)
-					game.draw_circle(major_position, 26.0 + 3.0 * shimmer, Color(0.54, 0.85, 1.0, 0.16 + 0.08 * shimmer))
-					game.draw_circle(major_position, 18.0 + 2.0 * shimmer, Color(0.68, 0.93, 1.0, 0.22 + 0.10 * shimmer))
-					var pulse_radius: float = lerpf(20.0, 32.0, pulse_phase)
-					var pulse_alpha: float = 0.36 * (1.0 - pulse_phase)
-					game.draw_arc(major_position, pulse_radius, 0.0, TAU, 36, Color(0.55, 0.86, 1.0, pulse_alpha), 3.0, true)
-					game.draw_arc(major_position, 24.0 + 2.0 * shimmer, 0.0, TAU, 40, Color(0.86, 0.98, 1.0, 0.46 + 0.18 * shimmer), 2.2, true)
-					game.draw_circle(major_position, 8.0 + 3.0 * sin(float(Time.get_ticks_msec()) / 170.0), Color(0.62, 0.88, 1.0, 0.18))
+				draw_research_obelisk(game, major_position, game.room_has_active_research(room_coord) and not reduce_animations)
 			if not pending_major.is_empty():
 				var pending_ratio: float = 1.0 - (float(pending_major.get("timer_left", 0.0)) / maxf(float(pending_major.get("duration", 1.0)), 0.001))
 				game.draw_rect(Rect2(major_position - Vector2(12.0, 12.0), Vector2(24.0, 24.0)), Color(1.0, 0.91, 0.69, 0.22), true)
@@ -786,16 +807,7 @@ static func draw_room_overlays(game: Node, reduce_animations: bool = false) -> v
 			var highlight_minor_slot: bool = bool(slot_entry.get("highlight_minor", false))
 			var show_minor_slot: bool = show_slot_guides or highlight_minor_slot or module_index >= 0 or not pending_minor.is_empty()
 			if show_minor_slot:
-				var slot_fill: Color = Color(0.08, 0.12, 0.15, 0.44)
-				var slot_outline: Color = Color(0.68, 0.84, 0.92, 0.82)
-				if show_slot_guides and not highlight_minor_slot:
-					slot_fill = Color(0.10, 0.14, 0.16, 0.24)
-					slot_outline = Color(0.82, 0.88, 0.92, 0.78)
-				if highlight_minor_slot:
-					slot_fill = Color("23323a")
-					slot_outline = Color("8df6ff")
-				game.draw_circle(slot_position, 10.0, slot_fill)
-				game.draw_arc(slot_position, 11.0, 0.0, TAU, 24, slot_outline, 2.0, true)
+				game.draw_texture_rect(MINOR_SLOT_TEXTURE, Rect2(slot_position - Vector2(12.0, 12.0), Vector2(24.0, 24.0)), false)
 			if module_index >= 0:
 				var module_data: Dictionary = room["minor_modules"][module_index]
 				if float(module_data["health"]) > 0.0:
@@ -803,15 +815,22 @@ static func draw_room_overlays(game: Node, reduce_animations: bool = false) -> v
 					module_type = game.canonical_minor_module_type(module_type)
 					var module_color: Color = game.minor_module_color(module_type)
 					match module_type:
-						game.MINOR_MODULE_PULSE:
-							game.draw_circle(slot_position, 8.0, Color(module_color.r, module_color.g, module_color.b, 0.26))
-							game.draw_arc(slot_position, 11.0, 0.0, TAU, 20, module_color.lightened(0.12), 2.0, true)
-						game.MINOR_MODULE_CANNON:
-							game.draw_circle(slot_position, 7.0, module_color)
-							game.draw_arc(slot_position, 14.0, 0.0, TAU, 24, module_color.lightened(0.2), 2.0, true)
-						game.MINOR_MODULE_KIP:
-							game.draw_rect(Rect2(slot_position - Vector2(8.0, 6.0), Vector2(16.0, 12.0)), module_color, true)
-							game.draw_line(slot_position + Vector2(0.0, -6.0), slot_position + Vector2(0.0, -18.0), module_color.lightened(0.25), 3.0)
+						game.MINOR_MODULE_BLIGHT_GAS:
+							game.draw_texture_rect(TEAR_GAS_TURRET_TEXTURE, Rect2(slot_position - Vector2(16.0, 16.0), Vector2(32.0, 32.0)), false)
+						game.MINOR_MODULE_RUNEBURST_MORTAR:
+							game.draw_texture_rect(NEUROSTUN_ARRAY_TEXTURE, Rect2(slot_position - Vector2(16.0, 16.0), Vector2(32.0, 32.0)), false)
+						game.MINOR_MODULE_ARCANA_TURRET:
+							game.draw_texture_rect(KIP_CANNON_TEXTURE, Rect2(slot_position - Vector2(16.0, 16.0), Vector2(32.0, 32.0)), false)
+						game.MINOR_MODULE_CONVERSION:
+							game.draw_texture_rect(CONVERSION_TURRET_TEXTURE, Rect2(slot_position - Vector2(16.0, 16.0), Vector2(32.0, 32.0)), false)
+						game.MINOR_MODULE_TURRET:
+							game.draw_texture_rect(BALLISTA_TURRET_TEXTURE, Rect2(slot_position - Vector2(16.0, 16.0), Vector2(32.0, 32.0)), false)
+						game.MINOR_MODULE_BOUNTY_INDUSTRY:
+							game.draw_texture_rect(SALVAGE_SIGIL_TEXTURE, Rect2(slot_position - Vector2(16.0, 16.0), Vector2(32.0, 32.0)), false)
+						game.MINOR_MODULE_BOUNTY_FOOD:
+							game.draw_texture_rect(PROVISION_SIGIL_TEXTURE, Rect2(slot_position - Vector2(16.0, 16.0), Vector2(32.0, 32.0)), false)
+						game.MINOR_MODULE_BOUNTY_SCIENCE:
+							game.draw_texture_rect(SAGE_SIGIL_TEXTURE, Rect2(slot_position - Vector2(16.0, 16.0), Vector2(32.0, 32.0)), false)
 						_:
 							game.draw_circle(slot_position, 7.5, module_color)
 							game.draw_line(slot_position + Vector2(0.0, -10.0), slot_position + Vector2(0.0, -18.0), module_color.lightened(0.25), 2.0)
@@ -847,12 +866,30 @@ static func draw_room_overlays(game: Node, reduce_animations: bool = false) -> v
 			game.draw_line(exit_center + Vector2(4.0, 6.0), exit_center + Vector2(10.0, 0.0), Color("a5f7ff"), 3.0, true)
 		if game.crystal_holder == null and game.crystal_ground_room == room_coord:
 			var center: Vector2 = rect.get_center()
-			game.draw_colored_polygon(PackedVector2Array([
-				center + Vector2(0.0, -32.0),
-				center + Vector2(24.0, 0.0),
-				center + Vector2(0.0, 32.0),
-				center + Vector2(-24.0, 0.0),
-			]), Color("ffe7a1"))
+			draw_power_crystal(game, center - Vector2(0.0, 12.0))
+
+static func draw_research_obelisk(game: Node, center: Vector2, active: bool) -> void:
+	var time_seconds: float = float(Time.get_ticks_msec()) * 0.001
+	var rotation_angle: float = time_seconds * 0.7
+	var width_scale: float = 0.52 + 0.48 * absf(cos(rotation_angle))
+	var pulse: float = 0.0
+	if active:
+		pulse = 0.5 + 0.5 * sin(time_seconds * 6.0)
+		game.draw_circle(center - Vector2(0.0, 25.0), 24.0 + 7.0 * pulse, Color(0.24, 0.72, 1.0, 0.10 + 0.10 * pulse))
+	var base_center: Vector2 = center
+	var obelisk_height: float = 58.0
+	var half_width: float = 18.0 * width_scale
+	var tip: Vector2 = base_center + Vector2(0.0, -obelisk_height)
+	var left_base: Vector2 = base_center + Vector2(-half_width, 0.0)
+	var right_base: Vector2 = base_center + Vector2(half_width, 0.0)
+	var core_base: Vector2 = base_center + Vector2(0.0, -3.0)
+	var front_color: Color = Color("3d8db8").lightened(0.20 * pulse) if cos(rotation_angle) >= 0.0 else Color("28698f").lightened(0.16 * pulse)
+	game.draw_colored_polygon(PackedVector2Array([tip, left_base, core_base]), Color("235270"))
+	game.draw_colored_polygon(PackedVector2Array([tip, core_base, right_base]), Color("163d5d"))
+	game.draw_colored_polygon(PackedVector2Array([tip, right_base, left_base]), front_color)
+	game.draw_colored_polygon(PackedVector2Array([left_base, right_base, base_center + Vector2(0.0, 7.0)]), Color("162f47"))
+	if active:
+		game.draw_circle(center + Vector2(0.0, -26.0), 10.0 + 3.0 * pulse, Color(0.58, 0.90, 1.0, 0.12 + 0.18 * pulse))
 
 static func room_title(_game: Node, room_coord: Vector2i) -> String:
 	return "Room %d-%d" % [room_coord.x + 1, room_coord.y + 1]

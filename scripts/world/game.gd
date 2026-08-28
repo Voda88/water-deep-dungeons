@@ -81,6 +81,10 @@ const ENEMY_TYPE_BAT: String = "bat"
 const ENEMY_TYPE_GOLEM: String = "golem"
 const ENEMY_TYPE_DEMON_A: String = "demon_a"
 const ENEMY_TYPE_DEMON_D: String = "demon_d"
+const ENEMY_TYPE_ARCHER_IMP: String = "archer_imp"
+const ENEMY_TYPE_DEATH_KNIGHT: String = "death_knight"
+const ENEMY_TYPE_SLIME: String = "slime"
+const TOTAL_FLOORS: int = 10
 const ENEMY_TYPE_SKELETON: String = "skeleton"
 const ENEMY_TYPE_SKELETON_ARMORED: String = "skeleton_armored"
 const ENEMY_TYPE_SKELETON_GREATSWORD: String = "skeleton_greatsword"
@@ -89,9 +93,9 @@ const ENEMY_TYPE_WRAITH: String = "wraith"
 const ENEMY_TYPE_ORC_SHAMAN: String = ENEMY_TYPE_WRAITH
 const ENEMY_TYPE_SKELETON_ARCHER: String = "skeleton_archer"
 const MINOR_MODULE_TURRET: String = "ballista_turret"
-const MINOR_MODULE_PULSE: String = "tear_gas"
-const MINOR_MODULE_CANNON: String = "neurostun_array"
-const MINOR_MODULE_KIP: String = "kip_cannon"
+const MINOR_MODULE_BLIGHT_GAS: String = "tear_gas"
+const MINOR_MODULE_RUNEBURST_MORTAR: String = "neurostun_array"
+const MINOR_MODULE_ARCANA_TURRET: String = "kip_cannon"
 const MINOR_MODULE_CONVERSION: String = "conversion_turret"
 const MINOR_MODULE_BOUNTY_INDUSTRY: String = "bounty_materials"
 const MINOR_MODULE_BOUNTY_FOOD: String = "bounty_food"
@@ -107,7 +111,6 @@ const MAJOR_MODULE_MAX_HEALTH: float = 180.0
 const PROJECTILE_SPEED: float = 950.0
 const RESEARCH_REROLL_BASE_COST: int = 10
 const RESEARCH_REROLL_COST_STEP: int = 5
-const BALLISTA_LEVEL_DAMAGE: Array[float] = [9.0, 10.0, 12.0, 14.0]
 const BALLISTA_LEVEL_SCIENCE_COST: Array[int] = [0, 17, 23, 31]
 const HERO_COUNT: int = 4
 const HERO_CLASS_FIGHTER: String = "fighter"
@@ -754,10 +757,14 @@ func spell_slot_capacity_for_class_level(class_id: String, level_value: int) -> 
 	return GAME_HERO_DEFS.spell_slot_capacity_for_class_level(class_id, level_value)
 
 func hero_can_operate_major_modules(hero: Variant) -> bool:
-	return GAME_HERO_DEFS.hero_can_operate_major_modules(hero)
+	if GAME_HERO_DEFS.hero_can_operate_major_modules(hero):
+		return true
+	return hero != null and is_instance_valid(hero) and String(hero.hero_class_id) == HERO_CLASS_CLERIC and int(hero.operate_turns_left) > 0
 
 func hero_operate_wit(hero: Variant) -> int:
-	return GAME_HERO_DEFS.hero_operate_wit(hero)
+	if hero != null and is_instance_valid(hero) and hero_can_operate_major_modules(hero):
+		return maxi(int(hero.wit), 0)
+	return 0
 
 func hero_has_skulker(hero: Variant) -> bool:
 	if hero == null or not is_instance_valid(hero):
@@ -768,6 +775,12 @@ func hero_has_skulker(hero: Variant) -> bool:
 
 func hero_has_cleric_mend(hero: Variant) -> bool:
 	return GAME_HERO_DEFS.hero_has_cleric_mend(hero)
+
+func hero_has_cleric_restoration_aura(hero: Variant) -> bool:
+	return GAME_HERO_DEFS.hero_has_cleric_restoration_aura(hero)
+
+func hero_has_fighter_leadership_aura(hero: Variant) -> bool:
+	return GAME_HERO_DEFS.hero_has_fighter_leadership_aura(hero)
 
 func sync_hero_skulking_visual_states() -> void:
 	for hero_variant in heroes:
@@ -1341,7 +1354,10 @@ func socket_match_entries(socket_rule: Dictionary) -> Array:
 	return GAME_INVENTORY_ITEM_FLOW.socket_match_entries(self, socket_rule)
 
 func card_definition(card_id: String) -> Dictionary:
-	return GAME_CARD_DEFS.runtime_card_definition(self, card_id)
+	var definition: Dictionary = GAME_CARD_DEFS.runtime_card_definition(self, card_id)
+	if not definition.is_empty():
+		definition["icon_path"] = "res://assets/generated/cards/%s.png" % card_id
+	return definition
 
 func card_target_scope_label(target_scope: String) -> String:
 	return GAME_CARD_DEFS.card_target_scope_label(self, target_scope)
@@ -2449,6 +2465,11 @@ func apply_combo_flatfooted_from_modifiers(enemy: Variant, modifiers: Dictionary
 func maybe_show_fighter_rage_popup(hero: Variant, previous_rage: int = -1) -> void:
 	GAME_COMBAT_FLOW.maybe_show_fighter_rage_popup(self, hero, previous_rage)
 
+func _on_hero_fighter_rage_filled(hero: Variant) -> void:
+	if hero == null or not is_instance_valid(hero) or hero.current_health <= 0.0:
+		return
+	trigger_first_reaction_card(hero, "fighter_rage_full")
+
 func apply_poison_coating_to_hero(hero: Variant, coating: Dictionary) -> Dictionary:
 	return GAME_COMBAT_FLOW.apply_poison_coating_to_hero(self, hero, coating)
 
@@ -2464,8 +2485,8 @@ func process_combat(_delta: float) -> void:
 func process_modules(delta: float) -> void:
 	GAME_COMBAT_FLOW.process_modules(self, delta)
 
-func spawn_arrow_projectile(origin: Vector2, target: Variant, damage: float, color: Color = Color("d8bf7a"), width: float = 2.4, speed: float = PROJECTILE_SPEED, bounces: int = 0, pierce: int = 0) -> void:
-	GAME_COMBAT_FLOW.spawn_arrow_projectile(self, origin, target, damage, color, width, speed, bounces, pierce)
+func spawn_arrow_projectile(origin: Vector2, target: Variant, damage: float, color: Color = Color("d8bf7a"), width: float = 2.4, speed: float = PROJECTILE_SPEED, bounces: int = 0, pierce: int = 0, expose_stacks: int = 0, expose_duration: float = 0.0) -> void:
+	GAME_COMBAT_FLOW.spawn_arrow_projectile(self, origin, target, damage, color, width, speed, bounces, pierce, expose_stacks, expose_duration)
 
 func spawn_laser_projectile(origin: Vector2, target: Variant, damage: float, color: Color = Color("89f2ff"), width: float = 4.0, speed: float = PROJECTILE_SPEED, bounces: int = 0, pierce: int = 0) -> void:
 	GAME_COMBAT_FLOW.spawn_laser_projectile(self, origin, target, damage, color, width, speed, bounces, pierce)
@@ -2913,8 +2934,8 @@ func major_module_upgrade_cost(next_level: int) -> int:
 func major_module_door_yield(level: int) -> int:
 	return GAME_MODULE_DEFS.major_module_door_yield(level)
 
-func minor_module_kip_max_damage(level: int) -> int:
-	return GAME_MODULE_DEFS.minor_module_kip_max_damage(level)
+func minor_module_arcana_turret_max_damage(level: int) -> int:
+	return GAME_MODULE_DEFS.minor_module_arcana_turret_max_damage(level)
 
 func minor_module_bounty_resource_id(module_type: String) -> String:
 	return GAME_MODULE_DEFS.minor_module_bounty_resource_id(module_type)
@@ -2924,6 +2945,9 @@ func minor_module_bounty_kills_required(module_type: String) -> int:
 
 func minor_module_damage(module_type: String) -> float:
 	return GAME_MODULE_DEFS.minor_module_damage(module_type, minor_module_levels)
+
+func minor_module_damage_at_level(module_type: String, level: int) -> float:
+	return GAME_MODULE_DEFS.minor_module_damage_at_level(module_type, level)
 
 func minor_module_cooldown(module_type: String) -> float:
 	return GAME_MODULE_DEFS.minor_module_cooldown(module_type, minor_module_levels)
@@ -3174,6 +3198,12 @@ func _on_exit_button_pressed() -> void:
 		return
 	var hero: Variant = crystal_holder
 	if hero == null or not is_instance_valid(hero):
+		return
+	if floor_index >= TOTAL_FLOORS:
+		game_over = true
+		status_message = "The dungeon is conquered. All 10 floors are clear."
+		update_hud()
+		queue_redraw()
 		return
 	if multiplayer_session_active() and not authoritative_simulation_active():
 		server_request_exit_floor.rpc_id(NETWORK_HOST_PEER_ID, hero.hero_index)

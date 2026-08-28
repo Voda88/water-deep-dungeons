@@ -53,50 +53,6 @@ const ITEM_LEVEL_COLORS: Array[Color] = [
 	Color("c96767"),
 	Color("8e9bd6"),
 ]
-const ITEM_SYMBOLS: Dictionary = {
-	"axe": "R",
-	"daggers": "D",
-	"ricochet_dagger": "C",
-	"cloak_of_shadows": "S",
-	"rogue_bandolier": "R",
-	"fighter_emergency_snack": "F",
-	"cleric_emergency_snack": "C",
-	"rogue_emergency_snack": "J",
-	"wizard_emergency_snack": "M",
-	"arcana_conduit": "Q",
-	"serpent_venom": "V",
-	"wyvern_toxin": "X",
-	"blacklotus_oil": "O",
-	"boots": "B",
-	"whirling_blade": "W",
-	"silver_gauntlets": "G",
-	"sunpepper_jerky": "J",
-	"moon_truffle": "U",
-	"tidekelp_roll": "T",
-	"buckler": "K",
-	"lantern": "L",
-	"spellbook": "P",
-	"holy_symbol": "H",
-	"scroll_fireball": "1",
-	"scroll_magic_missile": "2",
-	"scroll_scorcher": "3",
-	"scroll_web": "4",
-	"scroll_shield": "5",
-	"scroll_haste": "6",
-	"scroll_lightning_bolt": "7",
-	"scroll_light_cantrip": "8",
-	"scroll_scry": "9",
-	"scroll_find_familiar": "Q",
-	"scroll_cure_light_wounds": "C",
-	"scroll_sanctuary": "Y",
-	"scroll_hold_person": "O",
-	"scroll_fear": "F",
-	"scroll_calm_emotions": "E",
-	"scroll_beacon_of_hope": "G",
-	"scroll_spiritual_weapon": "W",
-	"scroll_animate_dead": "Z",
-}
-
 var hero_name: String = ""
 var hero_level: int = 1
 var food_value: int = 0
@@ -110,6 +66,7 @@ var base_origin: Vector2i = Vector2i(3, 3)
 var base_size: Vector2i = Vector2i(2, 2)
 var pack_modules: Array = []
 var item_defs: Dictionary = {}
+var item_icon_cache: Dictionary = {}
 var items: Array = []
 var ground_items: Array = []
 var loot_enabled: bool = false
@@ -1206,18 +1163,20 @@ func draw_inventory_item(item_rect: Rect2, item: Dictionary, emphasize: bool, fu
 	var item_name: String = String(item_def.get("name", "Item"))
 	var short_label: String = String(item_def.get("short", item_name.substr(0, mini(item_name.length(), 3)).to_upper()))
 	var compact_tile: bool = item_rect.size.x < 96.0 or item_rect.size.y < 68.0
-	var symbol: String = item_symbol_for_item(item_id, short_label)
-	var symbol_size: int = 22 if compact_tile else 28
-	draw_string(font, item_rect.position + Vector2(item_rect.size.x * 0.5 - 10.0, item_rect.size.y * 0.5 + 8.0), symbol, HORIZONTAL_ALIGNMENT_LEFT, 24.0, symbol_size, Color("0e171c"))
+	var icon_texture: Texture2D = item_icon_texture(item_def)
+	if icon_texture != null:
+		var icon_size: float = minf(item_rect.size.x, item_rect.size.y) * (0.64 if compact_tile else 0.70)
+		var icon_rect: Rect2 = Rect2(item_rect.get_center() - Vector2.ONE * icon_size * 0.5, Vector2.ONE * icon_size)
+		draw_texture_rect(icon_texture, icon_rect, false, Color.WHITE, false)
+	else:
+		var label_size: int = 14 if compact_tile else 18
+		draw_string(font, item_rect.position + Vector2(4.0, item_rect.size.y * 0.5 + float(label_size) * 0.35), short_label.left(3), HORIZONTAL_ALIGNMENT_CENTER, item_rect.size.x - 8.0, label_size, Color("0e171c"))
 	var level_badge: Rect2 = Rect2(item_rect.position + Vector2(item_rect.size.x - 34.0, 4.0), Vector2(30.0, 14.0))
 	draw_rect(level_badge, Color(0.06, 0.11, 0.14, 0.46), true)
 	draw_rect(level_badge, Color(0.90, 0.96, 1.0, 0.62), false, 1.0)
 	draw_string(font, level_badge.position + Vector2(4.0, 11.0), "L%d" % item_level, HORIZONTAL_ALIGNMENT_LEFT, level_badge.size.x - 6.0, 11, Color("eaf6ff"))
 	if compact_tile:
-		draw_string(font, item_rect.position + Vector2(6.0, 14.0), short_label, HORIZONTAL_ALIGNMENT_LEFT, item_rect.size.x - 40.0, 12, Color("eef7ff"))
 		return
-	draw_string(font, item_rect.position + Vector2(8.0, 18.0), short_label, HORIZONTAL_ALIGNMENT_LEFT, item_rect.size.x - 40.0, 13, Color("eef7ff"))
-	draw_string(font, item_rect.position + Vector2(8.0, item_rect.size.y - 8.0), item_name, HORIZONTAL_ALIGNMENT_LEFT, item_rect.size.x - 12.0, 13, Color("f0f8ff"))
 
 func item_level_color(item_level: int) -> Color:
 	if ITEM_LEVEL_COLORS.is_empty():
@@ -1264,12 +1223,25 @@ func item_should_glow_for_fusion(item: Dictionary) -> bool:
 		return false
 	return fusion_glow_uids.has(int(item.get("uid", -1)))
 
-func item_symbol_for_item(item_id: String, fallback_short_label: String) -> String:
-	if ITEM_SYMBOLS.has(item_id):
-		return String(ITEM_SYMBOLS[item_id])
-	if fallback_short_label != "":
-		return fallback_short_label.left(1)
-	return "?"
+func item_icon_texture(item_def: Dictionary) -> Texture2D:
+	var icon_path: String = String(item_def.get("icon_path", ""))
+	if icon_path != "":
+		var item_texture: Texture2D = cached_item_icon_texture(icon_path)
+		if item_texture != null:
+			return item_texture
+	var hand_card: Dictionary = Dictionary(item_def.get("hand_card", {}))
+	var card_id: String = String(hand_card.get("card_id", ""))
+	if card_id == "":
+		return null
+	return cached_item_icon_texture("res://assets/generated/cards/%s.png" % card_id)
+
+func cached_item_icon_texture(icon_path: String) -> Texture2D:
+	if item_icon_cache.has(icon_path):
+		return item_icon_cache[icon_path]
+	var icon_resource: Resource = load(icon_path)
+	var icon_texture: Texture2D = icon_resource if icon_resource is Texture2D else null
+	item_icon_cache[icon_path] = icon_texture
+	return icon_texture
 
 func draw_item_synergy_overlay() -> void:
 	for item_variant in items:

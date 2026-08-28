@@ -644,6 +644,22 @@ static func apply_hand_card_effect(game: Node, hero: Variant, hand_card: Diction
 	if hand_card_starts_spell_study(game, hero, hand_card, target_data):
 		return game.begin_spell_scroll_study(hero, String(hand_card.get("learn_spell_id", "")))
 	match card_id:
+		"cleric_operate_card":
+			if game.wave_in_progress():
+				game.status_message = "Operate can only be prepared when the dungeon is calm."
+				return false
+			var operate_room: Vector2i = Vector2i(hero.current_room)
+			var operate_room_data: Dictionary = Dictionary(game.rooms.get(operate_room, {}))
+			if hero.pending_room != game.HERO_INVALID_ROOM or not bool(operate_room_data.get("opened", false)) or not bool(operate_room_data.get("lit", false)) or String(operate_room_data.get("major_module_type", "")) == "" or float(operate_room_data.get("major_health", 0.0)) <= 0.0 or bool(operate_room_data.get("major_under_construction", false)):
+				game.status_message = "Operate requires a completed lit major module in your current room."
+				return false
+			hero.operate_room = operate_room
+			hero.operate_started_at_door = game.doors_opened
+			hero.operate_attuned = true
+			hero.operate_turns_left = 1
+			hero.trigger_attack(game.major_slot_position(operate_room), "heal_cast")
+			game.status_message = "%s is operating %s through the next wave payout." % [hero.hero_name, game.room_title(operate_room)]
+			return true
 		"fireball_card":
 			var room_coord: Vector2i = target_data.get("room", game.INVALID_ROOM)
 			if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
@@ -1843,8 +1859,6 @@ static func cast_temporary_summon_spell(game: Node, hero: Variant, target_room: 
 		summon_count = maxi(summon_count, summon_roles.size())
 	var conversion_duration: float = maxf(float(hand_card.get("summon_conversion_duration", card_def.get("summon_conversion_duration", 600.0))), 0.1)
 	var summon_attack_damage_override: float = maxf(float(hand_card.get("summon_attack_damage_override", card_def.get("summon_attack_damage_override", 0.0))), 0.0)
-	if card_id == "spiritual_weapon_card":
-		summon_attack_damage_override = fighter_level_two_attack_damage(game)
 	var summon_behavior: String = String(hand_card.get("summon_behavior", card_def.get("summon_behavior", "")))
 	var summon_applies_flatfooted: bool = bool(hand_card.get("summon_applies_flatfooted", card_def.get("summon_applies_flatfooted", false)))
 	var summon_flatfooted_duration: float = maxf(float(hand_card.get("summon_flatfooted_duration", card_def.get("summon_flatfooted_duration", 6.0))), 0.0)
@@ -1857,8 +1871,8 @@ static func cast_temporary_summon_spell(game: Node, hero: Variant, target_room: 
 	var orc_role_def: Dictionary = GAME_ENEMY_DEFS.enemy_role_definition(game.ENEMY_TYPE_ORC)
 	var orc_move_speed: float = float(orc_role_def.get("move_speed", 48.0))
 	var orc_max_health: float = maxf(float(orc_role_def.get("max_health", 68.0)), 1.0)
-	var orc_attack_damage: float = maxf(float(orc_role_def.get("attack_damage", 20.0)) * float(game.ENEMY_SCRIPT.ENEMY_ATTACK_DAMAGE_MULTIPLIER), 0.0)
-	var orc_attack_cooldown: float = maxf(float(orc_role_def.get("attack_cooldown", 1.0)) * float(game.ENEMY_SCRIPT.ENEMY_ATTACK_COOLDOWN_MULTIPLIER), 0.05)
+	var orc_attack_damage: float = maxf(float(orc_role_def.get("attack_damage", 10.0)), 0.0)
+	var orc_attack_cooldown: float = maxf(float(orc_role_def.get("attack_cooldown", 0.5)), 0.05)
 	var orc_attack_range: float = float(orc_role_def.get("attack_range", 70.0))
 	var orc_weight: float = float(orc_role_def.get("weight", 1.28))
 	var summon_particle_primary_color: Color = Color(hand_card.get("color", Color("d7efff")))
@@ -1957,13 +1971,6 @@ static func cast_temporary_summon_spell(game: Node, hero: Variant, target_room: 
 		game.add_resource_floating_text(game.room_center(target_room) + Vector2(0.0, -20.0), "Summoned", Color(hand_card.get("color", Color("b8d1ff"))))
 	return spawned_count
 
-static func fighter_level_two_attack_damage(game: Node) -> float:
-	var fighter_def: Dictionary = game.hero_class_definition(game.HERO_CLASS_FIGHTER)
-	var base_attack_damage: float = float(fighter_def.get("attack_damage", 28.0))
-	var level_two_bonuses: Dictionary = game.hero_level_stat_bonuses(2, game.HERO_CLASS_FIGHTER)
-	var level_bonus_attack: float = float(level_two_bonuses.get("attack", 0.0))
-	return maxf(base_attack_damage + level_bonus_attack, 0.0)
-
 static func cast_sanctuary_spell(game: Node, hero: Variant, target_room: Vector2i, hand_card: Dictionary) -> Variant:
 	if target_room == game.INVALID_ROOM or not game.rooms.has(target_room):
 		return null
@@ -1983,9 +1990,8 @@ static func cast_sanctuary_spell(game: Node, hero: Variant, target_room: Vector2
 	room_data["sanctuary_target_hero_index"] = int(sanctuary_target.hero_index)
 	room_data["sanctuary_aoe"] = false
 	game.rooms[target_room] = room_data
-	var sanctuary_center: Vector2 = game.room_center(target_room)
-	hero.trigger_attack(sanctuary_center, "heal_cast")
-	append_timed_effect_projectile(game, "priest_heal_effect", sanctuary_center, Color(hand_card.get("color", Color("e3ff9f"))), 0.52, 0.52)
+	hero.trigger_attack(sanctuary_target.global_position, "heal_cast")
+	append_timed_effect_projectile(game, "priest_heal_effect", sanctuary_target.global_position + Vector2(0.0, -10.0), Color(hand_card.get("color", Color("e3ff9f"))), 0.52, 0.52)
 	append_timed_effect_projectile(game, "shield_flash", sanctuary_target.global_position, Color(hand_card.get("color", Color("e3ff9f"))), 0.24, 0.24)
 	return sanctuary_target
 
@@ -2023,7 +2029,7 @@ static func cast_haste_spell(game: Node, hero: Variant, target_room: Vector2i, h
 			continue
 		if not game.hero_is_active(room_hero):
 			continue
-		var hero_attack_damage: float = float(room_hero.attack_damage)
+		var hero_attack_damage: float = float(room_hero.current_attack_damage())
 		if best_target == null or hero_attack_damage > best_attack_damage:
 			best_target = room_hero
 			best_attack_damage = hero_attack_damage

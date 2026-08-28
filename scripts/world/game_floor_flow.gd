@@ -486,6 +486,7 @@ static func clear_hero_operate_attunement(game: Node, hero: Variant) -> void:
 	hero.operate_room = game.INVALID_ROOM
 	hero.operate_started_at_door = -1
 	hero.operate_attuned = false
+	hero.operate_turns_left = 0
 	hero.queue_redraw()
 
 static func sync_hero_operate_attunement_states(game: Node) -> void:
@@ -497,6 +498,12 @@ static func sync_hero_operate_attunement_states(game: Node) -> void:
 			clear_hero_operate_attunement(game, hero)
 			continue
 		var candidate_room: Vector2i = hero_operate_candidate_room(game, hero)
+		if String(hero.hero_class_id) == game.HERO_CLASS_CLERIC and int(hero.operate_turns_left) > 0:
+			if room_has_active_operate_major_module(game, Vector2i(hero.operate_room)):
+				hero.operate_attuned = true
+				continue
+			clear_hero_operate_attunement(game, hero)
+			continue
 		if candidate_room == game.INVALID_ROOM:
 			clear_hero_operate_attunement(game, hero)
 			continue
@@ -548,7 +555,8 @@ static func calculate_operate_major_module_wave_bonus(game: Node) -> Dictionary:
 		var attuned_room: Vector2i = Vector2i(hero.operate_room)
 		if attuned_room == game.INVALID_ROOM:
 			continue
-		if Vector2i(hero.current_room) != attuned_room or hero.pending_room != game.HERO_INVALID_ROOM:
+		var cleric_temporary_operate: bool = String(hero.hero_class_id) == game.HERO_CLASS_CLERIC and int(hero.operate_turns_left) > 0
+		if not cleric_temporary_operate and (Vector2i(hero.current_room) != attuned_room or hero.pending_room != game.HERO_INVALID_ROOM):
 			continue
 		if not room_has_active_operate_major_module(game, attuned_room):
 			continue
@@ -574,6 +582,13 @@ static func calculate_operate_major_module_wave_bonus(game: Node) -> Dictionary:
 		})
 	rewards["entries"] = entries
 	return rewards
+
+static func consume_cleric_operate_turns(game: Node) -> void:
+	for hero_variant in game.heroes:
+		var hero: Variant = hero_variant
+		if hero == null or not is_instance_valid(hero) or int(hero.operate_turns_left) <= 0:
+			continue
+		clear_hero_operate_attunement(game, hero)
 
 static func open_room(game: Node, room_coord: Vector2i) -> void:
 	if game.rooms[room_coord]["opened"]:
@@ -684,6 +699,7 @@ static func apply_major_module_wave_rewards(game: Node) -> Dictionary:
 		game.industry += industry_reward
 	if science_reward > 0:
 		game.science += science_reward
+	consume_cleric_operate_turns(game)
 	if food_reward <= 0 and industry_reward <= 0 and science_reward <= 0:
 		return {}
 	return {

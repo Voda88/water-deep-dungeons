@@ -1,9 +1,9 @@
 extends RefCounted
 
 const MINOR_MODULE_TURRET: String = "ballista_turret"
-const MINOR_MODULE_PULSE: String = "tear_gas"
-const MINOR_MODULE_CANNON: String = "neurostun_array"
-const MINOR_MODULE_KIP: String = "kip_cannon"
+const MINOR_MODULE_BLIGHT_GAS: String = "tear_gas"
+const MINOR_MODULE_RUNEBURST_MORTAR: String = "neurostun_array"
+const MINOR_MODULE_ARCANA_TURRET: String = "kip_cannon"
 const MINOR_MODULE_CONVERSION: String = "conversion_turret"
 const MINOR_MODULE_BOUNTY_INDUSTRY: String = "bounty_materials"
 const MINOR_MODULE_BOUNTY_FOOD: String = "bounty_food"
@@ -11,9 +11,9 @@ const MINOR_MODULE_BOUNTY_SCIENCE: String = "bounty_arcana"
 const MAJOR_MODULE_FOOD: String = "food"
 const MAJOR_MODULE_SCIENCE: String = "science"
 const MAJOR_MODULE_INDUSTRY: String = "industry"
-const BALLISTA_LEVEL_DAMAGE: Array[float] = [4.5, 5.0, 6.0, 7.0]
+const BALLISTA_LEVEL_DAMAGE: Array[float] = [9.0, 10.0, 12.0, 14.0]
 const MINOR_MODULE_BOUNTY_THRESHOLDS: Array[int] = [6, 5, 4, 3]
-const MINOR_MODULE_KIP_MAX_DAMAGE_BY_LEVEL: Array[int] = [100, 130, 160, 190]
+const MINOR_MODULE_ARCANA_TURRET_MAX_DAMAGE_BY_LEVEL: Array[int] = [100, 130, 160, 190]
 const MINOR_MODULE_CONVERSION_DURATION_BY_LEVEL: Array[float] = [7.2, 9.6, 12.0, 14.4]
 
 static func canonical_minor_module_type(module_type: String) -> String:
@@ -22,9 +22,9 @@ static func canonical_minor_module_type(module_type: String) -> String:
 static func minor_module_catalog() -> Array[String]:
 	return [
 		MINOR_MODULE_TURRET,
-		MINOR_MODULE_PULSE,
-		MINOR_MODULE_CANNON,
-		MINOR_MODULE_KIP,
+		MINOR_MODULE_BLIGHT_GAS,
+		MINOR_MODULE_RUNEBURST_MORTAR,
+		MINOR_MODULE_ARCANA_TURRET,
 		MINOR_MODULE_CONVERSION,
 		MINOR_MODULE_BOUNTY_INDUSTRY,
 		MINOR_MODULE_BOUNTY_FOOD,
@@ -34,9 +34,9 @@ static func minor_module_catalog() -> Array[String]:
 static func initialized_minor_module_levels() -> Dictionary:
 	return {
 		MINOR_MODULE_TURRET: 1,
-		MINOR_MODULE_PULSE: 0,
-		MINOR_MODULE_CANNON: 0,
-		MINOR_MODULE_KIP: 0,
+		MINOR_MODULE_BLIGHT_GAS: 0,
+		MINOR_MODULE_RUNEBURST_MORTAR: 0,
+		MINOR_MODULE_ARCANA_TURRET: 0,
 		MINOR_MODULE_CONVERSION: 0,
 		MINOR_MODULE_BOUNTY_INDUSTRY: 0,
 		MINOR_MODULE_BOUNTY_FOOD: 0,
@@ -97,11 +97,11 @@ static func research_display_name(module_type: String) -> String:
 	match module_type:
 		MINOR_MODULE_TURRET:
 			return "Crossbow"
-		MINOR_MODULE_PULSE:
+		MINOR_MODULE_BLIGHT_GAS:
 			return "Blight Gas"
-		MINOR_MODULE_CANNON:
+		MINOR_MODULE_RUNEBURST_MORTAR:
 			return "Runeburst Mortar"
-		MINOR_MODULE_KIP:
+		MINOR_MODULE_ARCANA_TURRET:
 			return "Arcana Turret"
 		MINOR_MODULE_CONVERSION:
 			return "Soulbind Spire"
@@ -145,11 +145,11 @@ static func build_type_label(module_type: String) -> String:
 	match canonical_minor_module_type(module_type):
 		MINOR_MODULE_TURRET:
 			return "Crossbow"
-		MINOR_MODULE_PULSE:
+		MINOR_MODULE_BLIGHT_GAS:
 			return "Blight Gas"
-		MINOR_MODULE_CANNON:
+		MINOR_MODULE_RUNEBURST_MORTAR:
 			return "Runeburst Mortar"
-		MINOR_MODULE_KIP:
+		MINOR_MODULE_ARCANA_TURRET:
 			return "Arcana Turret"
 		MINOR_MODULE_CONVERSION:
 			return "Soulbind Spire"
@@ -171,9 +171,9 @@ static func build_type_label(module_type: String) -> String:
 static func is_minor_module_type(module_type: String) -> bool:
 	var canonical_type: String = canonical_minor_module_type(module_type)
 	return canonical_type == MINOR_MODULE_TURRET \
-		or canonical_type == MINOR_MODULE_PULSE \
-		or canonical_type == MINOR_MODULE_CANNON \
-		or canonical_type == MINOR_MODULE_KIP \
+		or canonical_type == MINOR_MODULE_BLIGHT_GAS \
+		or canonical_type == MINOR_MODULE_RUNEBURST_MORTAR \
+		or canonical_type == MINOR_MODULE_ARCANA_TURRET \
 		or canonical_type == MINOR_MODULE_CONVERSION \
 		or canonical_type == MINOR_MODULE_BOUNTY_INDUSTRY \
 		or canonical_type == MINOR_MODULE_BOUNTY_FOOD \
@@ -186,7 +186,7 @@ static func minor_module_base_cost(module_type: String) -> int:
 	match canonical_minor_module_type(module_type):
 		MINOR_MODULE_TURRET:
 			return 3
-		MINOR_MODULE_PULSE, MINOR_MODULE_CANNON, MINOR_MODULE_KIP, MINOR_MODULE_CONVERSION, MINOR_MODULE_BOUNTY_INDUSTRY, MINOR_MODULE_BOUNTY_FOOD, MINOR_MODULE_BOUNTY_SCIENCE:
+		MINOR_MODULE_BLIGHT_GAS, MINOR_MODULE_RUNEBURST_MORTAR, MINOR_MODULE_ARCANA_TURRET, MINOR_MODULE_CONVERSION, MINOR_MODULE_BOUNTY_INDUSTRY, MINOR_MODULE_BOUNTY_FOOD, MINOR_MODULE_BOUNTY_SCIENCE:
 			return 12
 		_:
 			return 15
@@ -219,18 +219,18 @@ static func major_module_upgrade_cost(next_level: int) -> int:
 static func major_module_door_yield(level: int) -> int:
 	return clampi(level + 2, 3, 6)
 
-static func minor_module_kip_max_damage(level: int) -> int:
-	var index: int = clampi(level - 1, 0, MINOR_MODULE_KIP_MAX_DAMAGE_BY_LEVEL.size() - 1)
-	return int(MINOR_MODULE_KIP_MAX_DAMAGE_BY_LEVEL[index])
+static func minor_module_arcana_turret_max_damage(level: int) -> int:
+	var index: int = clampi(level - 1, 0, MINOR_MODULE_ARCANA_TURRET_MAX_DAMAGE_BY_LEVEL.size() - 1)
+	return int(MINOR_MODULE_ARCANA_TURRET_MAX_DAMAGE_BY_LEVEL[index])
 
 static func minor_module_damage(module_type: String, minor_module_levels: Dictionary) -> float:
 	var level: int = clampi(minor_module_level(module_type, minor_module_levels), 1, 4)
 	match canonical_minor_module_type(module_type):
-		MINOR_MODULE_PULSE:
+		MINOR_MODULE_BLIGHT_GAS:
 			return 1.0 + float(level) * 0.7
-		MINOR_MODULE_CANNON:
+		MINOR_MODULE_RUNEBURST_MORTAR:
 			return 16.0 + float(level - 1) * 6.0
-		MINOR_MODULE_KIP:
+		MINOR_MODULE_ARCANA_TURRET:
 			return 16.0 + float(level - 1) * 5.0
 		MINOR_MODULE_CONVERSION:
 			return 0.0
@@ -239,14 +239,18 @@ static func minor_module_damage(module_type: String, minor_module_levels: Dictio
 		_:
 			return BALLISTA_LEVEL_DAMAGE[level - 1]
 
+static func minor_module_damage_at_level(module_type: String, level: int) -> float:
+	var canonical_type: String = canonical_minor_module_type(module_type)
+	return minor_module_damage(canonical_type, {canonical_type: level})
+
 static func minor_module_cooldown(module_type: String, minor_module_levels: Dictionary) -> float:
 	var level: int = clampi(minor_module_level(module_type, minor_module_levels), 1, 4)
 	match canonical_minor_module_type(module_type):
-		MINOR_MODULE_PULSE:
+		MINOR_MODULE_BLIGHT_GAS:
 			return 1.1 - float(level - 1) * 0.08
-		MINOR_MODULE_CANNON:
+		MINOR_MODULE_RUNEBURST_MORTAR:
 			return 1.45 - float(level - 1) * 0.12
-		MINOR_MODULE_KIP:
+		MINOR_MODULE_ARCANA_TURRET:
 			return 1.5
 		MINOR_MODULE_CONVERSION:
 			return 3.4 - float(level - 1) * 0.35
@@ -267,11 +271,11 @@ static func minor_module_conversion_duration(module_type: String, minor_module_l
 
 static func minor_module_color(module_type: String) -> Color:
 	match canonical_minor_module_type(module_type):
-		MINOR_MODULE_PULSE:
+		MINOR_MODULE_BLIGHT_GAS:
 			return Color("b7e88f")
-		MINOR_MODULE_CANNON:
+		MINOR_MODULE_RUNEBURST_MORTAR:
 			return Color("ffb977")
-		MINOR_MODULE_KIP:
+		MINOR_MODULE_ARCANA_TURRET:
 			return Color("b38cff")
 		MINOR_MODULE_CONVERSION:
 			return Color("8effc4")
@@ -286,18 +290,18 @@ static func minor_module_color(module_type: String) -> Color:
 
 static func minor_module_projectile_width(module_type: String) -> float:
 	match canonical_minor_module_type(module_type):
-		MINOR_MODULE_KIP:
+		MINOR_MODULE_ARCANA_TURRET:
 			return 4.6
-		MINOR_MODULE_CANNON:
+		MINOR_MODULE_RUNEBURST_MORTAR:
 			return 3.4
 		_:
 			return 2.4
 
 static func minor_module_projectile_speed(module_type: String, base_projectile_speed: float) -> float:
 	match canonical_minor_module_type(module_type):
-		MINOR_MODULE_KIP:
+		MINOR_MODULE_ARCANA_TURRET:
 			return 980.0
-		MINOR_MODULE_CANNON:
+		MINOR_MODULE_RUNEBURST_MORTAR:
 			return 860.0
 		_:
 			return base_projectile_speed + 80.0

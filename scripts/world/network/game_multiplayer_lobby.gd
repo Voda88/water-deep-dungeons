@@ -269,7 +269,7 @@ static func update_hero_select_overlay(game: Node) -> void:
 		if tile_button != null:
 			var tile_owner: String = "You" if not multiplayer_session_active(game) or can_local_control_hero_index(game, hero_index) else "Peer %d" % hero_owner_peer_id(game, hero_index)
 			var dead_label: String = "\nDEAD" if bool(game.hero_profiles[hero_index].get("dead", false)) else ""
-			tile_button.icon = GAME_HERO_PROFILE_FLOW.hero_portrait_texture(game, class_id)
+			tile_button.icon = GAME_HERO_PROFILE_FLOW.hero_portrait_icon_texture(game, class_id)
 			tile_button.text = "H%d\n%s\n%s%s" % [hero_index + 1, String(game.hero_class_definition(class_id).get("name", class_id.capitalize())), tile_owner, dead_label]
 			tile_button.button_pressed = hero_index == game.hero_select_active_index
 	var active_class_id: String = game.hero_profile_class_id(game.hero_select_active_index)

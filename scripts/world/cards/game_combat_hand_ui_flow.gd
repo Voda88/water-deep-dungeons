@@ -1,6 +1,10 @@
 extends RefCounted
 
 const DRAGGED_HAND_CARD_ALPHA: float = 0.14
+const CARD_FRAME_PATH: String = "res://assets/generated/ui/card-frame.png"
+
+static var card_icon_cache: Dictionary = {}
+static var card_frame_texture: Texture2D = null
 
 static func scaled_alpha(color: Color, alpha_scale: float) -> Color:
 	var scaled: Color = color
@@ -137,25 +141,39 @@ static func draw_hand_card(game: Node, screen_rect: Rect2, hand_card: Dictionary
 	if highlighted:
 		fill = fill.lightened(0.12)
 	game.draw_rect(draw_rect, scaled_alpha(fill, resolved_alpha), true)
-	game.draw_rect(draw_rect, scaled_alpha(Color("eff8ff"), resolved_alpha), false, 2.0)
 	var font: Font = ThemeDB.fallback_font
-	game.draw_string(font, draw_rect.position + Vector2(5.0, 13.0), String(hand_card.get("name", "Card")), HORIZONTAL_ALIGNMENT_LEFT, draw_rect.size.x - 10.0, 10, scaled_alpha(Color("091116"), resolved_alpha))
-	var phase_label: String = "Calm"
-	match String(hand_card.get("phase", "combat")):
-		"combat":
-			phase_label = "Fight"
-		"any":
-			phase_label = "Any"
-	var tag_line: String = "%s  %s" % [phase_label, String(hand_card.get("target_scope_label", game.card_target_scope_label(String(hand_card.get("target_scope", "same_room")))))]
-	if bool(hand_card.get("requires_line_of_effect", false)):
-		tag_line += "  LoE"
-	game.draw_string(font, draw_rect.position + Vector2(5.0, 26.0), tag_line, HORIZONTAL_ALIGNMENT_LEFT, draw_rect.size.x - 10.0, 8, scaled_alpha(Color("102028"), resolved_alpha))
-	var info_lines: Array = Array(hand_card.get("description_lines", []))
-	for line_index in range(mini(info_lines.size(), 2)):
-		game.draw_string(font, draw_rect.position + Vector2(5.0, 40.0 + float(line_index) * 10.0), String(info_lines[line_index]), HORIZONTAL_ALIGNMENT_LEFT, draw_rect.size.x - 10.0, 8, scaled_alpha(Color("102028"), resolved_alpha))
-	var footer_bits: Array[String] = hand_card_footer_bits(game, hand_card)
-	if not footer_bits.is_empty():
-		game.draw_string(font, draw_rect.position + Vector2(5.0, draw_rect.size.y - 7.0), "  ".join(footer_bits), HORIZONTAL_ALIGNMENT_LEFT, draw_rect.size.x - 10.0, 8, scaled_alpha(Color("20323d"), resolved_alpha))
+	var icon_texture: Texture2D = card_icon_texture(hand_card)
+	if icon_texture != null:
+		var frame_texture: Texture2D = hand_card_frame_texture()
+		if frame_texture != null:
+			game.draw_texture_rect(frame_texture, draw_rect, false, scaled_alpha(Color.WHITE, resolved_alpha), false)
+		else:
+			game.draw_rect(draw_rect, scaled_alpha(Color("eff8ff"), resolved_alpha), false, 2.0)
+		var icon_width: float = draw_rect.size.x - 18.0
+		var icon_aspect_ratio: float = float(icon_texture.get_height()) / maxf(float(icon_texture.get_width()), 1.0)
+		var icon_height: float = icon_width * icon_aspect_ratio
+		var icon_rect: Rect2 = Rect2(Vector2(draw_rect.get_center().x - icon_width * 0.5, draw_rect.position.y + 20.0), Vector2(icon_width, icon_height))
+		game.draw_texture_rect(icon_texture, icon_rect, false, scaled_alpha(Color.WHITE, resolved_alpha), false)
+		game.draw_string(font, draw_rect.position + Vector2(7.0, draw_rect.size.y - 8.0), String(hand_card.get("name", "Card")), HORIZONTAL_ALIGNMENT_CENTER, draw_rect.size.x - 14.0, 10, scaled_alpha(Color("f5fbff"), resolved_alpha))
+	else:
+		game.draw_rect(draw_rect, scaled_alpha(Color("eff8ff"), resolved_alpha), false, 2.0)
+		game.draw_string(font, draw_rect.position + Vector2(5.0, 13.0), String(hand_card.get("name", "Card")), HORIZONTAL_ALIGNMENT_LEFT, draw_rect.size.x - 10.0, 10, scaled_alpha(Color("091116"), resolved_alpha))
+		var phase_label: String = "Calm"
+		match String(hand_card.get("phase", "combat")):
+			"combat":
+				phase_label = "Fight"
+			"any":
+				phase_label = "Any"
+		var tag_line: String = "%s  %s" % [phase_label, String(hand_card.get("target_scope_label", game.card_target_scope_label(String(hand_card.get("target_scope", "same_room")))))]
+		if bool(hand_card.get("requires_line_of_effect", false)):
+			tag_line += "  LoE"
+		game.draw_string(font, draw_rect.position + Vector2(5.0, 26.0), tag_line, HORIZONTAL_ALIGNMENT_LEFT, draw_rect.size.x - 10.0, 8, scaled_alpha(Color("102028"), resolved_alpha))
+		var info_lines: Array = Array(hand_card.get("description_lines", []))
+		for line_index in range(mini(info_lines.size(), 2)):
+			game.draw_string(font, draw_rect.position + Vector2(5.0, 40.0 + float(line_index) * 10.0), String(info_lines[line_index]), HORIZONTAL_ALIGNMENT_LEFT, draw_rect.size.x - 10.0, 8, scaled_alpha(Color("102028"), resolved_alpha))
+		var footer_bits: Array[String] = hand_card_footer_bits(game, hand_card)
+		if not footer_bits.is_empty():
+			game.draw_string(font, draw_rect.position + Vector2(5.0, draw_rect.size.y - 7.0), "  ".join(footer_bits), HORIZONTAL_ALIGNMENT_LEFT, draw_rect.size.x - 10.0, 8, scaled_alpha(Color("20323d"), resolved_alpha))
 	if game.card_supports_reaction(hand_card) and reaction_rect_screen.size != Vector2.ZERO:
 		var reaction_draw_rect: Rect2 = reaction_rect_screen
 		game.draw_rect(reaction_draw_rect, scaled_alpha(Color(0.08, 0.14, 0.18, 0.92), resolved_alpha), true)
@@ -163,7 +181,25 @@ static func draw_hand_card(game: Node, screen_rect: Rect2, hand_card: Dictionary
 		if bool(hand_card.get("reaction_enabled", false)):
 			game.draw_line(reaction_draw_rect.position + Vector2(3.0, 10.0), reaction_draw_rect.position + Vector2(7.0, 14.0), scaled_alpha(Color("9cffb4"), resolved_alpha), 2.0, true)
 			game.draw_line(reaction_draw_rect.position + Vector2(7.0, 14.0), reaction_draw_rect.position + Vector2(15.0, 4.0), scaled_alpha(Color("9cffb4"), resolved_alpha), 2.0, true)
-		game.draw_string(font, reaction_draw_rect.position + Vector2(-12.0, 15.0), "R", HORIZONTAL_ALIGNMENT_LEFT, 10.0, 10, scaled_alpha(Color("eef8ff"), resolved_alpha))
+			game.draw_string(font, reaction_draw_rect.position + Vector2(-12.0, 15.0), "R", HORIZONTAL_ALIGNMENT_LEFT, 10.0, 10, scaled_alpha(Color("eef8ff"), resolved_alpha))
+
+static func card_icon_texture(card: Dictionary) -> Texture2D:
+	var icon_path: String = String(card.get("icon_path", ""))
+	if icon_path == "":
+		return null
+	if card_icon_cache.has(icon_path):
+		return card_icon_cache[icon_path]
+	var icon_resource: Resource = load(icon_path)
+	var icon_texture: Texture2D = icon_resource if icon_resource is Texture2D else null
+	card_icon_cache[icon_path] = icon_texture
+	return icon_texture
+
+static func hand_card_frame_texture() -> Texture2D:
+	if card_frame_texture != null:
+		return card_frame_texture
+	var frame_resource: Resource = load(CARD_FRAME_PATH)
+	card_frame_texture = frame_resource if frame_resource is Texture2D else null
+	return card_frame_texture
 
 static func draw_hand_card_info_panel(game: Node, hero: Variant) -> void:
 	if hero == null or not is_instance_valid(hero):

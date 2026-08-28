@@ -9,6 +9,7 @@ const NECROMANCER_ATTACK_EFFECT: Texture2D = preload("res://assets/characters/pa
 const PRIEST_HEAL_EFFECT: Texture2D = preload("res://assets/characters/packs/pack01/projectiles/magic/Priest_Heal_effect.png")
 const PRIEST_ATTACK_EFFECT: Texture2D = preload("res://assets/characters/packs/pack01/projectiles/magic/Priest_Attack_effect.png")
 const GHOSTFIRE_BEAM_EFFECT: Texture2D = preload("res://assets/characters/packs/pack02/projectiles/Ghostfire_Beam.png")
+const ARCHER_IMP_ARROW_TEXTURE: Texture2D = preload("res://assets/characters/packs/pack01/projectiles/arrow/Arrow01(100x100).png")
 const FLOOR_ENEMY_TYPE_COUNT: int = 4
 const MIN_PREWARM_ENEMIES_PER_TYPE: int = 4
 const BASE_PREWARM_TOTAL: int = 100
@@ -260,9 +261,6 @@ static func apply_fighter_rage_throw_buff_hit(game: Node, hero: Variant, enemy: 
 		launch_direction = (enemy.global_position - hero.global_position).normalized()
 	if launch_direction == Vector2.ZERO:
 		launch_direction = Vector2.RIGHT
-	var rage_bonus_damage: float = float(rage_level) * PHYSICAL_CARD_RAGE_DAMAGE_PER_LEVEL
-	if game.enemy_is_active(enemy) and rage_bonus_damage > 0.0:
-		enemy.take_damage(rage_bonus_damage, launch_direction)
 	var can_apply_throw: bool = game.enemy_is_active(enemy) and not bool(enemy.get("throw_active"))
 	var target_room: Vector2i = Vector2i(enemy.current_room)
 	if can_apply_throw and target_room != game.INVALID_ROOM and game.rooms.has(target_room):
@@ -293,6 +291,9 @@ static func apply_fighter_rage_throw_buff_hit(game: Node, hero: Variant, enemy: 
 				"bounce_effect_color": Color(throw_config.get("bounce_effect_color", throw_card_def.get("color", Color("c5d4df")))),
 			}
 		)
+	var rage_bonus_damage: float = float(rage_level) * PHYSICAL_CARD_RAGE_DAMAGE_PER_LEVEL
+	if game.enemy_is_active(enemy) and rage_bonus_damage > 0.0:
+		enemy.take_damage(rage_bonus_damage, launch_direction)
 	hero.fighter_rage_throw_hits_left = maxi(hits_left - 1, 0)
 	if hero.fighter_rage_throw_hits_left <= 0:
 		clear_fighter_rage_throw_buff(game, hero, true)
@@ -1130,7 +1131,7 @@ static func build_spawn_positions(game: Node, room_coord: Vector2i, count: int, 
 static func spawn_wave_enemy(game: Node, room_coord: Vector2i, enemy_type: String) -> void:
 	spawn_wave_enemy_at(game, room_coord, enemy_type, Vector2.INF, "door_wave")
 
-static func spawn_wave_enemy_at(game: Node, room_coord: Vector2i, enemy_type: String, spawn_position_hint: Vector2 = Vector2.INF, spawn_source: String = "door_wave") -> void:
+static func spawn_wave_enemy_at(game: Node, room_coord: Vector2i, enemy_type: String, spawn_position_hint: Vector2 = Vector2.INF, spawn_source: String = "door_wave") -> Variant:
 	var enemy: Variant = acquire_enemy_from_pool(game, enemy_type)
 	var enemy_uid: int = game.next_enemy_uid
 	game.next_enemy_uid += 1
@@ -1156,6 +1157,7 @@ static func spawn_wave_enemy_at(game: Node, room_coord: Vector2i, enemy_type: St
 	if spawn_source == "door_wave" and normalized_enemy_type == game.ENEMY_TYPE_ORC:
 		enemy.attack_damage = maxf(float(enemy.attack_damage) * ORC_WAVE_ATTACK_DAMAGE_MULTIPLIER, 0.0)
 	game.enemies.append(enemy)
+	return enemy
 
 static func projectile_numeric_pierce(projectile: Dictionary) -> int:
 	if projectile.has("pierce"):
@@ -1377,8 +1379,42 @@ static func advance_room_sanctuary_effects(game: Node, delta: float) -> void:
 				continue
 			hero.heal(regen_rate * delta)
 
+static func apply_party_passive_auras(game: Node, delta: float) -> void:
+	const AURA_RADIUS: float = 132.0
+	const CLERIC_RESTORATION_PER_SECOND: float = 3.0
+	const FIGHTER_LEADERSHIP_DAMAGE_MULTIPLIER: float = 1.15
+	for hero_variant in game.heroes:
+		var hero: Variant = hero_variant
+		if hero.has_method("clear_leadership_aura"):
+			hero.clear_leadership_aura()
+	for cleric_variant in game.heroes:
+		var cleric: Variant = cleric_variant
+		if not game.hero_is_active(cleric) or not game.hero_has_cleric_restoration_aura(cleric):
+			continue
+		if cleric.pending_room != game.HERO_INVALID_ROOM:
+			continue
+		for ally_variant in game.heroes:
+			var ally: Variant = ally_variant
+			if not game.hero_is_active(ally) or Vector2i(ally.current_room) != Vector2i(cleric.current_room):
+				continue
+			if ally.global_position.distance_to(cleric.global_position) <= AURA_RADIUS:
+				ally.heal(CLERIC_RESTORATION_PER_SECOND * delta)
+	for fighter_variant in game.heroes:
+		var fighter: Variant = fighter_variant
+		if not game.hero_is_active(fighter) or not game.hero_has_fighter_leadership_aura(fighter):
+			continue
+		if fighter.pending_room != game.HERO_INVALID_ROOM:
+			continue
+		for ally_variant in game.heroes:
+			var ally: Variant = ally_variant
+			if ally == fighter or not game.hero_is_active(ally) or Vector2i(ally.current_room) != Vector2i(fighter.current_room):
+				continue
+			if ally.global_position.distance_to(fighter.global_position) <= AURA_RADIUS and ally.has_method("apply_leadership_aura"):
+				ally.apply_leadership_aura(FIGHTER_LEADERSHIP_DAMAGE_MULTIPLIER)
+
 static func process_combat(game: Node, delta: float) -> void:
 	advance_room_sanctuary_effects(game, delta)
+	apply_party_passive_auras(game, delta)
 	game.advance_scorcher_channels(delta)
 	advance_enemy_poison_effects(game, delta)
 	advance_hero_combo_decay(game, delta)
@@ -1412,7 +1448,7 @@ static func process_combat(game: Node, delta: float) -> void:
 				hero.set_destination(hero.global_position)
 			hero.trigger_attack(melee_target.global_position, hero.preferred_attack_style)
 			note_hero_combo_attack(game, hero)
-			game.queue_pending_melee_attack(hero, melee_target, hero.attack_damage, hero.melee_impact_delay(), hero.hero_name)
+			game.queue_pending_melee_attack(hero, melee_target, hero.current_attack_damage(), hero.melee_impact_delay(), hero.hero_name)
 			hero.cooldown_left = hero.current_attack_cooldown()
 			continue
 		var hero_target: Variant = nearest_enemy_in_room(game, hero.current_room, hero.global_position, hero.attack_range)
@@ -1421,9 +1457,9 @@ static func process_combat(game: Node, delta: float) -> void:
 			note_hero_combo_attack(game, hero)
 			var basic_attack_knockback: float = maxf(float(hero.basic_attack_knockback), 0.0)
 			if String(hero.preferred_attack_style) == "fire_bolt":
-				spawn_fire_bolt_projectile(game, hero.global_position, hero_target, hero.attack_damage, Color("ff8e47"), 4.4, 1120.0, 0, 0, basic_attack_knockback)
+				spawn_fire_bolt_projectile(game, hero.global_position, hero_target, hero.current_attack_damage(), Color("ff8e47"), 4.4, 1120.0, 0, 0, basic_attack_knockback)
 			elif String(hero.preferred_attack_style) == "holy_bolt":
-				hero_target.take_damage(hero.attack_damage, (hero_target.global_position - hero.global_position).normalized())
+				hero_target.take_damage(hero.current_attack_damage(), (hero_target.global_position - hero.global_position).normalized())
 				game.projectiles.append({
 					"kind": "priest_attack_effect",
 					"position": hero_target.global_position,
@@ -1437,7 +1473,7 @@ static func process_combat(game: Node, delta: float) -> void:
 					"width": 3.0,
 				})
 			else:
-				spawn_laser_projectile(game, hero.global_position, hero_target, hero.attack_damage, Color("ffe48a"), 5.5, 1220.0, 0, 0, basic_attack_knockback)
+				spawn_laser_projectile(game, hero.global_position, hero_target, hero.current_attack_damage(), Color("ffe48a"), 5.5, 1220.0, 0, 0, basic_attack_knockback)
 			hero.cooldown_left = hero.current_attack_cooldown()
 	for hero in game.heroes:
 		if not game.hero_is_active(hero):
@@ -1500,8 +1536,9 @@ static func process_modules(game: Node, delta: float) -> void:
 			var module_type: String = game.canonical_minor_module_type(String(module_data.get("type", game.MINOR_MODULE_TURRET)))
 			module_data["type"] = module_type
 			match module_type:
-				game.MINOR_MODULE_PULSE:
+				game.MINOR_MODULE_BLIGHT_GAS:
 					var gas_hit: bool = false
+					var gas_visual_target: Variant = nearest_enemy_for_module_candidates(room_targetable_enemies, slot_position, 620.0)
 					var gas_slow_duration: float = 1.4 + float(clampi(game.minor_module_level(module_type), 1, 4)) * 0.2
 					var gas_damage_per_second: float = game.minor_module_damage(module_type)
 					for enemy_variant in room_targetable_enemies:
@@ -1519,6 +1556,8 @@ static func process_modules(game: Node, delta: float) -> void:
 						room["neurostun_time_left"] = maxf(float(room.get("neurostun_time_left", 0.0)), gas_slow_duration)
 						room["neurostun_damage_per_second"] = maxf(float(room.get("neurostun_damage_per_second", 0.0)), gas_damage_per_second)
 						module_data["cooldown"] = game.minor_module_cooldown(module_type)
+						if gas_visual_target != null and is_instance_valid(gas_visual_target):
+							spawn_module_visual_projectile(game, "gas_glob", slot_position, gas_visual_target.global_position, game.minor_module_color(module_type), 3.8, 980.0)
 						game.projectiles.append({
 							"kind": "gas_pulse",
 							"position": slot_position,
@@ -1531,11 +1570,12 @@ static func process_modules(game: Node, delta: float) -> void:
 							"blast_duration": 0.24,
 							"width": 3.0,
 						})
-				game.MINOR_MODULE_CANNON:
+				game.MINOR_MODULE_RUNEBURST_MORTAR:
 					var mortar_target: Variant = nearest_enemy_for_module_candidates(room_targetable_enemies, slot_position, 620.0)
 					if mortar_target != null:
 						module_data["cooldown"] = game.minor_module_cooldown(module_type)
 						var splash_center: Vector2 = mortar_target.global_position
+						spawn_module_visual_projectile(game, "mortar_shell", slot_position, splash_center, game.minor_module_color(module_type), 4.6, 780.0)
 						var splash_radius: float = 56.0 + float(clampi(game.minor_module_level(module_type), 1, 4)) * 8.0
 						for splash_enemy_variant in room_targetable_enemies:
 							var splash_enemy: Variant = splash_enemy_variant
@@ -1561,14 +1601,14 @@ static func process_modules(game: Node, delta: float) -> void:
 							"blast_duration": 0.24,
 							"width": 3.0,
 						})
-				game.MINOR_MODULE_KIP:
+				game.MINOR_MODULE_ARCANA_TURRET:
 					var arcana_target: Variant = strongest_enemy_for_module_candidates(room_targetable_enemies, slot_position, 620.0)
 					if arcana_target != null:
 						var arcana_level: int = clampi(game.minor_module_level(module_type), 1, 4)
-						var arcana_damage_cap: float = float(game.minor_module_kip_max_damage(arcana_level))
+						var arcana_damage_cap: float = float(game.minor_module_arcana_turret_max_damage(arcana_level))
 						var arcana_damage: float = minf(maxf(float(game.science), 0.0), arcana_damage_cap)
 						module_data["cooldown"] = game.minor_module_cooldown(module_type)
-						spawn_laser_projectile(game, slot_position, arcana_target, arcana_damage, game.minor_module_color(module_type), game.minor_module_projectile_width(module_type), game.minor_module_projectile_speed(module_type))
+						spawn_laser_projectile(game, slot_position, arcana_target, arcana_damage, game.minor_module_color(module_type), game.minor_module_projectile_width(module_type), game.minor_module_projectile_speed(module_type), 0, 0, 0.0, "arcana_bolt")
 				game.MINOR_MODULE_CONVERSION:
 					var conversion_target: Variant = strongest_enemy_for_module_candidates(room_targetable_enemies, slot_position, 620.0)
 					if conversion_target != null:
@@ -1577,6 +1617,7 @@ static func process_modules(game: Node, delta: float) -> void:
 						if conversion_target.has_method("apply_conversion"):
 							conversion_target.apply_conversion(game.minor_module_conversion_duration(module_type))
 						var betrayal_radius: float = 72.0 + float(clampi(game.minor_module_level(module_type), 1, 4)) * 8.0
+						spawn_module_visual_projectile(game, "soulbind_orb", slot_position, conversion_center, game.minor_module_color(module_type), 4.2, 860.0)
 						game.add_resource_floating_text(conversion_center + Vector2(0.0, -22.0), "Converted", Color("8effc4"))
 						game.projectiles.append({
 							"kind": "gas_pulse",
@@ -1630,10 +1671,10 @@ static func apply_cleric_mend_to_room(game: Node, room: Dictionary, delta: float
 		module_data["health"] = minf(float(module_data.get("health", 0.0)) + repair_amount, game.MINOR_MODULE_MAX_HEALTH)
 		room["minor_modules"][module_index] = module_data
 
-static func spawn_arrow_projectile(game: Node, origin: Vector2, target: Variant, damage: float, color: Color = Color("d8bf7a"), width: float = 2.4, speed: float = 950.0, bounces: int = 0, pierce: int = 0) -> void:
+static func spawn_arrow_projectile(game: Node, origin: Vector2, target: Variant, damage: float, color: Color = Color("d8bf7a"), width: float = 2.4, speed: float = 950.0, bounces: int = 0, pierce: int = 0, expose_stacks: int = 0, expose_duration: float = 0.0) -> void:
 	var target_position: Vector2 = target.global_position if is_instance_valid(target) else origin
 	var projectile: Dictionary = {
-		"kind": "arrow",
+		"kind": "imp_arrow" if expose_stacks > 0 else "arrow",
 		"position": origin,
 		"previous": origin,
 		"target": target,
@@ -1642,6 +1683,8 @@ static func spawn_arrow_projectile(game: Node, origin: Vector2, target: Variant,
 		"speed": speed,
 		"color": color,
 		"width": width,
+		"expose_stacks": maxi(expose_stacks, 0),
+		"expose_duration": maxf(expose_duration, 0.0),
 	}
 	if bounces > 0 or pierce > 0:
 		var direction: Vector2 = (target_position - origin).normalized()
@@ -1661,10 +1704,10 @@ static func spawn_arrow_projectile(game: Node, origin: Vector2, target: Variant,
 		projectile["lifetime_left"] = maxf(origin.distance_to(target_position) / maxf(speed, 1.0) + 0.6, 0.35)
 	game.projectiles.append(projectile)
 
-static func spawn_laser_projectile(game: Node, origin: Vector2, target: Variant, damage: float, color: Color = Color("89f2ff"), width: float = 4.0, speed: float = 950.0, bounces: int = 0, pierce: int = 0, knockback_force: float = 0.0) -> void:
+static func spawn_laser_projectile(game: Node, origin: Vector2, target: Variant, damage: float, color: Color = Color("89f2ff"), width: float = 4.0, speed: float = 950.0, bounces: int = 0, pierce: int = 0, knockback_force: float = 0.0, projectile_kind: String = "laser") -> void:
 	var target_position: Vector2 = target.global_position if is_instance_valid(target) else origin
 	var projectile: Dictionary = {
-		"kind": "laser",
+		"kind": projectile_kind,
 		"position": origin,
 		"previous": origin,
 		"target": target,
@@ -1693,6 +1736,21 @@ static func spawn_laser_projectile(game: Node, origin: Vector2, target: Variant,
 		projectile["expire_after_hit"] = false
 		projectile["lifetime_left"] = maxf(origin.distance_to(target_position) / maxf(speed, 1.0) + 0.55, 0.3)
 	game.projectiles.append(projectile)
+
+static func spawn_module_visual_projectile(game: Node, projectile_kind: String, origin: Vector2, target_position: Vector2, color: Color, width: float, speed: float) -> void:
+	if origin.distance_to(target_position) <= 6.0:
+		return
+	game.projectiles.append({
+		"kind": projectile_kind,
+		"position": origin,
+		"previous": origin,
+		"target": null,
+		"target_position": target_position,
+		"damage": 0.0,
+		"speed": speed,
+		"color": color,
+		"width": width,
+	})
 
 static func spawn_magic_missile_projectile(game: Node, origin: Vector2, target: Variant, damage: float, color: Color = Color("c18dff"), width: float = 4.8, speed: float = 1180.0, curve_offset: float = 0.0) -> void:
 	var target_position: Vector2 = target.global_position if is_instance_valid(target) else origin
@@ -1755,12 +1813,15 @@ static func spawn_fire_bolt_projectile(game: Node, origin: Vector2, target: Vari
 		projectile["lifetime_left"] = maxf(origin.distance_to(target_position) / maxf(speed, 1.0) + 0.55, 0.3)
 	game.projectiles.append(projectile)
 
-static func apply_enemy_ranged_damage_to_hero(game: Node, hero: Variant, damage: float, source_label: String) -> void:
+static func apply_enemy_ranged_damage_to_hero(game: Node, hero: Variant, damage: float, source_label: String, expose_stacks: int = 0, expose_duration: float = 0.0) -> void:
 	if hero == null or not is_instance_valid(hero) or not game.hero_is_active(hero):
 		return
+	var was_invulnerable: bool = float(hero.invulnerability_time_left) > 0.0
 	var adjusted_damage: float = game.adjusted_incoming_damage_for_hero(hero, damage)
 	var previous_rage: int = int(hero.fighter_rage)
 	var defeated: bool = hero.take_damage(adjusted_damage, false)
+	if not was_invulnerable and expose_stacks > 0 and hero.has_method("apply_expose_stack"):
+		hero.apply_expose_stack(expose_stacks, 3, expose_duration)
 	maybe_show_fighter_rage_popup(game, hero, previous_rage)
 	if defeated and game.try_auto_cast_fatal_shield(hero, adjusted_damage):
 		return
@@ -1955,7 +2016,7 @@ static func advance_projectiles(game: Node, delta: float) -> void:
 					var direct_hit_knockback_duration: float = clampf(float(projectile.get("knockback_duration", 0.16)), 0.08, 0.5)
 					game.knockback_actor(target, impact_direction_simple, direct_hit_knockback_force, direct_hit_knockback_duration, target.current_room)
 			elif game.hero_is_active(target):
-				apply_enemy_ranged_damage_to_hero(game, target, float(projectile.get("damage", 0.0)), String(projectile.get("source_label", "A ranged attack")))
+				apply_enemy_ranged_damage_to_hero(game, target, float(projectile.get("damage", 0.0)), String(projectile.get("source_label", "A ranged attack")), int(projectile.get("expose_stacks", 0)), float(projectile.get("expose_duration", 0.0)))
 			continue
 		var travel_distance: float = minf(float(projectile["speed"]) * delta, offset.length())
 		projectile["previous"] = current_position_simple
@@ -1977,9 +2038,10 @@ static func draw_projectiles(game: Node, canvas: CanvasItem = null) -> void:
 		if projectile_kind == "axe":
 			var angle: float = float(projectile.get("rotation_angle", 0.0))
 			var radius: float = float(projectile.get("radius", 17.0))
+			surface.draw_line(previous, current_position, Color(color.r, color.g * 0.72, color.b * 0.40, 0.52), width + 2.0, true)
 			surface.draw_circle(current_position, radius * 0.55, color)
-			surface.draw_line(current_position + Vector2.RIGHT.rotated(angle) * radius, current_position - Vector2.RIGHT.rotated(angle) * radius, color.lightened(0.18), 5.0, true)
-			surface.draw_line(current_position + Vector2.UP.rotated(angle) * (radius * 0.8), current_position - Vector2.UP.rotated(angle) * (radius * 0.8), Color("fff7cf"), 3.0, true)
+			surface.draw_line(current_position + Vector2.RIGHT.rotated(angle) * radius, current_position - Vector2.RIGHT.rotated(angle) * radius, color.lightened(0.24), 5.0, true)
+			surface.draw_line(current_position + Vector2.UP.rotated(angle) * (radius * 0.8), current_position - Vector2.UP.rotated(angle) * (radius * 0.8), color.lightened(0.55), 3.0, true)
 			continue
 		if projectile_kind == "dagger":
 			var velocity: Vector2 = Vector2(projectile.get("velocity", Vector2.RIGHT))
@@ -1990,20 +2052,21 @@ static func draw_projectiles(game: Node, canvas: CanvasItem = null) -> void:
 			var tip: Vector2 = current_position + direction * 12.0
 			var tail_left: Vector2 = current_position - direction * 8.0 + perpendicular * 4.0
 			var tail_right: Vector2 = current_position - direction * 8.0 - perpendicular * 4.0
+			var is_shadow_dagger: bool = String(projectile.get("card_id", "")) == "rogue_combo_dagger_card"
+			if is_shadow_dagger:
+				surface.draw_line(previous, current_position, Color(color.r, color.g * 0.55, color.b, 0.58), width + 2.4, true)
 			surface.draw_colored_polygon(PackedVector2Array([tip, tail_left, tail_right]), color)
-			surface.draw_line(current_position - direction * 10.0, current_position + direction * 4.0, Color("eff8ff"), 2.0, true)
+			var blade_highlight: Color = Color("54f0e1") if is_shadow_dagger else Color("eff8ff")
+			surface.draw_line(current_position - direction * 10.0, current_position + direction * 4.0, blade_highlight, 2.0, true)
 			continue
 		if projectile_kind == "arrow":
 			var arrow_target: Vector2 = current_position - previous
 			var arrow_direction: Vector2 = arrow_target.normalized()
 			if arrow_direction == Vector2.ZERO:
 				arrow_direction = Vector2.RIGHT
-			var arrow_perp: Vector2 = Vector2(-arrow_direction.y, arrow_direction.x)
-			var arrow_tip: Vector2 = current_position + arrow_direction * 9.0
-			var arrow_tail_left: Vector2 = current_position - arrow_direction * 8.0 + arrow_perp * 2.8
-			var arrow_tail_right: Vector2 = current_position - arrow_direction * 8.0 - arrow_perp * 2.8
-			surface.draw_colored_polygon(PackedVector2Array([arrow_tip, arrow_tail_left, arrow_tail_right]), color)
-			surface.draw_line(current_position - arrow_direction * 12.0, current_position + arrow_direction * 4.0, Color("fff6d3"), maxf(width, 1.4), true)
+			surface.draw_set_transform(current_position, arrow_direction.angle(), Vector2.ONE)
+			surface.draw_texture_rect(ARCHER_IMP_ARROW_TEXTURE, Rect2(-36.0, -36.0, 72.0, 72.0), false, Color(color.r, color.g, color.b, 1.0), false)
+			surface.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 			continue
 		if projectile_kind == "fire_bolt":
 			var bolt_delta: Vector2 = current_position - previous
@@ -2034,6 +2097,57 @@ static func draw_projectiles(game: Node, canvas: CanvasItem = null) -> void:
 			surface.draw_circle(current_position, missile_glow_radius * 0.42, Color(1.0, 0.92, 1.0, 0.16))
 			draw_effect_strip(surface, WIZARD_FIRE_BOLT_EFFECT, animated_effect_frame_index(WIZARD_FIRE_BOLT_EFFECT, 0.048), current_position, Vector2(24.0, 24.0), Color(color.r, color.g, color.b, 1.0))
 			surface.draw_circle(current_position + missile_direction * 1.5, maxf(width * 0.72, 2.9), Color("fff2ff"))
+			continue
+		if projectile_kind == "gas_glob" or projectile_kind == "mortar_shell" or projectile_kind == "arcana_bolt" or projectile_kind == "soulbind_orb":
+			var module_delta: Vector2 = current_position - previous
+			var module_direction: Vector2 = module_delta.normalized()
+			if module_direction == Vector2.ZERO:
+				module_direction = (Vector2(projectile.get("target_position", current_position)) - current_position).normalized()
+			if module_direction == Vector2.ZERO:
+				module_direction = Vector2.RIGHT
+			var glow_radius: float = maxf(width * 3.8, 13.0)
+			var trail_color: Color = Color(color.r, color.g, color.b, 0.44)
+			var core_color: Color = Color(0.92, 1.0, 0.96, 0.94)
+			if projectile_kind == "mortar_shell":
+				glow_radius = maxf(width * 3.4, 15.0)
+				core_color = Color("fff0be")
+				trail_color = Color(1.0, color.g * 0.64, color.b * 0.36, 0.56)
+			elif projectile_kind == "arcana_bolt":
+				core_color = Color("e9f3ff")
+			elif projectile_kind == "soulbind_orb":
+				core_color = Color("d5fff0")
+			surface.draw_line(previous, current_position, Color(trail_color.r, trail_color.g, trail_color.b, 0.24), width + 10.0, true)
+			surface.draw_line(previous, current_position, trail_color, width + 4.0, true)
+			surface.draw_line(previous, current_position, core_color, maxf(width * 0.5, 1.8), true)
+			surface.draw_circle(current_position, glow_radius, Color(color.r, color.g, color.b, 0.14))
+			surface.draw_circle(current_position, glow_radius * 0.58, Color(color.r, color.g, color.b, 0.34))
+			var module_time: float = float(Time.get_ticks_msec()) / 1000.0
+			if projectile_kind == "mortar_shell":
+				surface.draw_circle(current_position - module_direction * 2.0, maxf(width * 1.35, 5.0), Color("502518"))
+				surface.draw_circle(current_position + module_direction * 1.4, maxf(width * 0.88, 3.4), core_color)
+				for spark_index in range(3):
+					var spark_angle: float = module_direction.angle() + PI + float(spark_index - 1) * 0.48 + sin(module_time * 9.0 + float(spark_index)) * 0.18
+					var spark_position: Vector2 = current_position + Vector2.RIGHT.rotated(spark_angle) * (8.0 + float(spark_index) * 3.0)
+					surface.draw_circle(spark_position, 1.8, Color("ffd780"))
+			elif projectile_kind == "gas_glob":
+				for bubble_index in range(3):
+					var bubble_angle: float = module_time * 4.2 + float(bubble_index) * TAU / 3.0
+					var bubble_position: Vector2 = current_position + Vector2.RIGHT.rotated(bubble_angle) * (4.0 + float(bubble_index) * 1.8)
+					surface.draw_circle(bubble_position, 2.2 + float(bubble_index) * 0.45, Color(0.86, 1.0, 0.72, 0.82))
+			elif projectile_kind == "arcana_bolt":
+				var crystal_perpendicular: Vector2 = Vector2(-module_direction.y, module_direction.x)
+				var crystal_tip: Vector2 = current_position + module_direction * 8.0
+				var crystal_tail: Vector2 = current_position - module_direction * 6.0
+				surface.draw_colored_polygon(PackedVector2Array([crystal_tip, current_position + crystal_perpendicular * 5.0, crystal_tail, current_position - crystal_perpendicular * 5.0]), core_color)
+				var rune_angle: float = module_time * 7.0
+				surface.draw_arc(current_position, 10.0, rune_angle, rune_angle + PI * 1.45, 12, Color(color.r, color.g, color.b, 0.86), 1.5, true)
+			elif projectile_kind == "soulbind_orb":
+				for wisp_index in range(2):
+					var wisp_angle: float = module_time * 8.0 + float(wisp_index) * PI
+					var wisp_position: Vector2 = current_position + Vector2.RIGHT.rotated(wisp_angle) * 8.0
+					surface.draw_circle(wisp_position, 2.5, Color("b98cff"))
+			else:
+				surface.draw_circle(current_position + module_direction * 1.6, maxf(width * 0.98, 3.3), core_color)
 			continue
 		if projectile_kind == "fireball_blast":
 			var duration: float = maxf(float(projectile.get("blast_duration", 0.24)), 0.001)
@@ -2210,6 +2324,14 @@ static func draw_projectiles(game: Node, canvas: CanvasItem = null) -> void:
 		if projectile_kind == "priest_attack_effect":
 			var priest_attack_frame: int = lifetime_effect_frame_index(projectile, PRIEST_ATTACK_EFFECT)
 			draw_effect_strip(surface, PRIEST_ATTACK_EFFECT, priest_attack_frame, current_position, Vector2(58.0, 58.0), Color(color.r, color.g, color.b, 0.92))
+			continue
+		if projectile_kind == "imp_arrow":
+			var arrow_direction: Vector2 = current_position - previous
+			if arrow_direction.length() <= 0.001:
+				arrow_direction = (current_position - Vector2(projectile.get("target_position", current_position))).normalized()
+			surface.draw_set_transform(current_position, arrow_direction.angle(), Vector2.ONE)
+			surface.draw_texture_rect(ARCHER_IMP_ARROW_TEXTURE, Rect2(-16.0, -16.0, 32.0, 32.0), false, Color(color.r, color.g, color.b, 1.0), false)
+			surface.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 			continue
 		surface.draw_line(previous, current_position, color, width, true)
 		surface.draw_circle(current_position, 3.0, color)
@@ -2449,6 +2571,19 @@ static func cleanup_enemies(game: Node) -> void:
 	var alive_enemies: Array = []
 	for enemy in game.enemies:
 		if not is_instance_valid(enemy):
+			continue
+		if bool(enemy.get_meta("slime_split_pending", false)):
+			var split_health: float = maxf(float(enemy.get_meta("slime_split_health", 0.0)), 0.0)
+			if String(enemy.enemy_role) == game.ENEMY_TYPE_SLIME and split_health > 0.0:
+				var spawn_source: String = String(enemy.get_meta("spawn_source", ""))
+				for split_offset in [Vector2(-16.0, 0.0), Vector2(16.0, 0.0)]:
+					var split_position: Vector2 = game.clamp_point_to_room(enemy.global_position + split_offset, enemy.current_room)
+					var split_enemy: Variant = spawn_wave_enemy_at(game, enemy.current_room, game.ENEMY_TYPE_SLIME, split_position, spawn_source)
+					split_enemy.max_health = split_health
+					split_enemy.current_health = split_health
+					split_enemy.set_meta("slime_has_split", true)
+					alive_enemies.append(split_enemy)
+			release_enemy_to_pool(game, enemy)
 			continue
 		if enemy.current_health <= 0.0:
 			try_spawn_enemy_dust_drop(game, enemy)

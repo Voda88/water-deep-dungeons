@@ -45,6 +45,8 @@ static func grow_layout_towards_room_count(game: Node, minimum_room_count: int, 
 		if blueprint.is_empty():
 			continue
 		var template_id: String = String(blueprint["template_id"])
+		if room_template_is_large(game, String(game.rooms[origin].get("profile", ""))) and room_template_is_large(game, template_id):
+			continue
 		var candidate_center: Vector2 = game.proposed_room_center(origin, template_id, direction)
 		if not game.can_place_room_center(candidate_center, game.room_template_size(template_id)):
 			continue
@@ -162,6 +164,8 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 			if blueprint.is_empty():
 				continue
 			var template_id: String = String(blueprint["template_id"])
+			if room_template_is_large(game, String(game.rooms[origin].get("profile", ""))) and room_template_is_large(game, template_id):
+				continue
 			var candidate_center: Vector2 = game.proposed_room_center(origin, template_id, direction)
 			if not game.can_place_room_center(candidate_center, game.room_template_size(template_id)):
 				continue
@@ -222,6 +226,9 @@ static func roll_room_template(game: Node) -> String:
 	if roll < 0.8:
 		return game.ROOM_TEMPLATE_WORKSHOP
 	return game.ROOM_TEMPLATE_FORGE
+
+static func room_template_is_large(game: Node, template_id: String) -> bool:
+	return template_id == game.ROOM_TEMPLATE_WORKSHOP or template_id == game.ROOM_TEMPLATE_FORGE
 
 static func crystal_room_door_dirs_for_floor(game: Node) -> Array:
 	if game.floor_index == 1:
@@ -517,9 +524,9 @@ static func room_blueprint_weight(game: Node, template_id: String, door_dirs: Ar
 		game.ROOM_TEMPLATE_GALLERY:
 			weight = 2.1
 		game.ROOM_TEMPLATE_WORKSHOP:
-			weight = 2.2
+			weight = 0.5
 		game.ROOM_TEMPLATE_FORGE:
-			weight = 1.15
+			weight = 0.45
 		_:
 			weight = 1.0
 	var door_count: int = door_dirs.size()

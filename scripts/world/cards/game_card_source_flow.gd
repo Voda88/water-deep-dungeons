@@ -107,6 +107,7 @@ static func build_hand_card_from_generator(game: Node, hero: Variant, generator:
 		"id": card_id,
 		"card_id": card_id,
 		"name": String(generator.get("name_override", card_def.get("name", "Card"))),
+		"icon_path": String(card_def.get("icon_path", "")),
 		"item_uid": int(generator.get("item_uid", -1)),
 		"item_id": item_id,
 		"spell_level": spell_level,

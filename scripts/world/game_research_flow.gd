@@ -8,11 +8,11 @@ static func research_option_cost(game: Node, module_type: String, next_level: in
 	match game.canonical_minor_module_type(module_type):
 		game.MINOR_MODULE_TURRET:
 			return game.minor_module_research_cost(module_type, next_level)
-		game.MINOR_MODULE_PULSE:
+		game.MINOR_MODULE_BLIGHT_GAS:
 			return game.minor_module_research_cost(module_type, next_level)
-		game.MINOR_MODULE_CANNON:
+		game.MINOR_MODULE_RUNEBURST_MORTAR:
 			return game.minor_module_research_cost(module_type, next_level)
-		game.MINOR_MODULE_KIP:
+		game.MINOR_MODULE_ARCANA_TURRET:
 			return game.minor_module_research_cost(module_type, next_level)
 		game.MINOR_MODULE_CONVERSION:
 			return game.minor_module_research_cost(module_type, next_level)
@@ -30,12 +30,12 @@ static func research_option_description(game: Node, module_type: String, next_le
 		return "Upgrade to level %d.\nEach online %s yields %d after wave recovery." % [next_level, game.research_display_name(module_type).to_lower(), game.major_module_door_yield(next_level)]
 	match game.canonical_minor_module_type(module_type):
 		game.MINOR_MODULE_TURRET:
-			return "Unlocks or upgrades the arrow turret.\nLevel %d: %d damage, 0.5s cooldown." % [next_level, int(game.BALLISTA_LEVEL_DAMAGE[clampi(next_level - 1, 0, 3)])]
-		game.MINOR_MODULE_PULSE:
+			return "Unlocks or upgrades the arrow turret.\nLevel %d: %d damage, 0.5s cooldown." % [next_level, int(module_damage_at_level(game, module_type, next_level))]
+		game.MINOR_MODULE_BLIGHT_GAS:
 			return "Blight gas pulse.\nLevel %d increases room-wide damage over time and slow uptime." % next_level
-		game.MINOR_MODULE_CANNON:
+		game.MINOR_MODULE_RUNEBURST_MORTAR:
 			return "Runeburst mortar shell.\nLevel %d increases splash damage and cadence." % next_level
-		game.MINOR_MODULE_KIP:
+		game.MINOR_MODULE_ARCANA_TURRET:
 			return "Arcana turret beam.\nDamage equals stored Arcana up to a level-based cap; level %d raises the cap." % next_level
 		game.MINOR_MODULE_CONVERSION:
 			return "Soulbind conversion spire.\nLevel %d converts one enemy to fight for you; upgrades increase conversion duration." % next_level
@@ -108,11 +108,10 @@ static func module_damage_at_level(game: Node, module_type: String, level: int) 
 		return 0.0
 	match game.canonical_minor_module_type(module_type):
 		game.MINOR_MODULE_TURRET:
-			var damage_index: int = clampi(level - 1, 0, game.BALLISTA_LEVEL_DAMAGE.size() - 1)
-			return float(game.BALLISTA_LEVEL_DAMAGE[damage_index])
-		game.MINOR_MODULE_PULSE:
+			return game.minor_module_damage_at_level(module_type, level)
+		game.MINOR_MODULE_BLIGHT_GAS:
 			return 1.0 + float(level) * 0.7
-		game.MINOR_MODULE_CANNON:
+		game.MINOR_MODULE_RUNEBURST_MORTAR:
 			return 8.0 + float(level - 1) * 3.0
 		game.MINOR_MODULE_CONVERSION:
 			return 0.0
@@ -125,11 +124,11 @@ static func module_cooldown_at_level(game: Node, module_type: String, level: int
 	match game.canonical_minor_module_type(module_type):
 		game.MINOR_MODULE_TURRET:
 			return 0.5
-		game.MINOR_MODULE_PULSE:
+		game.MINOR_MODULE_BLIGHT_GAS:
 			return 1.1 - float(level - 1) * 0.08
-		game.MINOR_MODULE_CANNON:
+		game.MINOR_MODULE_RUNEBURST_MORTAR:
 			return 1.45 - float(level - 1) * 0.12
-		game.MINOR_MODULE_KIP:
+		game.MINOR_MODULE_ARCANA_TURRET:
 			return 1.5
 		game.MINOR_MODULE_CONVERSION:
 			return 3.4 - float(level - 1) * 0.35
@@ -158,7 +157,7 @@ static func research_option_stats_text(game: Node, option: Dictionary) -> String
 			var current_dps: float = current_damage / current_cooldown if current_cooldown > 0.0 else 0.0
 			var next_dps: float = next_damage / next_cooldown if next_cooldown > 0.0 else 0.0
 			return "Current level %d -> %d\nAttack Power %.1f -> %.1f\nAttack Cooldown %.2fs -> %.2fs\nDPS %.1f -> %.1f" % [current_level, next_level, current_damage, next_damage, current_cooldown, next_cooldown, current_dps, next_dps]
-		game.MINOR_MODULE_PULSE:
+		game.MINOR_MODULE_BLIGHT_GAS:
 			var current_pulse_damage: float = module_damage_at_level(game, module_type, current_level)
 			var next_pulse_damage: float = module_damage_at_level(game, module_type, next_level)
 			var current_pulse_slow_duration: float = 1.4 + float(current_level) * 0.2 if current_level > 0 else 0.0
@@ -166,15 +165,15 @@ static func research_option_stats_text(game: Node, option: Dictionary) -> String
 			var current_pulse_cooldown: float = module_cooldown_at_level(game, module_type, current_level)
 			var next_pulse_cooldown: float = module_cooldown_at_level(game, module_type, next_level)
 			return "Current level %d -> %d\nRoom-wide blight gas\nPer tick damage %.1f -> %.1f\nSlow field %.1fs -> %.1fs\nCooldown %.2fs -> %.2fs" % [current_level, next_level, current_pulse_damage, next_pulse_damage, current_pulse_slow_duration, next_pulse_slow_duration, current_pulse_cooldown, next_pulse_cooldown]
-		game.MINOR_MODULE_CANNON:
+		game.MINOR_MODULE_RUNEBURST_MORTAR:
 			var current_mortar_damage: float = module_damage_at_level(game, module_type, current_level)
 			var next_mortar_damage: float = module_damage_at_level(game, module_type, next_level)
 			var current_mortar_cooldown: float = module_cooldown_at_level(game, module_type, current_level)
 			var next_mortar_cooldown: float = module_cooldown_at_level(game, module_type, next_level)
 			return "Current level %d -> %d\nRuneburst splash shell\nSplash damage %.1f -> %.1f\nCooldown %.2fs -> %.2fs" % [current_level, next_level, current_mortar_damage, next_mortar_damage, current_mortar_cooldown, next_mortar_cooldown]
-		game.MINOR_MODULE_KIP:
-			var current_arcana_cap: int = game.minor_module_kip_max_damage(current_level) if current_level > 0 else 0
-			var next_arcana_cap: int = game.minor_module_kip_max_damage(next_level)
+		game.MINOR_MODULE_ARCANA_TURRET:
+			var current_arcana_cap: int = game.minor_module_arcana_turret_max_damage(current_level) if current_level > 0 else 0
+			var next_arcana_cap: int = game.minor_module_arcana_turret_max_damage(next_level)
 			var stored_arcana_damage: int = maxi(game.science, 0)
 			var effective_current_damage: int = mini(stored_arcana_damage, current_arcana_cap)
 			var effective_next_damage: int = mini(stored_arcana_damage, next_arcana_cap)
@@ -251,7 +250,7 @@ static func refresh_research_overlay(game: Node) -> void:
 		if game.research_detail_cost_label != null:
 			game.research_detail_cost_label.text = "Cost %d Arcana  |  Duration 3 doors" % selected_cost
 		if game.research_start_button != null:
-			game.research_start_button.disabled = game.science < selected_cost
+			game.research_start_button.disabled = game.science < selected_cost or game.wave_in_progress()
 			game.research_start_button.text = "Start Research"
 	else:
 		if game.research_detail_title_label != null:
@@ -305,6 +304,10 @@ static func apply_research_option(game: Node, choice_index: int) -> void:
 		game.status_message = "Research already underway."
 		game.update_hud()
 		return
+	if game.wave_in_progress():
+		game.status_message = "Research can only begin when the dungeon is calm."
+		game.update_hud()
+		return
 	if GAME_FLOOR_FLOW.all_floor_doors_opened(game):
 		game.status_message = "No unopened doors remain on this floor."
 		game.update_hud()
@@ -335,7 +338,7 @@ static func room_has_active_research(game: Node, room_coord: Vector2i) -> bool:
 	return research_in_progress(game) and Vector2i(game.active_research.get("room", game.INVALID_ROOM)) == room_coord
 
 static func can_start_research_in_room(game: Node, room_coord: Vector2i) -> bool:
-	return room_has_research_crystal(game, room_coord) and not research_in_progress(game) and not GAME_FLOOR_FLOW.all_floor_doors_opened(game)
+	return room_has_research_crystal(game, room_coord) and not research_in_progress(game) and not game.wave_in_progress() and not GAME_FLOOR_FLOW.all_floor_doors_opened(game)
 
 static func _on_research_choice_button_pressed(game: Node, choice_index: int) -> void:
 	game.research_selected_index = choice_index

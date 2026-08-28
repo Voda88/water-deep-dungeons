@@ -16,6 +16,7 @@ from pathlib import Path
 
 
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+PROMPT_PATH = Path(__file__).resolve().parent.parent / "image-prompt.md"
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent.parent / "assets" / "generated"
 DEFAULT_REFERENCE_IMAGE_DIR = Path(__file__).resolve().parent.parent / "assets" / "characters" / "heroes" / "fighter"
 PREVIEW_API_VERSION = "2025-04-01-preview"
@@ -229,7 +230,6 @@ def output_path_for_prompt(output_dir: Path, prompt: str) -> Path:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate a sprite image through an Azure Foundry / Azure OpenAI image deployment.")
-    parser.add_argument("prompt", nargs="+", help="Text prompt for the image model.")
     parser.add_argument("--reference-image", dest="reference_image", help="Optional source image path for edit mode. If only a filename is provided, tools/../assets/characters/heroes/fighter is searched.")
     parser.add_argument("--out", dest="out_path", help="Optional output PNG path.")
     parser.add_argument("--size", default="1024x1024", help="Image size, for example 1024x1024.")
@@ -241,9 +241,12 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    prompt = " ".join(args.prompt).strip()
-    if not prompt:
-        raise SystemExit("Prompt cannot be empty.")
+    try:
+        prompt = PROMPT_PATH.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise SystemExit(f"Prompt file not found: {PROMPT_PATH}") from None
+    if prompt == "":
+        raise SystemExit(f"Prompt file is empty: {PROMPT_PATH}")
 
     env = resolve_env()
     deployment_name = require_env(env, "AI_FOUNDRY_IMAGE_DEPLOYMENT_NAME")
