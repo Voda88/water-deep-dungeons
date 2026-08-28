@@ -1433,8 +1433,10 @@ static func process_combat(game: Node, delta: float) -> void:
 				var pursuit_distance: float = pursuit_offset.length()
 				var pursuit_direction: Vector2 = pursuit_offset.normalized() if pursuit_distance > 0.001 else Vector2.RIGHT
 				var pursuit_range: float = game.melee_attack_resolution_distance(hero, pursuit_target)
-				var pursuit_position: Vector2 = game.clamp_point_to_room(pursuit_target.global_position - pursuit_direction * maxf(pursuit_range - 10.0, 28.0), hero.current_room)
-				hero.set_destination(pursuit_position)
+				var pursuit_standoff_distance: float = maxf(pursuit_range - 10.0, 28.0)
+				if pursuit_distance > pursuit_standoff_distance:
+					var pursuit_position: Vector2 = game.clamp_point_to_room(pursuit_target.global_position - pursuit_direction * pursuit_standoff_distance, hero.current_room)
+					hero.set_destination(pursuit_position)
 		if hero.carrying_crystal or hero.pending_room != game.HERO_INVALID_ROOM or hero.cooldown_left > 0.0 or game.attacker_has_pending_melee(hero):
 			continue
 		if hero.preferred_attack_style == "melee":
@@ -1455,6 +1457,7 @@ static func process_combat(game: Node, delta: float) -> void:
 			var preserve_player_orders: bool = game.hero_has_locked_player_command(hero)
 			if not preserve_player_orders:
 				hero.move_steps.clear()
+				hero.set_destination(hero.global_position)
 			hero.trigger_attack(melee_target.global_position, hero.preferred_attack_style)
 			note_hero_combo_attack(game, hero)
 			game.queue_pending_melee_attack(hero, melee_target, hero.current_attack_damage(), hero.melee_impact_delay(), hero.hero_name)
