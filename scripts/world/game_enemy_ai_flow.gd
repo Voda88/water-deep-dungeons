@@ -2,6 +2,7 @@ extends RefCounted
 
 const GAME_ENEMY_TARGET_PRIORITY_DEFS: GDScript = preload("res://scripts/content/game_enemy_target_priority_defs.gd")
 const GAME_ENEMY_DEFS: GDScript = preload("res://scripts/content/game_enemy_defs.gd")
+const GAME_TARGETING_FLOW: GDScript = preload("res://scripts/world/game_targeting_flow.gd")
 
 const ROOM_TARGET_LOCK_ACTOR_KEY_META: StringName = &"room_target_lock_actor_key"
 const ROOM_TARGET_LOCK_ROOM_META: StringName = &"room_target_lock_room"
@@ -632,33 +633,18 @@ static func enemy_target_category_for_actor(game: Node, actor: Variant) -> Strin
 	return TARGET_CATEGORY_MELEE
 
 static func category_priority_rank(priority_table: Dictionary, category: String) -> int:
-	# Negative priorities explicitly disable this category for the caller.
-	var rank: int = int(priority_table.get(category, 0))
-	if rank < 0:
-		return 999
-	return rank
+	return GAME_TARGETING_FLOW.priority_rank(priority_table, category)
 
 static func choose_target_from_actor_candidates(game: Node, enemy: Variant, candidates: Array, priority_table: Dictionary) -> Variant:
 	if enemy == null or not is_instance_valid(enemy):
 		return null
-	var chosen_actor: Variant = null
-	var chosen_priority_rank: int = 999
-	var chosen_distance: float = INF
+	var choices: Array = []
 	for actor in candidates:
 		if actor == null or not is_instance_valid(actor):
 			continue
 		var category: String = enemy_target_category_for_actor(game, actor)
-		var priority_rank: int = category_priority_rank(priority_table, category)
-		if priority_rank >= 999:
-			continue
-		var distance_value: float = enemy.global_position.distance_to(actor.global_position)
-		if chosen_actor == null \
-		or priority_rank < chosen_priority_rank \
-		or (priority_rank == chosen_priority_rank and distance_value < chosen_distance):
-			chosen_actor = actor
-			chosen_priority_rank = priority_rank
-			chosen_distance = distance_value
-	return chosen_actor
+		choices.append({"category": category, "position": actor.global_position, "actor": actor})
+	return GAME_TARGETING_FLOW.highest_priority_choice(enemy, choices, priority_table).get("actor", null)
 
 static func heroes_in_room(game: Node, room_coord: Vector2i, strict: bool = false) -> Array:
 	var room_heroes: Array = []
@@ -801,18 +787,7 @@ static func enemy_target_choices_in_room(game: Node, enemy: Variant, room_coord:
 
 static func highest_priority_target_choice(game: Node, enemy: Variant, choices: Array) -> Dictionary:
 	var priority_table: Dictionary = enemy_target_category_priority_for_role(game, String(enemy.enemy_role))
-	var selected_choice: Dictionary = {}
-	var selected_rank: int = 999
-	var selected_distance: float = INF
-	for choice_variant in choices:
-		var choice: Dictionary = choice_variant
-		var rank: int = category_priority_rank(priority_table, String(choice.get("category", "")))
-		var distance_value: float = enemy.global_position.distance_to(Vector2(choice.get("position", enemy.global_position)))
-		if rank < selected_rank or (rank == selected_rank and distance_value < selected_distance):
-			selected_choice = choice
-			selected_rank = rank
-			selected_distance = distance_value
-	return selected_choice
+	return GAME_TARGETING_FLOW.highest_priority_choice(enemy, choices, priority_table)
 
 static func enemy_target_choice(_game: Node, enemy: Variant) -> Dictionary:
 	if enemy == null or not is_instance_valid(enemy):
