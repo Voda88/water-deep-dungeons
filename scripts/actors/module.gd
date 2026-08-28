@@ -73,6 +73,14 @@ func write_health(health: float) -> void:
 			room["major_module_type"] = ""
 		game.rooms[current_room] = room
 		return
+	for module_index in range(room["minor_modules"].size()):
+		var module_data: Dictionary = Dictionary(room["minor_modules"][module_index])
+		if int(module_data.get("slot_index", -1)) != slot_index:
+			continue
+		module_data["health"] = health
+		room["minor_modules"][module_index] = module_data
+		game.rooms[current_room] = room
+		return
 
 func destroy(source_label: String) -> void:
 	if game == null or not game.rooms.has(current_room):
@@ -93,11 +101,3 @@ func destroy(source_label: String) -> void:
 			game.cancel_pending_minor_construction(current_room, slot_index)
 			break
 	game.status_message = "%s destroyed %s in %s." % [source_label, game.build_type_label(module_type).to_lower(), game.room_title(current_room)]
-	for module_index in range(room["minor_modules"].size()):
-		var module_data: Dictionary = Dictionary(room["minor_modules"][module_index])
-		if int(module_data.get("slot_index", -1)) != slot_index:
-			continue
-		module_data["health"] = health
-		room["minor_modules"][module_index] = module_data
-		game.rooms[current_room] = room
-		return
