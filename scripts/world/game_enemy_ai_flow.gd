@@ -446,7 +446,7 @@ static func advance_enemy_routes(game: Node, delta: float) -> void:
 					enemy.move_steps.clear()
 					enemy.next_room = enemy.current_room
 					enemy.moving_between_rooms = false
-					enemy.set_destination(target_position if follows_live_actor else enemy.global_position)
+					enemy.set_destination(enemy.global_position)
 					resolve_enemy_attack(game, enemy, target_choice)
 					continue
 				enemy.move_steps.clear()

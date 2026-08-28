@@ -48,10 +48,10 @@ color = Color(0.07450981, 0.06666667, 0.0627451, 0.1)
 [node name="WalkableRegions" type="Node2D" parent="Layout" unique_id=2005398016]
 
 [node name="Passage" type="ColorRect" parent="Layout/WalkableRegions" unique_id=696533542]
-offset_left = -40.0
-offset_top = -164.0
-offset_right = 39.0
-offset_bottom = 164.0
+offset_left = -25.0
+offset_top = -149.0
+offset_right = 14.0
+offset_bottom = 150.0
 mouse_filter = 2
 color = Color(0.2901961, 0.2627451, 0.21568628, 0)
 

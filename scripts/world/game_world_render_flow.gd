@@ -741,7 +741,7 @@ static func draw_room_overlays(game: Node, reduce_animations: bool = false) -> v
 		var room_has_hero: bool = hero_room_presence.has(room_coord)
 		var room_has_selected_hero: bool = selected_hero_room_presence.has(room_coord)
 		if room_coord == game.selected_room:
-			game.draw_rect(rect.grow(-10.0), Color("f7f7f2", 0.92), false, 3.0)
+			game.draw_rect(rect, Color("f7f7f2", 0.92), false, 3.0)
 		if room_has_hero:
 			var marker_color: Color = Color("5f8796")
 			if room_has_selected_hero:
