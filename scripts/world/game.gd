@@ -358,6 +358,7 @@ var hero_select_player_list: VBoxContainer = null
 var lobby_debug_research_panel: PanelContainer = null
 var lobby_debug_research_buttons: Dictionary = {}
 var lobby_debug_unlock_all_button: Button = null
+var lobby_debug_starting_room_test_items: CheckButton = null
 var lobby_debug_view: ColorRect = null
 var lobby_debug_link: Button = null
 var lobby_debug_back_button: Button = null
@@ -451,6 +452,7 @@ var pending_melee_attacks: Array = []
 var minor_module_levels: Dictionary = {}
 var major_module_levels: Dictionary = {}
 var research_reroll_count: int = 0
+var starting_room_test_items_enabled: bool = false
 
 func _ready() -> void:
 	rng.randomize()
@@ -474,6 +476,7 @@ func _ready() -> void:
 		world_fx_layer.set("game", self)
 	if not pending_lobby_start_data.is_empty():
 		apply_pending_lobby_start_profiles(pending_lobby_start_data)
+		apply_pending_lobby_debug_settings(pending_lobby_start_data)
 	var client_waiting_for_layout: bool = not start_in_lobby and multiplayer_session_active() and not multiplayer.is_server()
 	if (not start_in_lobby or dedicated_host_mode) and not client_waiting_for_layout:
 		build_dungeon(true)
@@ -998,6 +1001,11 @@ func _on_lobby_debug_unlock_all_button_pressed() -> void:
 		minor_module_levels[module_type] = maxi(minor_module_level(module_type), 1)
 	update_lobby_debug_research_controls()
 
+func _on_lobby_debug_starting_room_test_items_toggled(enabled: bool) -> void:
+	if lobby_game_started or (multiplayer_session_active() and not multiplayer.is_server()):
+		return
+	starting_room_test_items_enabled = enabled
+
 func _on_lobby_debug_link_pressed() -> void:
 	set_lobby_debug_view_visible(true)
 
@@ -1023,6 +1031,9 @@ func update_lobby_debug_research_controls() -> void:
 	var host_actions_allowed: bool = not multiplayer_session_active() or multiplayer.is_server()
 	if lobby_debug_unlock_all_button != null:
 		lobby_debug_unlock_all_button.disabled = not host_actions_allowed
+	if lobby_debug_starting_room_test_items != null:
+		lobby_debug_starting_room_test_items.button_pressed = starting_room_test_items_enabled
+		lobby_debug_starting_room_test_items.disabled = not host_actions_allowed
 	for module_type_variant in minor_module_catalog():
 		var module_type: String = String(module_type_variant)
 		var unlock_button: Button = lobby_debug_research_buttons.get(module_type, null)
@@ -1093,6 +1104,9 @@ func apply_pending_lobby_research_levels(pending_data: Dictionary) -> void:
 	if pending_data.has("minor_module_levels"):
 		minor_module_levels = normalized_minor_module_levels(Dictionary(pending_data.get("minor_module_levels", {})))
 
+func apply_pending_lobby_debug_settings(pending_data: Dictionary) -> void:
+	starting_room_test_items_enabled = bool(pending_data.get("starting_room_test_items_enabled", false))
+
 func lobby_start_transition_payload() -> Dictionary:
 	return {
 		"hero_profiles": hero_profiles.duplicate(true),
@@ -1100,6 +1114,7 @@ func lobby_start_transition_payload() -> Dictionary:
 		"rejoin_claimable_hero_indices": rejoin_claimable_hero_indices.duplicate(true),
 		"selected_hero_index": selected_hero_index,
 		"minor_module_levels": minor_module_levels.duplicate(true),
+		"starting_room_test_items_enabled": starting_room_test_items_enabled,
 	}
 
 func begin_run_from_lobby_transition() -> void:

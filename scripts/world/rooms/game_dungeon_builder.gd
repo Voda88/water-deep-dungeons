@@ -183,7 +183,8 @@ static func build_dungeon(game: Node, reset_resources: bool = true) -> void:
 	assign_hidden_room_reward_intel(game)
 	game.prepare_floor_enemy_spawn_types()
 	game.prewarm_enemy_pool_for_floor()
-	spawn_starting_room_test_items(game)
+	if game.starting_room_test_items_enabled:
+		spawn_starting_room_test_items(game)
 	game.normalize_runtime_rooms_slot_capacity()
 	game.refresh_room_lighting_states()
 	game.refresh_camera_bounds()

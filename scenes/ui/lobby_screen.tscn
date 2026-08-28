@@ -198,6 +198,11 @@ custom_minimum_size = Vector2(0, 38)
 theme_override_font_sizes/font_size = 15
 text = "Unlock All I"
 
+[node name="StartingRoomTestItems" type="CheckButton" parent="DebugView/Panel/VBox"]
+custom_minimum_size = Vector2(0, 34)
+theme_override_font_sizes/font_size = 15
+text = "Starting Room Test Items"
+
 [node name="ModuleGrid" type="GridContainer" parent="DebugView/Panel/VBox"]
 size_flags_vertical = 3
 columns = 2

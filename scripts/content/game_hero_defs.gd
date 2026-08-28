@@ -230,7 +230,10 @@ static func default_slotted_spells_for_class(class_id: String, card_lookup: Call
 	for spell_variant in starter_spells:
 		if prepared.size() >= total_slots:
 			break
-		prepared.append(String(spell_variant))
+		var spell_id: String = String(spell_variant)
+		if class_id == HERO_CLASS_CLERIC and spell_id == "cleric_operate_card":
+			continue
+		prepared.append(spell_id)
 	return prepared
 
 static func implemented_spellbook_spells_for_class(class_id: String) -> Array[String]:

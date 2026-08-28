@@ -302,7 +302,7 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 		"cleric_operate_card":
 			return {
 				"id": "cleric_operate_card",
-				"name": "Operate",
+				"name": "Divine Aid",
 				"spell_class": game.HERO_CLASS_CLERIC,
 				"spell_level": 1,
 				"target_scope": "same_room",

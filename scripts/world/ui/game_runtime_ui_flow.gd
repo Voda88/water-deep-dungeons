@@ -303,6 +303,7 @@ static func ensure_hero_select_overlay(game: Node) -> void:
 	game.lobby_debug_back_button = game.hero_select_overlay.get_node(^"DebugView/BackButton")
 	game.lobby_debug_research_panel = game.hero_select_overlay.get_node(^"DebugView/Panel")
 	game.lobby_debug_unlock_all_button = game.hero_select_overlay.get_node(^"DebugView/Panel/VBox/UnlockAllButton")
+	game.lobby_debug_starting_room_test_items = game.hero_select_overlay.get_node(^"DebugView/Panel/VBox/StartingRoomTestItems")
 	game.hero_select_new_game_button = game.hero_select_overlay.get_node(^"Panel/RootVBox/FooterBar/NewGameButton")
 	game.hero_select_load_game_button = game.hero_select_overlay.get_node(^"Panel/RootVBox/FooterBar/LoadGameButton")
 	game.hero_select_start_button = game.hero_select_overlay.get_node(^"Panel/RootVBox/FooterBar/StartButton")
@@ -317,6 +318,7 @@ static func ensure_hero_select_overlay(game: Node) -> void:
 	game.hero_select_load_game_button.pressed.connect(game._on_hero_select_load_game_button_pressed)
 	game.hero_select_start_button.pressed.connect(game._on_hero_select_start_button_pressed)
 	game.lobby_debug_unlock_all_button.pressed.connect(game._on_lobby_debug_unlock_all_button_pressed)
+	game.lobby_debug_starting_room_test_items.toggled.connect(game._on_lobby_debug_starting_room_test_items_toggled)
 	game.lobby_debug_link.pressed.connect(game._on_lobby_debug_link_pressed)
 	game.lobby_debug_back_button.pressed.connect(game._on_lobby_debug_back_button_pressed)
 
