@@ -8,6 +8,32 @@ const CLERIC_MEND_UNLOCK_LEVEL: int = 2
 const CLERIC_RESTORATION_AURA_UNLOCK_LEVEL: int = 4
 const FIGHTER_LEADERSHIP_AURA_UNLOCK_LEVEL: int = 4
 
+const HERO_BASIC_ATTACK_IDS: Dictionary = {
+	HERO_CLASS_FIGHTER: "fighter_basic_strike",
+	HERO_CLASS_CLERIC: "cleric_basic_strike",
+	HERO_CLASS_ROGUE: "rogue_basic_strike",
+	HERO_CLASS_WIZARD: "wizard_fire_bolt",
+}
+
+const ATTACK_DEFINITIONS: Dictionary = {
+	"fighter_basic_strike": {"delivery": "melee", "visual_style": "melee"},
+	"cleric_basic_strike": {"delivery": "melee", "visual_style": "melee"},
+	"rogue_basic_strike": {"delivery": "melee", "visual_style": "melee"},
+	"wizard_fire_bolt": {
+		"delivery": "fire_bolt",
+		"visual_style": "fire_bolt",
+		"projectile_color": Color("ff8e47"),
+		"projectile_width": 4.4,
+		"projectile_speed": 1120.0,
+	},
+}
+
+static func basic_attack_id_for_class(class_id: String) -> String:
+	return String(HERO_BASIC_ATTACK_IDS.get(class_id, "fighter_basic_strike"))
+
+static func attack_definition(attack_id: String) -> Dictionary:
+	return Dictionary(ATTACK_DEFINITIONS.get(attack_id, {})).duplicate(true)
+
 static func hero_class_definition(class_id: String) -> Dictionary:
 	match class_id:
 		HERO_CLASS_CLERIC:

@@ -8,6 +8,7 @@ const LOBBY_SCREEN_SCENE: PackedScene = preload("res://scenes/ui/lobby_screen.ts
 const LOBBY_RUN_CONFIG: GDScript = preload("res://scripts/world/lobby_run_config.gd")
 const HERO_SCRIPT: GDScript = preload("res://scripts/actors/hero.gd")
 const ENEMY_SCRIPT: GDScript = preload("res://scripts/actors/enemy.gd")
+const MODULE_ACTOR_SCRIPT: GDScript = preload("res://scripts/actors/module.gd")
 const GAME_CARD_DEFS: GDScript = preload("res://scripts/content/game_card_defs.gd")
 const GAME_ITEM_DEFS: GDScript = preload("res://scripts/content/game_item_defs.gd")
 const GAME_HERO_DEFS: GDScript = preload("res://scripts/content/game_hero_defs.gd")
@@ -18,6 +19,7 @@ const GAME_ROOM_ACTION_MENU: GDScript = preload("res://scripts/world/ui/game_roo
 const GAME_COMMAND_FLOW: GDScript = preload("res://scripts/world/game_command_flow.gd")
 const GAME_MULTIPLAYER_LOBBY: GDScript = preload("res://scripts/world/network/game_multiplayer_lobby.gd")
 const GAME_NETWORK_SYNC: GDScript = preload("res://scripts/world/network/game_network_sync.gd")
+const GAME_LAN_DISCOVERY: GDScript = preload("res://scripts/world/network/game_lan_discovery.gd")
 const GAME_COMBAT_FLOW: GDScript = preload("res://scripts/world/game_combat_flow.gd")
 const GAME_PATHING_FLOW: GDScript = preload("res://scripts/world/game_pathing_flow.gd")
 const GAME_ENEMY_AI_FLOW: GDScript = preload("res://scripts/world/game_enemy_ai_flow.gd")
@@ -131,7 +133,11 @@ const NETWORK_HOST_PEER_ID: int = 1
 const NETWORK_PORT: int = 7777
 const NETWORK_MAX_CLIENTS: int = HERO_COUNT - 1
 const NETWORK_SNAPSHOT_INTERVAL: float = 0.12
+const NETWORK_SNAPSHOT_CHANNEL: int = 1
 const NETWORK_DEFAULT_ADDRESS: String = "127.0.0.1"
+const NETWORK_DISCOVERY_PORT: int = 7778
+const NETWORK_DISCOVERY_ANNOUNCE_INTERVAL: float = 1.0
+const NETWORK_DISCOVERY_HOST_TIMEOUT_MS: int = 3500
 
 @export var start_in_lobby: bool = false
 @export_file("*.tscn") var gameplay_scene_path: String = "res://scenes/main.tscn"
@@ -277,6 +283,7 @@ var hero_profiles: Array = []
 var rooms: Dictionary = {}
 var heroes: Array = []
 var enemies: Array = []
+var module_actors: Dictionary = {}
 var enemy_pool_available: Array = []
 var floor_enemy_spawn_types: Array[String] = []
 var projectiles: Array = []
@@ -352,11 +359,18 @@ var network_host_button: Button = null
 var network_join_button: Button = null
 var network_disconnect_button: Button = null
 var network_status_label: Label = null
+var network_discovery_option: OptionButton = null
+var network_discovery_listener: PacketPeerUDP = null
+var network_discovery_broadcaster: PacketPeerUDP = null
+var network_discovery_announce_timer: float = 0.0
+var network_discovered_hosts: Dictionary = {}
+var dedicated_host_mode: bool = false
 var hero_owner_peer_ids: Array = []
 var rejoin_claimable_hero_indices: Array[int] = []
 var lobby_peer_ready: Dictionary = {}
 var lobby_game_started: bool = false
 var network_snapshot_timer: float = 0.0
+var network_room_layout_signature: String = ""
 var low_fps_animation_mode_enabled: bool = false
 var low_fps_below_threshold_time: float = 0.0
 var low_fps_above_threshold_time: float = 0.0
@@ -431,6 +445,7 @@ var research_reroll_count: int = 0
 
 func _ready() -> void:
 	rng.randomize()
+	dedicated_host_mode = OS.get_cmdline_user_args().has("--dedicated-host")
 	var pending_lobby_start_data: Dictionary = LOBBY_RUN_CONFIG.consume_pending_start_data() if not start_in_lobby else {}
 	item_defs = build_item_defs()
 	setup_multiplayer_callbacks()
@@ -448,11 +463,13 @@ func _ready() -> void:
 		static_dungeon_layer.configure(self)
 	if world_fx_layer != null:
 		world_fx_layer.set("game", self)
-	build_dungeon(true)
 	if not pending_lobby_start_data.is_empty():
 		apply_pending_lobby_start_profiles(pending_lobby_start_data)
-	spawn_heroes()
-	reset_hero_owner_peer_ids()
+	var client_waiting_for_layout: bool = not start_in_lobby and multiplayer_session_active() and not multiplayer.is_server()
+	if (not start_in_lobby or dedicated_host_mode) and not client_waiting_for_layout:
+		build_dungeon(true)
+		spawn_heroes()
+		reset_hero_owner_peer_ids()
 	if not pending_lobby_start_data.is_empty():
 		apply_pending_lobby_network_assignments(pending_lobby_start_data)
 	if start_in_lobby:
@@ -460,11 +477,16 @@ func _ready() -> void:
 		lobby_game_started = false
 	else:
 		lobby_game_started = true
+	if dedicated_host_mode:
+		lobby_game_started = true
+		start_host_session()
 	selected_room = crystal_room
 	center_camera()
 	update_hud()
 	set_hero_select_overlay_visible(start_in_lobby)
 	queue_redraw()
+	if client_waiting_for_layout:
+		call_deferred("request_network_full_snapshot")
 
 func invalidate_static_dungeon_layer() -> void:
 	if static_dungeon_layer != null:
@@ -500,6 +522,8 @@ func _physics_process(delta: float) -> void:
 	advance_room_action_hold(delta)
 	sync_hero_skulking_visual_states()
 	if not authoritative_simulation_active():
+		advance_client_owned_hero_movement()
+		advance_projectiles(delta)
 		return
 	var trace_enabled: bool = PERF_TRACE_LOG_ENABLED
 	var trace_t0: int = 0
@@ -574,6 +598,7 @@ func _physics_process(delta: float) -> void:
 		perf_trace_samples += 1
 
 func _process(delta: float) -> void:
+	advance_lan_discovery(delta)
 	if game_over:
 		advance_ui_button_hold(delta)
 		update_performance_ui(delta)
@@ -890,6 +915,15 @@ func rebuild_hero_select_player_list() -> void:
 
 func update_network_ui() -> void:
 	GAME_MULTIPLAYER_LOBBY.update_network_ui(self)
+
+func advance_lan_discovery(delta: float) -> void:
+	GAME_LAN_DISCOVERY.advance(self, delta)
+
+func refresh_lan_host_selector() -> void:
+	GAME_LAN_DISCOVERY.refresh_lan_host_selector(self)
+
+func _on_network_discovery_host_selected(selected_index: int) -> void:
+	GAME_LAN_DISCOVERY.on_host_selected(self, selected_index)
 
 func set_hero_select_overlay_visible(visible: bool) -> void:
 	GAME_MULTIPLAYER_LOBBY.set_hero_select_overlay_visible(self, visible)
@@ -1569,6 +1603,15 @@ func is_hero_actor(actor: Variant) -> bool:
 func is_enemy_actor(actor: Variant) -> bool:
 	return actor != null and is_instance_valid(actor) and actor.get_script() == ENEMY_SCRIPT
 
+func execute_attack(attacker: Variant, target: Variant, attack_id: String) -> bool:
+	return GAME_COMBAT_FLOW.execute_attack(self, attacker, target, attack_id)
+
+func attack_delivery(attack_id: String) -> String:
+	return GAME_COMBAT_FLOW.attack_delivery(self, attack_id)
+
+func hero_basic_attack_id(hero: Variant) -> String:
+	return GAME_HERO_DEFS.basic_attack_id_for_class(String(hero.hero_class_id))
+
 func alive_hero_count() -> int:
 	var count: int = 0
 	for hero in heroes:
@@ -2094,6 +2137,9 @@ func build_steps_for_path(path: Array[Vector2i], start_position: Vector2, final_
 func advance_hero_movement() -> void:
 	GAME_PATHING_FLOW.advance_hero_movement(self)
 
+func advance_client_owned_hero_movement() -> void:
+	GAME_PATHING_FLOW.advance_client_owned_hero_movement(self)
+
 func advance_enemy_routes(delta: float) -> void:
 	GAME_ENEMY_AI_FLOW.advance_enemy_routes(self, delta)
 
@@ -2132,9 +2178,6 @@ func major_module_target_position(room_coord: Vector2i) -> Vector2:
 
 func resolve_enemy_attack(enemy: Variant) -> void:
 	GAME_ENEMY_AI_FLOW.resolve_enemy_attack(self, enemy)
-
-func damage_module(room_coord: Vector2i, amount: float, major_only: bool = false, attacker_label: String = "Enemies") -> bool:
-	return GAME_ENEMY_AI_FLOW.damage_module(self, room_coord, amount, major_only, attacker_label)
 
 func send_hero_back_to_crystal(hero: Variant) -> void:
 	if hero == null or not is_instance_valid(hero):
@@ -2448,8 +2491,8 @@ func _on_hero_fighter_rage_filled(hero: Variant) -> void:
 func apply_poison_coating_to_hero(hero: Variant, coating: Dictionary) -> Dictionary:
 	return GAME_COMBAT_FLOW.apply_poison_coating_to_hero(self, hero, coating)
 
-func register_hero_enemy_hit(hero: Variant, enemy: Variant, impact_direction: Vector2 = Vector2.RIGHT) -> void:
-	GAME_COMBAT_FLOW.register_hero_enemy_hit(self, hero, enemy, impact_direction)
+func apply_hero_on_enemy_hit_effects(hero: Variant, enemy: Variant, impact_direction: Vector2 = Vector2.RIGHT) -> void:
+	GAME_COMBAT_FLOW.apply_hero_on_enemy_hit_effects(self, hero, enemy, impact_direction)
 
 func note_hero_combo_attack(hero: Variant) -> void:
 	GAME_COMBAT_FLOW.note_hero_combo_attack(self, hero)
@@ -2460,17 +2503,14 @@ func process_combat(_delta: float) -> void:
 func process_modules(delta: float) -> void:
 	GAME_COMBAT_FLOW.process_modules(self, delta)
 
-func spawn_arrow_projectile(origin: Vector2, target: Variant, damage: float, color: Color = Color("d8bf7a"), width: float = 2.4, speed: float = PROJECTILE_SPEED, bounces: int = 0, pierce: int = 0, expose_stacks: int = 0, expose_duration: float = 0.0) -> void:
-	GAME_COMBAT_FLOW.spawn_arrow_projectile(self, origin, target, damage, color, width, speed, bounces, pierce, expose_stacks, expose_duration)
+func reconcile_module_actors() -> void:
+	GAME_ACTOR_ROSTER_FLOW.reconcile_module_actors(self)
 
-func spawn_laser_projectile(origin: Vector2, target: Variant, damage: float, color: Color = Color("89f2ff"), width: float = 4.0, speed: float = PROJECTILE_SPEED, bounces: int = 0, pierce: int = 0) -> void:
-	GAME_COMBAT_FLOW.spawn_laser_projectile(self, origin, target, damage, color, width, speed, bounces, pierce)
+func active_module_actors_in_room(room_coord: Vector2i) -> Array:
+	return GAME_ACTOR_ROSTER_FLOW.active_module_actors_in_room(self, room_coord)
 
-func spawn_magic_missile_projectile(origin: Vector2, target: Variant, damage: float, color: Color = Color("c18dff"), width: float = 4.8, speed: float = PROJECTILE_SPEED, curve_offset: float = 0.0) -> void:
-	GAME_COMBAT_FLOW.spawn_magic_missile_projectile(self, origin, target, damage, color, width, speed, curve_offset)
-
-func spawn_fire_bolt_projectile(origin: Vector2, target: Variant, damage: float, color: Color = Color("ff8e47"), width: float = 4.4, speed: float = PROJECTILE_SPEED, bounces: int = 0, pierce: int = 0) -> void:
-	GAME_COMBAT_FLOW.spawn_fire_bolt_projectile(self, origin, target, damage, color, width, speed, bounces, pierce)
+func is_module_actor(actor: Variant) -> bool:
+	return actor is DungeonModule
 
 func advance_projectiles(delta: float) -> void:
 	GAME_COMBAT_FLOW.advance_projectiles(self, delta)
@@ -2482,10 +2522,12 @@ func draw_projectiles_on_canvas(canvas: CanvasItem) -> void:
 	GAME_COMBAT_FLOW.draw_projectiles(self, canvas)
 
 func nearest_enemy_in_room(room_coord: Vector2i, origin: Vector2, max_range: float) -> Variant:
-	return GAME_COMBAT_FLOW.nearest_enemy_in_room(self, room_coord, origin, max_range)
+	var targets: Array = GAME_TARGETING_FLOW.select_actor_targets(origin, GAME_TARGETING_FLOW.targetable_hostile_enemies_in_room(self, room_coord), "nearest", max_range)
+	return targets[0] if not targets.is_empty() else null
 
 func strongest_enemy_in_room(room_coord: Vector2i, origin: Vector2, max_range: float) -> Variant:
-	return GAME_COMBAT_FLOW.strongest_enemy_in_room(self, room_coord, origin, max_range)
+	var targets: Array = GAME_TARGETING_FLOW.select_actor_targets(origin, GAME_TARGETING_FLOW.targetable_hostile_enemies_in_room(self, room_coord), "strongest", max_range)
+	return targets[0] if not targets.is_empty() else null
 
 func cleanup_enemies() -> void:
 	GAME_COMBAT_FLOW.cleanup_enemies(self)
@@ -2499,12 +2541,32 @@ func maybe_broadcast_network_snapshot(delta: float) -> void:
 func broadcast_network_snapshot() -> void:
 	GAME_NETWORK_SYNC.broadcast_network_snapshot(self)
 
+func broadcast_network_projectile_visual(projectile: Dictionary) -> void:
+	if multiplayer_session_active() and multiplayer.is_server():
+		receive_network_projectile_visual.rpc(GAME_NETWORK_SYNC.network_projectile_visual_state(projectile))
+
+func request_network_full_snapshot() -> void:
+	if multiplayer_session_active() and not multiplayer.is_server():
+		server_request_network_full_snapshot.rpc_id(NETWORK_HOST_PEER_ID)
+
 func build_network_snapshot() -> Dictionary:
 	return GAME_NETWORK_SYNC.build_network_snapshot(self)
 
-@rpc("authority", "call_remote", "reliable")
+@rpc("authority", "call_remote", "unreliable_ordered", NETWORK_SNAPSHOT_CHANNEL)
 func receive_network_snapshot(snapshot: Dictionary) -> void:
 	GAME_NETWORK_SYNC.receive_network_snapshot(self, snapshot)
+
+@rpc("authority", "call_remote", "reliable")
+func receive_network_full_snapshot(snapshot: Dictionary) -> void:
+	GAME_NETWORK_SYNC.receive_network_full_snapshot(self, snapshot)
+
+@rpc("authority", "call_remote", "reliable")
+func receive_network_projectile_visual(projectile: Dictionary) -> void:
+	GAME_NETWORK_SYNC.receive_network_projectile_visual(self, projectile)
+
+@rpc("authority", "call_remote", "reliable")
+func receive_lobby_ready_confirmation(ready: bool) -> void:
+	GAME_NETWORK_SYNC.receive_lobby_ready_confirmation(self, ready)
 
 func apply_network_snapshot(snapshot: Dictionary) -> void:
 	GAME_NETWORK_SYNC.apply_network_snapshot(self, snapshot)
@@ -2521,6 +2583,10 @@ func apply_enemy_snapshots(enemy_states: Array) -> void:
 @rpc("any_peer", "call_remote", "reliable")
 func server_request_world_command(hero_index: int, world_position: Vector2) -> void:
 	GAME_NETWORK_SYNC.server_request_world_command(self, hero_index, world_position)
+
+@rpc("any_peer", "call_remote", "reliable")
+func server_request_network_full_snapshot() -> void:
+	GAME_NETWORK_SYNC.server_request_network_full_snapshot(self)
 
 @rpc("any_peer", "call_remote", "reliable")
 func server_request_room_loot(hero_index: int, room_coord: Vector2i) -> void:
@@ -2944,6 +3010,15 @@ func minor_module_projectile_width(module_type: String) -> float:
 
 func minor_module_projectile_speed(module_type: String) -> float:
 	return GAME_MODULE_DEFS.minor_module_projectile_speed(module_type, PROJECTILE_SPEED)
+
+func minor_module_projectile_curve_offset(module_type: String) -> float:
+	return GAME_MODULE_DEFS.minor_module_projectile_curve_offset(module_type)
+
+func minor_module_attack_definition(module_type: String) -> Dictionary:
+	return GAME_MODULE_DEFS.minor_module_attack_definition(module_type, PROJECTILE_SPEED)
+
+func minor_module_targeting_definition(module_type: String) -> Dictionary:
+	return GAME_MODULE_DEFS.minor_module_targeting_definition(module_type)
 
 func wave_in_progress() -> bool:
 	return door_wave_spawns_incoming or not pending_enemy_spawns.is_empty() or not enemies.is_empty()

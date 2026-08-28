@@ -10,7 +10,8 @@ static func setup_multiplayer_callbacks(game: Node) -> void:
 	game.multiplayer.server_disconnected.connect(game._on_multiplayer_server_disconnected)
 
 static func multiplayer_session_active(game: Node) -> bool:
-	return game.multiplayer.multiplayer_peer != null
+	var peer: MultiplayerPeer = game.multiplayer.multiplayer_peer
+	return peer is ENetMultiplayerPeer and peer.get_connection_status() != MultiplayerPeer.CONNECTION_DISCONNECTED
 
 static func authoritative_simulation_active(game: Node) -> bool:
 	return not multiplayer_session_active(game) or game.multiplayer.is_server()
@@ -34,6 +35,8 @@ static func hero_owner_peer_id(game: Node, hero_index: int) -> int:
 
 static func can_local_control_hero_index(game: Node, hero_index: int) -> bool:
 	if hero_index < 0 or hero_index >= game.HERO_COUNT:
+		return false
+	if game.dedicated_host_mode and multiplayer_session_active(game) and game.multiplayer.is_server():
 		return false
 	if not multiplayer_session_active(game):
 		return true
@@ -85,6 +88,8 @@ static func multiplayer_status_text(game: Node) -> String:
 			labels.append("H%d" % (hero_index + 1))
 		local_hero_text = " %s" % ",".join(labels)
 	if game.multiplayer.is_server():
+		if game.dedicated_host_mode:
+			return "Dedicated %d/%d" % [game.multiplayer.get_peers().size(), game.HERO_COUNT]
 		return "Host %d/%d%s" % [1 + game.multiplayer.get_peers().size(), game.HERO_COUNT, local_hero_text]
 	if not local_heroes.is_empty():
 		return "Client%s" % local_hero_text
@@ -92,7 +97,9 @@ static func multiplayer_status_text(game: Node) -> String:
 
 static func connected_session_peer_ids(game: Node) -> Array[int]:
 	var peer_ids: Array[int] = []
-	var candidate_ids: Array[int] = [game.NETWORK_HOST_PEER_ID]
+	var candidate_ids: Array[int] = []
+	if not (game.dedicated_host_mode and multiplayer_session_active(game) and game.multiplayer.is_server()):
+		candidate_ids.append(game.NETWORK_HOST_PEER_ID)
 	if multiplayer_session_active(game):
 		var local_id: int = game.multiplayer.get_unique_id()
 		if local_id > 0:
@@ -190,6 +197,8 @@ static func update_network_ui(game: Node) -> void:
 		game.network_join_button.disabled = active
 	if game.network_disconnect_button != null:
 		game.network_disconnect_button.disabled = not active
+	if game.network_discovery_option != null:
+		game.network_discovery_option.disabled = active
 	if game.hero_select_toggle_button != null:
 		var overlay_visible: bool = game.hero_select_overlay != null and game.hero_select_overlay.visible
 		var base_toggle_text: String = "Close" if overlay_visible else "Lobby"
@@ -323,6 +332,8 @@ static func on_hero_select_ready_button_pressed(game: Node) -> void:
 		return
 	var next_ready: bool = not local_peer_ready_state(game)
 	if multiplayer_session_active(game) and not authoritative_simulation_active(game):
+		game.lobby_peer_ready[local_peer_id(game)] = next_ready
+		game.update_hud()
 		game.server_request_lobby_ready.rpc_id(game.NETWORK_HOST_PEER_ID, next_ready)
 		return
 	game.lobby_peer_ready[local_peer_id(game)] = next_ready
@@ -426,7 +437,8 @@ static func start_host_session(game: Node) -> void:
 	if multiplayer_session_active(game):
 		return
 	var peer: ENetMultiplayerPeer = ENetMultiplayerPeer.new()
-	var create_error: int = peer.create_server(game.NETWORK_PORT, game.NETWORK_MAX_CLIENTS)
+	var max_clients: int = game.HERO_COUNT if game.dedicated_host_mode else game.NETWORK_MAX_CLIENTS
+	var create_error: int = peer.create_server(game.NETWORK_PORT, max_clients)
 	if create_error != OK:
 		game.status_message = "Host failed on port %d." % game.NETWORK_PORT
 		game.update_hud()
@@ -436,7 +448,7 @@ static func start_host_session(game: Node) -> void:
 	if not game.lobby_game_started:
 		sync_lobby_peer_ready_states(game, true)
 	game.network_snapshot_timer = 0.0
-	game.status_message = "Hosting co-op on port %d." % game.NETWORK_PORT
+	game.status_message = "Dedicated server listening on port %d." % game.NETWORK_PORT if game.dedicated_host_mode else "Hosting co-op on port %d." % game.NETWORK_PORT
 	ensure_valid_selected_hero(game)
 	game.update_hud()
 	update_network_ui(game)
@@ -457,6 +469,10 @@ static func join_host_session(game: Node, address_text: String) -> void:
 	game.multiplayer.multiplayer_peer = peer
 	game.rejoin_claimable_hero_indices.clear()
 	reset_hero_owner_peer_ids(game)
+	game.rooms.clear()
+	game.room_nav_cache.clear()
+	game.network_room_layout_signature = ""
+	game.invalidate_static_dungeon_layer()
 	if not game.lobby_game_started:
 		sync_lobby_peer_ready_states(game, true)
 	game.network_snapshot_timer = 0.0

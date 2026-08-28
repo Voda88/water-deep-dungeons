@@ -1,5 +1,24 @@
 extends RefCounted
 
+const MAGIC_MISSILE_ATTACK_VARIANTS: Array[String] = [
+	"magic_missile_left",
+	"magic_missile_right",
+	"magic_missile_wide_left",
+	"magic_missile_wide_right",
+]
+
+static func attack_definition(game: Node, attack_id: String) -> Dictionary:
+	var variant_index: int = MAGIC_MISSILE_ATTACK_VARIANTS.find(attack_id)
+	if variant_index < 0:
+		return {}
+	var definition: Dictionary = runtime_card_definition(game, "magic_missile_card")
+	var curve_offsets: Array = Array(definition.get("projectile_curve_offsets", []))
+	if variant_index >= curve_offsets.size():
+		return {}
+	definition["attack_id"] = attack_id
+	definition["projectile_curve_offset"] = float(curve_offsets[variant_index])
+	return definition
+
 static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 	match card_id:
 		"fireball_card":
@@ -31,7 +50,19 @@ static func runtime_card_definition(game: Node, card_id: String) -> Dictionary:
 				"phase": "combat",
 				"description_lines": ["Target one opened room", "Launches three seeking missiles", "Recharges after 3 opened rooms from a slotted spell"],
 				"base_damage": 23.4,
+				"delivery": "magic_missile",
+				"visual_style": "laser",
+				"projectile_kind": "magic_missile",
+				"projectile_motion": "homing",
+				"projectile_initial_direction": "perpendicular",
+				"projectile_acceleration": 3068.0,
+				"projectile_turn_rate": 2.8,
+				"projectile_glow_radius": 22.0,
+				"projectile_hit_radius": 12.0,
+				"projectile_width": 4.8,
+				"projectile_speed": 1180.0,
 				"projectile_count": 3,
+				"projectile_curve_offsets": [-0.58, 0.72, -0.86, 1.00],
 				"adjacent_cast_anywhere": true,
 				"cast_adjacent_hops": 1,
 				"door_interval": 3,

@@ -68,12 +68,6 @@ static func deterministic_ai_budget_defer(enemy: Variant, defer_min: float, defe
 	var ratio: float = float(bucket_index) / float(bucket_count - 1)
 	return lerpf(defer_min, defer_max, ratio)
 
-static func room_has_active_major_module(game: Node, room_coord: Vector2i) -> bool:
-	if room_coord == game.INVALID_ROOM or not game.rooms.has(room_coord):
-		return false
-	var room: Dictionary = game.rooms[room_coord]
-	return String(room.get("major_module_type", "")) != "" and float(room.get("major_health", 0.0)) > 0.0
-
 static func enemy_is_converted(enemy: Variant) -> bool:
 	if enemy == null or not is_instance_valid(enemy) or not enemy.has_method("is_converted"):
 		return false
@@ -397,43 +391,16 @@ static func hero_is_enemy_targetable(game: Node, hero: Variant) -> bool:
 				return false
 	return float(hero.invulnerability_time_left) <= 0.0
 
-static func actor_target_label(game: Node, actor: Variant) -> String:
-	if actor == null or not is_instance_valid(actor):
-		return "a target"
-	if game.is_hero_actor(actor):
-		return String(actor.hero_name)
-	if game.is_enemy_actor(actor):
-		var summon_label: String = String(actor.get_meta("summon_source_label", "a summoned ally"))
-		return summon_label.to_lower()
-	return "a target"
-
 static func enemy_target_category_priority_for_role(_game: Node, enemy: Variant) -> Dictionary:
 	if enemy == null or not is_instance_valid(enemy):
 		return {}
 	return GAME_ENEMY_TARGET_PRIORITY_DEFS.priority_table_for_role(String(enemy.enemy_role), enemy_is_converted(enemy))
 
-static func enemy_target_category_for_actor(game: Node, enemy: Variant, actor: Variant) -> String:
-	if actor == null or not is_instance_valid(actor):
-		return ""
-	if enemy_is_converted(enemy):
-		return TARGET_CATEGORY_HOSTILE_ENEMY
-	if hero_is_long_range_target(game, actor):
-		return TARGET_CATEGORY_RANGED
-	return TARGET_CATEGORY_MELEE
-
 static func category_priority_rank(priority_table: Dictionary, category: String) -> int:
 	return GAME_TARGETING_FLOW.priority_rank(priority_table, category)
 
 static func choose_target_from_actor_candidates(game: Node, enemy: Variant, candidates: Array, priority_table: Dictionary) -> Variant:
-	if enemy == null or not is_instance_valid(enemy):
-		return null
-	var choices: Array = []
-	for actor in candidates:
-		if actor == null or not is_instance_valid(actor):
-			continue
-		var category: String = enemy_target_category_for_actor(game, enemy, actor)
-		choices.append({"category": category, "position": actor.global_position, "actor": actor})
-	return GAME_TARGETING_FLOW.highest_priority_choice(enemy, choices, priority_table).get("actor", null)
+	return GAME_TARGETING_FLOW.select_in_room_actor_target(game, enemy, candidates, priority_table)
 
 static func heroes_in_room(game: Node, room_coord: Vector2i, strict: bool = false) -> Array:
 	var room_heroes: Array = []
@@ -538,14 +505,6 @@ static func local_enemy_override_target(game: Node, enemy: Variant) -> Variant:
 		return null
 	return locked_room_target_hero(game, enemy)
 
-static func room_has_active_minor_module(game: Node, room_coord: Vector2i) -> bool:
-	if not game.rooms.has(room_coord):
-		return false
-	for module_data_variant in Array(game.rooms[room_coord].get("minor_modules", [])):
-		if float(Dictionary(module_data_variant).get("health", 0.0)) > 0.0:
-			return true
-	return false
-
 static func enemy_target_choices_in_room(game: Node, enemy: Variant, room_coord: Vector2i) -> Array:
 	if enemy == null or not is_instance_valid(enemy) or not game.rooms.has(room_coord):
 		return []
@@ -568,17 +527,21 @@ static func enemy_target_choices_in_room(game: Node, enemy: Variant, room_coord:
 		var actor_target: Variant = local_enemy_override_target(game, enemy) if room_coord == Vector2i(enemy.current_room) else choose_target_from_actor_candidates(game, enemy, enemy_targetable_heroes_in_room(game, room_coord), priority_table)
 		if actor_target != null:
 			choices.append({
-				"category": enemy_target_category_for_actor(game, enemy, actor_target),
+				"category": GAME_TARGETING_FLOW.target_category_for_actor(game, enemy, actor_target),
 				"room": room_coord,
 				"position": actor_target.global_position,
 				"actor": actor_target,
 			})
 	if game.room_has_research_crystal(room_coord):
 		choices.append({"category": TARGET_CATEGORY_RESEARCH_OBELISK, "room": room_coord, "position": game.major_slot_position(room_coord)})
-	if room_has_active_major_module(game, room_coord):
-		choices.append({"category": TARGET_CATEGORY_MAJOR_MODULE, "room": room_coord, "position": major_module_target_position(game, room_coord)})
-	if room_has_active_minor_module(game, room_coord):
-		choices.append({"category": TARGET_CATEGORY_MINOR_MODULE, "room": room_coord, "position": minor_module_target_position(game, room_coord, enemy.global_position)})
+	for module_actor_variant in game.active_module_actors_in_room(room_coord):
+		var module_actor: Variant = module_actor_variant
+		choices.append({
+			"category": GAME_TARGETING_FLOW.target_category_for_actor(game, enemy, module_actor),
+			"room": room_coord,
+			"position": module_actor.global_position,
+			"actor": module_actor,
+		})
 	choices.append_array(game.room_world_target_choices(room_coord))
 	var enabled_choices: Array = []
 	for choice_variant in choices:
@@ -613,9 +576,11 @@ static func enemy_ai_target_needs_refresh(game: Node, enemy: Variant) -> bool:
 		TARGET_CATEGORY_RESEARCH_OBELISK:
 			return not game.room_has_research_crystal(target_room)
 		TARGET_CATEGORY_MAJOR_MODULE:
-			return not room_has_active_major_module(game, target_room)
+			var major_actor: Variant = target_choice.get("actor", null)
+			return major_actor == null or not is_instance_valid(major_actor) or not major_actor.is_active()
 		TARGET_CATEGORY_MINOR_MODULE:
-			return not room_has_active_minor_module(game, target_room)
+			var minor_actor: Variant = target_choice.get("actor", null)
+			return minor_actor == null or not is_instance_valid(minor_actor) or not minor_actor.is_active()
 		TARGET_CATEGORY_GENERATOR_CRYSTAL:
 			return not GAME_TARGETING_FLOW.contains_target_choice(game.room_world_target_choices(target_room), target_choice)
 		_:
@@ -729,97 +694,13 @@ static func resolve_enemy_attack(game: Node, enemy: Variant, target_choice: Dict
 		enemy.attack_cooldown_left = enemy.attack_cooldown
 		game.update_hud()
 		return
-	if target_category == TARGET_CATEGORY_MINOR_MODULE:
-		var slime_target_position: Vector2 = minor_module_target_position(game, Vector2i(enemy.current_room), enemy.global_position)
-		enemy.trigger_attack(slime_target_position)
-		if not damage_minor_module(game, enemy.current_room, enemy.attack_damage, attacker_label):
-			return
-		enemy.attack_cooldown_left = enemy.attack_cooldown
-		game.update_hud()
+	if local_target == null or not is_instance_valid(local_target):
 		return
-	if target_category == TARGET_CATEGORY_MAJOR_MODULE:
-		enemy.trigger_attack(major_module_target_position(game, Vector2i(enemy.current_room)))
-		if not game.damage_module(enemy.current_room, enemy.attack_damage, true, attacker_label):
-			return
-		enemy.attack_cooldown_left = enemy.attack_cooldown
-		game.update_hud()
+	if game.is_hero_actor(local_target) and not hero_is_in_room(game, local_target, enemy.current_room):
 		return
-	if local_target == null or not hero_is_in_room(game, local_target, enemy.current_room):
+	if game.is_module_actor(local_target) and (not local_target.is_active() or Vector2i(local_target.current_room) != Vector2i(enemy.current_room)):
 		return
-	var target_label: String = actor_target_label(game, local_target)
-	var attack_delivery: String = String(attack_def.get("attack_delivery", "melee"))
-	var attack_position: Vector2 = game.clamp_point_to_room(local_target.global_position, enemy.current_room)
-	enemy.trigger_attack(attack_position)
-	match attack_delivery:
-		"laser":
-			game.spawn_laser_projectile(enemy.global_position, local_target, enemy.attack_damage, Color(attack_def.get("attack_projectile_color", Color.WHITE)), float(attack_def.get("attack_projectile_width", 3.2)), float(attack_def.get("attack_projectile_speed", 980.0)))
-		"arrow":
-			game.spawn_arrow_projectile(enemy.global_position, local_target, enemy.attack_damage, Color(attack_def.get("attack_projectile_color", Color.WHITE)), float(attack_def.get("attack_projectile_width", 2.8)), float(attack_def.get("attack_projectile_speed", 1060.0)), 0, 0, int(attack_def.get("expose_stacks_per_hit", 0)), float(attack_def.get("expose_duration", 0.0)))
-		"fireball":
-			var defeated_heroes: Array[String] = game.explode_enemy_fireball(enemy.current_room, attack_position, enemy.attack_damage, float(attack_def.get("attack_blast_radius", 68.0)), float(attack_def.get("attack_blast_force", 360.0)), attacker_label)
-			if defeated_heroes.size() == 1:
-				game.status_message = String(attack_def.get("attack_single_defeat_status_template", "%s defeated %s.")) % [attacker_label, defeated_heroes[0]]
-			elif defeated_heroes.size() > 1:
-				game.status_message = String(attack_def.get("attack_multiple_defeat_status", "%s defeated multiple heroes.")) % attacker_label
-			else:
-				game.status_message = String(attack_def.get("attack_status_template", "%s attacks %s.")) % [attacker_label, target_label]
-		_:
-			game.queue_pending_melee_attack(enemy, local_target, enemy.attack_damage, enemy.melee_impact_delay(), attacker_label)
-			game.status_message = String(attack_def.get("attack_status_template", "%s attacks %s.")) % [attacker_label, target_label]
+	if not game.execute_attack(enemy, local_target, GAME_ENEMY_DEFS.attack_id_for_enemy(enemy.enemy_role)):
+		return
 	enemy.attack_cooldown_left = enemy.attack_cooldown
 	game.update_hud()
-
-static func damage_module(game: Node, room_coord: Vector2i, amount: float, major_only: bool = false, attacker_label: String = "Enemies") -> bool:
-	if not game.rooms.has(room_coord):
-		return false
-	var room: Dictionary = game.rooms[room_coord]
-	var module_count: int = room["minor_modules"].size()
-	var can_hit_major: bool = room["major_module_type"] != "" and float(room["major_health"]) > 0.0
-	if (major_only and not can_hit_major) or (module_count == 0 and not can_hit_major):
-		return false
-	var attack_major: bool = can_hit_major and (major_only or module_count == 0 or game.rng.randf() < 0.45)
-	if attack_major:
-		room["major_health"] = maxf(float(room["major_health"]) - amount, 0.0)
-		if float(room["major_health"]) <= 0.0:
-			game.status_message = "%s destroyed the major module in %s." % [attacker_label, game.room_title(room_coord)]
-			room["major_module_type"] = ""
-			room["major_under_construction"] = false
-			game.cancel_pending_major_construction(room_coord)
-		else:
-			game.status_message = "%s is damaging the major module in %s." % [attacker_label, game.room_title(room_coord)]
-		return true
-	if major_only:
-		return false
-	var module_index: int = game.rng.randi_range(0, module_count - 1)
-	var module_data: Dictionary = Dictionary(room["minor_modules"][module_index])
-	module_data["health"] = maxf(float(module_data["health"]) - amount, 0.0)
-	if float(module_data["health"]) <= 0.0:
-		game.cancel_pending_minor_construction(room_coord, int(module_data.get("slot_index", -1)))
-		room["minor_modules"].remove_at(module_index)
-		game.status_message = "%s destroyed a turret in %s." % [attacker_label, game.room_title(room_coord)]
-	else:
-		room["minor_modules"][module_index] = module_data
-		game.status_message = "%s is damaging a turret in %s." % [attacker_label, game.room_title(room_coord)]
-	return true
-
-static func damage_minor_module(game: Node, room_coord: Vector2i, amount: float, attacker_label: String = "Enemies") -> bool:
-	if not game.rooms.has(room_coord):
-		return false
-	var room: Dictionary = game.rooms[room_coord]
-	var active_indices: Array[int] = []
-	for module_index in range(room["minor_modules"].size()):
-		if float(room["minor_modules"][module_index].get("health", 0.0)) > 0.0:
-			active_indices.append(module_index)
-	if active_indices.is_empty():
-		return false
-	var module_index: int = active_indices[game.rng.randi_range(0, active_indices.size() - 1)]
-	var module_data: Dictionary = Dictionary(room["minor_modules"][module_index])
-	module_data["health"] = maxf(float(module_data["health"]) - amount, 0.0)
-	if float(module_data["health"]) <= 0.0:
-		game.cancel_pending_minor_construction(room_coord, int(module_data.get("slot_index", -1)))
-		room["minor_modules"].remove_at(module_index)
-		game.status_message = "%s destroyed a minor module in %s." % [attacker_label, game.room_title(room_coord)]
-	else:
-		room["minor_modules"][module_index] = module_data
-		game.status_message = "%s is dissolving a minor module in %s." % [attacker_label, game.room_title(room_coord)]
-	return true

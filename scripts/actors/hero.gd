@@ -93,6 +93,7 @@ var cooldown_left: float = 0.0
 var current_room: Vector2i = Vector2i.ZERO
 var pending_room: Vector2i = INVALID_ROOM
 var destination: Vector2 = Vector2.ZERO
+var network_position_initialized: bool = false
 var move_steps: Array = []
 var pending_open_room: Vector2i = INVALID_ROOM
 var pending_open_origin_room: Vector2i = INVALID_ROOM

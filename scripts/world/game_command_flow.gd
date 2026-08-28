@@ -510,9 +510,8 @@ static func handle_world_tap(game: Node, world_position: Vector2, screen_positio
 	if hero == null or not game.can_local_control_hero_index(game.selected_hero_index):
 		return
 	if game.multiplayer_session_active() and not game.authoritative_simulation_active():
+		execute_world_command_for_hero(game, game.selected_hero_index, world_position, true)
 		game.server_request_world_command.rpc_id(game.NETWORK_HOST_PEER_ID, game.selected_hero_index, world_position)
-		game.status_message = "%s command sent." % hero.hero_name
-		game.update_hud()
 		return
 	execute_world_command_for_hero(game, game.selected_hero_index, world_position, true)
 	if game.multiplayer_session_active() and game.multiplayer.is_server():
@@ -571,7 +570,7 @@ static func execute_world_command_for_hero(game: Node, hero_index: int, world_po
 static func request_room_loot(game: Node, room_coord: Vector2i) -> void:
 	request_room_loot_for_hero(game, game.selected_hero_index, room_coord)
 
-static func request_room_loot_for_hero(game: Node, hero_index: int, room_coord: Vector2i) -> void:
+static func request_room_loot_for_hero(game: Node, hero_index: int, room_coord: Vector2i, open_inventory_on_arrival: bool = true) -> void:
 	if hero_index < 0 or hero_index >= game.heroes.size():
 		return
 	var hero: Variant = game.heroes[hero_index]
@@ -592,7 +591,8 @@ static func request_room_loot_for_hero(game: Node, hero_index: int, room_coord: 
 	clear_pending_room_action_request(game, hero.hero_index)
 	var command_room: Vector2i = game.interrupt_hero_orders(hero)
 	if command_room == room_coord:
-		game.open_room_loot_inventory(hero, room_coord)
+		if open_inventory_on_arrival:
+			game.open_room_loot_inventory(hero, room_coord)
 		return
 	var path: Array[Vector2i] = game.find_path(command_room, room_coord, true)
 	if path.size() <= 1:
@@ -600,9 +600,10 @@ static func request_room_loot_for_hero(game: Node, hero_index: int, room_coord: 
 		game.update_hud()
 		game.queue_redraw()
 		return
-	game.pending_room_loot_requests[hero.hero_index] = {
-		"room": room_coord,
-	}
+	if open_inventory_on_arrival:
+		game.pending_room_loot_requests[hero.hero_index] = {
+			"room": room_coord,
+		}
 	game.issue_hero_steps(hero, game.build_steps_for_path(path, hero.global_position, game.loot_focus_position(room_coord)))
 	game.status_message = "%s moving to loot %s." % [hero.hero_name, game.room_title(room_coord)]
 	game.update_hud()

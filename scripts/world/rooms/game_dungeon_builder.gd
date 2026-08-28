@@ -1233,6 +1233,8 @@ static func corridor_room_target_at_position(game: Node, world_position: Vector2
 			continue
 		for neighbor_variant in game.rooms[room_coord]["neighbors"]:
 			var neighbor: Vector2i = neighbor_variant
+			if not game.rooms.has(neighbor):
+				continue
 			if not game.rooms[neighbor]["opened"]:
 				continue
 			if room_coord.x > neighbor.x or (room_coord.x == neighbor.x and room_coord.y > neighbor.y):
@@ -1247,6 +1249,8 @@ static func corridor_room_target_at_position(game: Node, world_position: Vector2
 	return best_room
 
 static func open_corridor_target_for_pair(game: Node, world_position: Vector2, room_a: Vector2i, room_b: Vector2i, preferred_from_room: Vector2i = Vector2i(-99, -99)) -> Dictionary:
+	if not game.rooms.has(room_a) or not game.rooms.has(room_b):
+		return {}
 	var delta: Vector2i = room_b - room_a
 	var direction: Vector2 = Vector2(float(delta.x), float(delta.y))
 	if direction == Vector2.ZERO:
@@ -1432,7 +1436,9 @@ static func room_center(game: Node, room_coord: Vector2i) -> Vector2:
 	return Vector2(offset_x, offset_y)
 
 static func room_size_for(game: Node, room_coord: Vector2i) -> Vector2:
-	return game.rooms[room_coord]["size"]
+	if not game.rooms.has(room_coord):
+		return Vector2(330.0, 220.0)
+	return Vector2(game.rooms[room_coord].get("size", Vector2(330.0, 220.0)))
 
 static func room_rect(game: Node, room_coord: Vector2i) -> Rect2:
 	var room_size: Vector2 = game.room_size_for(room_coord)

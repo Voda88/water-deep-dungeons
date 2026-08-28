@@ -5,9 +5,7 @@ signal close_requested
 signal slots_changed(slotted_spells: Array)
 
 const BACKDROP_COLOR: Color = Color(0.03, 0.06, 0.08, 0.9)
-const ORNATE_PANEL_STYLE: StyleBox = preload("res://resources/ui/ornate_panel_style.tres")
-const PANEL_FILL: Color = Color("0d151b")
-const PANEL_OUTLINE: Color = Color("7d8fb8")
+const OVERLAY_TEXTURE: Texture2D = preload("res://assets/generated/ui/overlay-texture.png")
 const SLOT_FILL: Color = Color("1d2d35")
 const SLOT_OUTLINE: Color = Color("6a88a3")
 const SLOT_ACTIVE: Color = Color("36586a")
@@ -195,7 +193,7 @@ func _draw() -> void:
 	backdrop.a *= 1.0 - minf(absf(swipe_close_offset_y) / SWIPE_CLOSE_MAX_OFFSET, 1.0) * 0.35
 	draw_rect(Rect2(Vector2.ZERO, size), backdrop, true)
 	var panel: Rect2 = panel_rect()
-	draw_style_box(ORNATE_PANEL_STYLE, panel)
+	draw_texture_rect(OVERLAY_TEXTURE, panel, false, Color(0.94, 1.0, 0.96, 0.99), false)
 	draw_header(font)
 	draw_slots(font)
 	draw_description(font)

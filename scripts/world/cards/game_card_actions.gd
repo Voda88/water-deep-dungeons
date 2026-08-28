@@ -1296,7 +1296,6 @@ static func heroes_in_cone_in_room(game: Node, room_coord: Vector2i, origin: Vec
 	return cone_targets
 
 static func cast_magic_missile_spell(game: Node, hero: Variant, target_world_position: Vector2, target_room: Vector2i, hand_card: Dictionary) -> void:
-	hero.trigger_attack(target_world_position, "laser")
 	var missile_targets: Array = nearest_enemies_in_room(game, target_room, target_world_position, int(hand_card.get("projectile_count", 3)))
 	if missile_targets.is_empty():
 		game.add_resource_floating_text(target_world_position, "Miss", Color(hand_card.get("color", Color("9cd7ff"))))
@@ -1306,17 +1305,8 @@ static func cast_magic_missile_spell(game: Node, hero: Variant, target_world_pos
 		var target_enemy: Variant = missile_targets[missile_index % missile_targets.size()]
 		if target_enemy == null or not is_instance_valid(target_enemy):
 			continue
-		var curve_sign: float = -1.0 if missile_index % 2 == 0 else 1.0
-		var curve_scale: float = 0.58 + float(missile_index) * 0.14
-		game.spawn_magic_missile_projectile(
-			hero.global_position,
-			target_enemy,
-			float(hand_card.get("damage", hand_card.get("base_damage", 14.0))),
-			hand_card.get("color", Color("9cd7ff")),
-			4.8,
-			1180.0,
-			curve_sign * curve_scale
-		)
+		var attack_id: String = GAME_CARD_DEFS.MAGIC_MISSILE_ATTACK_VARIANTS[missile_index % GAME_CARD_DEFS.MAGIC_MISSILE_ATTACK_VARIANTS.size()]
+		game.execute_attack(hero, target_enemy, attack_id)
 
 static func cancel_hero_channel_spell(game: Node, hero: Variant, show_feedback: bool = false) -> void:
 	if hero == null or not is_instance_valid(hero):
@@ -1414,7 +1404,7 @@ static func advance_scorcher_channels(game: Node, delta: float) -> void:
 				if scorch_direction == Vector2.ZERO:
 					scorch_direction = aim_direction
 				enemy.take_damage(tick_damage, scorch_direction)
-				game.register_hero_enemy_hit(hero, enemy, scorch_direction)
+				game.apply_hero_on_enemy_hit_effects(hero, enemy, scorch_direction)
 				hit_count += 1
 			for allied_hero_variant in heroes_in_cone_in_room(game, hero.current_room, cast_origin, aim_direction, scorch_range, scorch_arc, hero):
 				var allied_hero: Variant = allied_hero_variant
@@ -1522,7 +1512,7 @@ static func apply_whirling_blade_sweep_damage(game: Node, hero: Variant, from_ro
 		if impact_direction == Vector2.ZERO:
 			impact_direction = Vector2.RIGHT
 		enemy.take_damage(damage, impact_direction)
-		game.register_hero_enemy_hit(hero, enemy, impact_direction)
+		game.apply_hero_on_enemy_hit_effects(hero, enemy, impact_direction)
 		game.apply_combo_flatfooted_from_modifiers(enemy, card_modifiers)
 		game.knockback_actor(enemy, impact_direction, knockback_force, knockback_duration, enemy.current_room)
 		hit_count += 1
@@ -1578,11 +1568,10 @@ static func cast_silver_gauntlet_toss(game: Node, hero: Variant, target_world_po
 		return false
 	var buff_hits: int = maxi(1, int(hand_card.get("rage_throw_buff_hits", 6)))
 	var rage_ratio: float = clampf(float(rage_value) / float(rage_max), 0.0, 1.0)
-	var shield_bash_def: Dictionary = game.card_definition("shield_bash_card")
-	var base_knockback_force: float = maxf(float(hand_card.get("knockback_force", shield_bash_def.get("knockback_force", 840.0))), 0.0)
+	var base_knockback_force: float = maxf(float(hand_card.get("knockback_force", 0.0)), 0.0)
 	var knockback_force_per_rage: float = maxf(float(hand_card.get("knockback_force_per_rage", 40.0)), 0.0)
 	var knockback_force: float = base_knockback_force + float(rage_value) * knockback_force_per_rage
-	var knockback_duration: float = clampf(float(hand_card.get("knockback_duration", shield_bash_def.get("knockback_duration", 0.24))), 0.04, 0.65)
+	var knockback_duration: float = clampf(float(hand_card.get("knockback_duration", 0.16)), 0.04, 0.65)
 	var max_bounces: int = maxi(0, int(hand_card.get("max_bounces", 1)))
 	var allowed_bounces: int = mini(max_bounces, 1 + int(floor(rage_ratio * 1.0)))
 	hero.fighter_rage_throw_level = rage_value
@@ -1644,7 +1633,7 @@ static func cast_shield_bash(game: Node, hero: Variant, target_world_position: V
 			if acos(arc_dot) > half_arc_radians:
 				continue
 		enemy.take_damage(damage, impact_direction)
-		game.register_hero_enemy_hit(hero, enemy, impact_direction)
+		game.apply_hero_on_enemy_hit_effects(hero, enemy, impact_direction)
 		game.apply_combo_flatfooted_from_modifiers(enemy, card_modifiers)
 		game.knockback_actor(enemy, impact_direction, knockback_force, knockback_duration, target_room)
 		if slow_duration > 0.0:
@@ -2402,7 +2391,7 @@ static func explode_fireball_projectile(game: Node, projectile: Dictionary) -> v
 			push_direction = Vector2.RIGHT
 		enemy.take_damage(damage, push_direction)
 		if owner_hero != null and is_instance_valid(owner_hero):
-			game.register_hero_enemy_hit(owner_hero, enemy, push_direction)
+			game.apply_hero_on_enemy_hit_effects(owner_hero, enemy, push_direction)
 		if apply_combo_flatfooted and combo_flatfooted_duration > 0.0 and enemy.has_method("apply_flatfooted_debuff"):
 			enemy.apply_flatfooted_debuff(
 				combo_flatfooted_duration,
@@ -2476,7 +2465,10 @@ static func explode_enemy_fireball(game: Node, room_coord: Vector2i, target_posi
 				game.finalize_hero_death(hero, source_label)
 				break
 	if hit_any:
-		game.damage_module(room_coord, damage * 0.38, false, source_label)
+		var module_targets: Array = game.active_module_actors_in_room(room_coord)
+		if not module_targets.is_empty():
+			var module_target: Variant = module_targets[game.rng.randi_range(0, module_targets.size() - 1)]
+			module_target.take_damage(damage * 0.38, Vector2.RIGHT, source_label)
 	game.projectiles.append({
 		"kind": "fireball_blast",
 		"position": target_position,

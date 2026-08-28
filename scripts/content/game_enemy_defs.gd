@@ -19,6 +19,58 @@ const TYPE_WRAITH: String = "wraith"
 const TYPE_ORC_SHAMAN: String = TYPE_WRAITH
 const TYPE_SKELETON_ARCHER: String = "skeleton_archer"
 
+const ENEMY_ATTACK_IDS: Dictionary = {
+	TYPE_ORC_RIDER: "orc_rider_cleave",
+	TYPE_ORC: "orc_cleave",
+	TYPE_DEATH_KNIGHT: "death_knight_cleave",
+	TYPE_BAT: "bat_bite",
+	TYPE_GOLEM: "golem_slam",
+	TYPE_DEMON_A: "demon_a_claw",
+	TYPE_DEMON_D: "demon_d_cleave",
+	TYPE_HELLHOUND: "hellhound_bite",
+	TYPE_SLIME: "slime_slam",
+	TYPE_WARLOCK: "warlock_bolt",
+	TYPE_ARCHER_IMP: "archer_imp_marking_arrow",
+	TYPE_SKELETON: "skeleton_cleave",
+	TYPE_SKELETON_ARMORED: "armored_skeleton_cleave",
+	TYPE_SKELETON_GREATSWORD: "greatsword_skeleton_cleave",
+	TYPE_SPIRITUAL_WEAPON: "spiritual_weapon_slash",
+	TYPE_WRAITH: "wraith_fireball",
+	TYPE_SKELETON_ARCHER: "skeleton_archer_arrow",
+}
+
+const ATTACK_DEFINITIONS: Dictionary = {
+	"orc_cleave": {"delivery": "melee"},
+	"orc_rider_cleave": {"delivery": "melee"},
+	"death_knight_cleave": {"delivery": "melee"},
+	"bat_bite": {"delivery": "melee"},
+	"golem_slam": {"delivery": "melee"},
+	"demon_a_claw": {"delivery": "melee"},
+	"demon_d_cleave": {"delivery": "melee"},
+	"hellhound_bite": {"delivery": "melee"},
+	"slime_slam": {"delivery": "melee"},
+	"warlock_bolt": {"delivery": "melee"},
+	"archer_imp_marking_arrow": {
+		"delivery": "arrow",
+		"projectile_color": Color("ff956a"),
+		"projectile_width": 2.8,
+		"projectile_speed": 1060.0,
+		"expose_stacks_per_hit": 1,
+		"expose_duration": 6.0,
+	},
+	"skeleton_cleave": {"delivery": "melee"},
+	"armored_skeleton_cleave": {"delivery": "melee"},
+	"greatsword_skeleton_cleave": {"delivery": "melee"},
+	"spiritual_weapon_slash": {"delivery": "melee"},
+	"wraith_fireball": {"delivery": "fireball", "blast_radius": 68.0, "blast_force": 360.0},
+	"skeleton_archer_arrow": {
+		"delivery": "laser",
+		"projectile_color": Color("dbe5c8"),
+		"projectile_width": 3.2,
+		"projectile_speed": 980.0,
+	},
+}
+
 const ENEMY_SPRITE_PROFILES := {
 	TYPE_ORC: {
 		"idle_path": "res://assets/characters/enemies/orc/Orc_Idle.png",
@@ -149,6 +201,12 @@ static func normalize_enemy_type(enemy_type: String) -> String:
 		"raider_demon":
 			return TYPE_DEMON_D
 	return enemy_type
+
+static func attack_id_for_enemy(enemy_type: String) -> String:
+	return String(ENEMY_ATTACK_IDS.get(normalize_enemy_type(enemy_type), "orc_cleave"))
+
+static func attack_definition(attack_id: String) -> Dictionary:
+	return Dictionary(ATTACK_DEFINITIONS.get(attack_id, {})).duplicate(true)
 
 static func enemy_is_undead(enemy_type: String) -> bool:
 	match normalize_enemy_type(enemy_type):
@@ -330,15 +388,9 @@ static func enemy_role_definition(enemy_type: String) -> Dictionary:
 				"attack_range": 120.0,
 				"weight": 0.65,
 				"body_color": Color("e3a0d9"),
-				"attack_delivery": "arrow",
 				"attack_label": "An archer imp",
 				"attack_status_template": "%s marks %s.",
-				"attack_projectile_color": Color("ff956a"),
-				"attack_projectile_width": 2.8,
-				"attack_projectile_speed": 1060.0,
-				"expose_stacks_per_hit": 1,
 				"expose_max_stacks": 3,
-				"expose_duration": 6.0,
 			}
 		TYPE_SKELETON:
 			return {
@@ -395,13 +447,10 @@ static func enemy_role_definition(enemy_type: String) -> Dictionary:
 				"attack_range": 120.0,
 				"weight": 1.32,
 				"body_color": Color("a16fd5"),
-				"attack_delivery": "fireball",
 				"attack_label": "A wraith",
 				"attack_status_template": "%s hurls a mini fireball.",
 				"attack_single_defeat_status_template": "%s burned down %s.",
 				"attack_multiple_defeat_status": "A wraith burned down multiple heroes.",
-				"attack_blast_radius": 68.0,
-				"attack_blast_force": 360.0,
 				"ignore_room_opponent_slowdown": true,
 			}
 		TYPE_SKELETON_ARCHER:
@@ -414,12 +463,8 @@ static func enemy_role_definition(enemy_type: String) -> Dictionary:
 				"attack_range": 120.0,
 				"weight": 0.95,
 				"body_color": Color("d7decf"),
-				"attack_delivery": "laser",
 				"attack_label": "A skeleton archer",
 				"attack_status_template": "%s looses an arrow at %s.",
-				"attack_projectile_color": Color("dbe5c8"),
-				"attack_projectile_width": 3.2,
-				"attack_projectile_speed": 980.0,
 			}
 		_:
 			return {

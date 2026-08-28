@@ -356,6 +356,29 @@ static func advance_hero_movement(game: Node) -> void:
 			release_finished_player_command(game, hero)
 	game.refresh_room_lighting_states()
 
+static func advance_client_owned_hero_movement(game: Node) -> void:
+	for hero in game.heroes:
+		if not is_instance_valid(hero) or not game.can_local_control_hero_index(hero.hero_index):
+			continue
+		if hero.pending_room != game.HERO_INVALID_ROOM:
+			if not hero.is_idle():
+				continue
+			hero.current_room = hero.pending_room
+			hero.pending_room = game.HERO_INVALID_ROOM
+			if hero == game.selected_hero():
+				game.selected_room = hero.current_room
+		if hero.move_steps.is_empty() or not hero.is_idle():
+			continue
+		var next_step: Dictionary = hero.move_steps[0]
+		hero.move_steps.remove_at(0)
+		var next_room: Vector2i = next_step["room"]
+		if next_room != hero.current_room:
+			hero.pending_room = next_room
+		hero.set_destination(next_step["position"])
+	for hero in game.heroes:
+		if is_instance_valid(hero) and game.can_local_control_hero_index(hero.hero_index):
+			release_finished_player_command(game, hero)
+
 static func room_path_distance(game: Node, from_room: Vector2i, to_room: Vector2i) -> int:
 	if from_room == to_room:
 		return 0

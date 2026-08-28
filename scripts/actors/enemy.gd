@@ -54,6 +54,7 @@ var pending_room: Vector2i = INVALID_ROOM
 var previous_room: Vector2i = Vector2i.ZERO
 var next_room: Vector2i = Vector2i.ZERO
 var destination: Vector2 = Vector2.ZERO
+var network_position_initialized: bool = false
 var move_steps: Array = []
 var moving_between_rooms: bool = false
 var transit_stage: String = ""

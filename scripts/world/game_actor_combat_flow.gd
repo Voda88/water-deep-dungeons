@@ -237,7 +237,7 @@ static func advance_pending_melee_attacks(game: Node, delta: float) -> void:
 				incoming_damage *= 2.0
 			defeated = target.take_damage(incoming_damage, (target.global_position - attacker.global_position).normalized())
 			if game.is_hero_actor(attacker):
-				game.register_hero_enemy_hit(attacker, target, (target.global_position - attacker.global_position).normalized())
+				game.apply_hero_on_enemy_hit_effects(attacker, target, (target.global_position - attacker.global_position).normalized())
 			if game.is_enemy_actor(attacker) and bool(attacker.get_meta("summon_applies_flatfooted", false)) and target.has_method("apply_flatfooted_debuff"):
 				var flatfooted_duration: float = maxf(float(attacker.get_meta("summon_flatfooted_duration", 6.0)), 0.0)
 				if flatfooted_duration > 0.0:

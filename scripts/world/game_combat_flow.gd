@@ -2,6 +2,8 @@ extends RefCounted
 
 const GAME_ENEMY_DEFS: GDScript = preload("res://scripts/content/game_enemy_defs.gd")
 const GAME_HERO_TARGET_PRIORITY_DEFS: GDScript = preload("res://scripts/content/game_hero_target_priority_defs.gd")
+const GAME_HERO_DEFS: GDScript = preload("res://scripts/content/game_hero_defs.gd")
+const GAME_CARD_DEFS: GDScript = preload("res://scripts/content/game_card_defs.gd")
 const GAME_INVENTORY_ITEM_FLOW: GDScript = preload("res://scripts/world/inventory/game_inventory_item_flow.gd")
 const GAME_FLOOR_FLOW: GDScript = preload("res://scripts/world/game_floor_flow.gd")
 const GAME_TARGETING_FLOW: GDScript = preload("res://scripts/world/game_targeting_flow.gd")
@@ -241,7 +243,7 @@ static func apply_enemy_poison_instance_from_hit(_game: Node, enemy: Variant, po
 	}
 	enemy.set_meta("poison_instances", poison_instances)
 
-static func apply_fighter_rage_throw_buff_hit(game: Node, hero: Variant, enemy: Variant, impact_direction: Vector2) -> void:
+static func apply_thrash_around_hit_effect(game: Node, hero: Variant, enemy: Variant, impact_direction: Vector2) -> void:
 	if hero == null or not is_instance_valid(hero) or enemy == null or not is_instance_valid(enemy):
 		return
 	if String(hero.hero_class_id) != game.HERO_CLASS_FIGHTER:
@@ -258,7 +260,9 @@ static func apply_fighter_rage_throw_buff_hit(game: Node, hero: Variant, enemy: 
 		clear_fighter_rage_throw_buff(game, hero)
 		return
 	var throw_config: Dictionary = Dictionary(hero.get_meta(FIGHTER_RAGE_THROW_CONFIG_META, {})).duplicate(true)
-	var throw_card_def: Dictionary = game.card_definition("silver_gauntlet_toss_card")
+	if throw_config.is_empty():
+		clear_fighter_rage_throw_buff(game, hero)
+		return
 	var launch_direction: Vector2 = impact_direction.normalized()
 	if launch_direction == Vector2.ZERO:
 		launch_direction = (enemy.global_position - hero.global_position).normalized()
@@ -267,16 +271,13 @@ static func apply_fighter_rage_throw_buff_hit(game: Node, hero: Variant, enemy: 
 	var can_apply_throw: bool = game.enemy_is_active(enemy) and not bool(enemy.get("throw_active"))
 	var target_room: Vector2i = Vector2i(enemy.current_room)
 	if can_apply_throw and target_room != game.INVALID_ROOM and game.rooms.has(target_room):
-		var shield_bash_def: Dictionary = game.card_definition("shield_bash_card")
-		var knockback_force: float = maxf(float(throw_config.get("knockback_force", throw_card_def.get("knockback_force", shield_bash_def.get("knockback_force", 840.0)))), 0.0)
-		var knockback_duration: float = clampf(float(throw_config.get("knockback_duration", throw_card_def.get("knockback_duration", shield_bash_def.get("knockback_duration", 0.24)))), 0.04, 0.65)
-		var allowed_bounces: int = int(throw_config.get("max_wall_bounces", -1))
-		if allowed_bounces < 0:
-			allowed_bounces = maxi(0, int(throw_card_def.get("max_bounces", 1)))
-		var flatfooted_duration: float = maxf(float(throw_config.get("flatfooted_duration", throw_card_def.get("flatfooted_duration", 4.0))), 0.0)
-		var flatfooted_move_multiplier: float = clampf(float(throw_config.get("flatfooted_move_multiplier", throw_card_def.get("flatfooted_move_multiplier", 0.72))), 0.0, 1.0)
-		var flatfooted_attack_speed_multiplier: float = clampf(float(throw_config.get("flatfooted_attack_speed_multiplier", throw_card_def.get("flatfooted_attack_speed_multiplier", 0.78))), 0.0, 1.0)
-		var flatfooted_damage_taken_multiplier: float = maxf(float(throw_config.get("flatfooted_damage_taken_multiplier", throw_card_def.get("flatfooted_damage_taken_multiplier", 1.5))), 1.0)
+		var knockback_force: float = maxf(float(throw_config.get("knockback_force", 0.0)), 0.0)
+		var knockback_duration: float = clampf(float(throw_config.get("knockback_duration", 0.16)), 0.04, 0.65)
+		var allowed_bounces: int = maxi(0, int(throw_config.get("max_wall_bounces", 0)))
+		var flatfooted_duration: float = maxf(float(throw_config.get("flatfooted_duration", 0.0)), 0.0)
+		var flatfooted_move_multiplier: float = clampf(float(throw_config.get("flatfooted_move_multiplier", 1.0)), 0.0, 1.0)
+		var flatfooted_attack_speed_multiplier: float = clampf(float(throw_config.get("flatfooted_attack_speed_multiplier", 1.0)), 0.0, 1.0)
+		var flatfooted_damage_taken_multiplier: float = maxf(float(throw_config.get("flatfooted_damage_taken_multiplier", 1.0)), 1.0)
 		game.knockback_actor(
 			enemy,
 			launch_direction,
@@ -291,7 +292,7 @@ static func apply_fighter_rage_throw_buff_hit(game: Node, hero: Variant, enemy: 
 				"flatfooted_attack_speed_multiplier": flatfooted_attack_speed_multiplier,
 				"flatfooted_damage_taken_multiplier": flatfooted_damage_taken_multiplier,
 				"source_hero_index": int(hero.hero_index),
-				"bounce_effect_color": Color(throw_config.get("bounce_effect_color", throw_card_def.get("color", Color("c5d4df")))),
+				"bounce_effect_color": Color(throw_config.get("bounce_effect_color", Color.WHITE)),
 			}
 		)
 	var rage_bonus_damage: float = float(rage_level) * PHYSICAL_CARD_RAGE_DAMAGE_PER_LEVEL
@@ -301,7 +302,7 @@ static func apply_fighter_rage_throw_buff_hit(game: Node, hero: Variant, enemy: 
 	if hero.fighter_rage_throw_hits_left <= 0:
 		clear_fighter_rage_throw_buff(game, hero, true)
 
-static func register_hero_enemy_hit(game: Node, hero: Variant, enemy: Variant, impact_direction: Vector2 = Vector2.RIGHT) -> void:
+static func apply_hero_on_enemy_hit_effects(game: Node, hero: Variant, enemy: Variant, impact_direction: Vector2 = Vector2.RIGHT) -> void:
 	if hero == null or not is_instance_valid(hero) or enemy == null or not is_instance_valid(enemy):
 		return
 	var resolved_impact_direction: Vector2 = impact_direction.normalized()
@@ -345,7 +346,7 @@ static func register_hero_enemy_hit(game: Node, hero: Variant, enemy: Variant, i
 				continue
 		updated_poisons.append(poison_state)
 	hero.applied_poisons = updated_poisons
-	apply_fighter_rage_throw_buff_hit(game, hero, enemy, resolved_impact_direction)
+	apply_thrash_around_hit_effect(game, hero, enemy, resolved_impact_direction)
 	if not hero_is_combo_class(game, hero):
 		return
 	var combo_progress: int = maxi(0, int(hero.combo_attack_progress)) + 1
@@ -1305,7 +1306,7 @@ static func apply_card_projectile_hits(game: Node, projectile: Dictionary) -> vo
 		apply_combo_flatfooted_from_modifiers(game, enemy, combo_modifiers)
 		enemy.take_damage(damage, impact_direction)
 		if owner_hero != null and is_instance_valid(owner_hero):
-			register_hero_enemy_hit(game, owner_hero, enemy, impact_direction)
+			apply_hero_on_enemy_hit_effects(game, owner_hero, enemy, impact_direction)
 		if trigger_bounce_explosion and not bounce_explosion_payload.is_empty():
 			projectile["bounce_explosion_triggered"] = true
 			game.explode_fireball_projectile(bounce_explosion_payload)
@@ -1425,10 +1426,12 @@ static func process_combat(game: Node, delta: float) -> void:
 	for hero in game.heroes:
 		if not game.hero_is_active(hero):
 			continue
+		var basic_attack_id: String = game.hero_basic_attack_id(hero)
+		var basic_attack_is_melee: bool = game.attack_delivery(basic_attack_id) == "melee"
 		hero.cooldown_left = maxf(hero.cooldown_left - delta, 0.0)
 		if hero.has_method("has_active_scorcher_channel") and bool(hero.has_active_scorcher_channel()):
 			continue
-		if hero.preferred_attack_style == "melee" and not hero.carrying_crystal and hero.pending_room == game.HERO_INVALID_ROOM and not game.hero_has_locked_player_command(hero) and game.active_hand_drag.is_empty():
+		if basic_attack_is_melee and not hero.carrying_crystal and hero.pending_room == game.HERO_INVALID_ROOM and not game.hero_has_locked_player_command(hero) and game.active_hand_drag.is_empty():
 			var pursuit_target: Variant = hero_combat_target(game, hero)
 			if pursuit_target != null:
 				var pursuit_offset: Vector2 = pursuit_target.global_position - hero.global_position
@@ -1441,7 +1444,7 @@ static func process_combat(game: Node, delta: float) -> void:
 					hero.set_destination(pursuit_position)
 		if hero.carrying_crystal or hero.pending_room != game.HERO_INVALID_ROOM or hero.cooldown_left > 0.0 or game.attacker_has_pending_melee(hero):
 			continue
-		if hero.preferred_attack_style == "melee":
+		if basic_attack_is_melee:
 			var melee_target: Variant = hero_combat_target(game, hero)
 			if melee_target == null:
 				continue
@@ -1460,9 +1463,9 @@ static func process_combat(game: Node, delta: float) -> void:
 			if not preserve_player_orders:
 				hero.move_steps.clear()
 				hero.set_destination(hero.global_position)
-			hero.trigger_attack(melee_target.global_position, hero.preferred_attack_style)
+			if not execute_attack(game, hero, melee_target, basic_attack_id):
+				continue
 			note_hero_combo_attack(game, hero)
-			game.queue_pending_melee_attack(hero, melee_target, hero.current_attack_damage(), hero.melee_impact_delay(), hero.hero_name)
 			hero.cooldown_left = hero.current_attack_cooldown()
 			continue
 		var hero_target: Variant = hero_combat_target(game, hero)
@@ -1476,27 +1479,9 @@ static func process_combat(game: Node, delta: float) -> void:
 					var current_room_path: Array[Vector2i] = [hero.current_room]
 					game.issue_hero_steps(hero, game.build_steps_for_path(current_room_path, hero.global_position, approach_position))
 				continue
-			hero.trigger_attack(hero_target.global_position, hero.preferred_attack_style)
+			if not execute_attack(game, hero, hero_target, basic_attack_id):
+				continue
 			note_hero_combo_attack(game, hero)
-			var basic_attack_knockback: float = maxf(float(hero.basic_attack_knockback), 0.0)
-			if String(hero.preferred_attack_style) == "fire_bolt":
-				spawn_fire_bolt_projectile(game, hero.global_position, hero_target, hero.current_attack_damage(), Color("ff8e47"), 4.4, 1120.0, 0, 0, basic_attack_knockback)
-			elif String(hero.preferred_attack_style) == "holy_bolt":
-				hero_target.take_damage(hero.current_attack_damage(), (hero_target.global_position - hero.global_position).normalized())
-				game.projectiles.append({
-					"kind": "priest_attack_effect",
-					"position": hero_target.global_position,
-					"previous": hero_target.global_position,
-					"target_position": hero_target.global_position,
-					"color": Color("d8f7b0"),
-					"radius": 28.0,
-					"impact_radius": 28.0,
-					"lifetime_left": 0.24,
-					"blast_duration": 0.24,
-					"width": 3.0,
-				})
-			else:
-				spawn_laser_projectile(game, hero.global_position, hero_target, hero.current_attack_damage(), Color("ffe48a"), 5.5, 1220.0, 0, 0, basic_attack_knockback)
 			hero.cooldown_left = hero.current_attack_cooldown()
 	for hero in game.heroes:
 		if not game.hero_is_active(hero):
@@ -1514,8 +1499,9 @@ static func process_combat(game: Node, delta: float) -> void:
 		game.issue_hero_steps(hero, game.build_steps_for_path(idle_room_path, hero.global_position, idle_position))
 
 static func process_modules(game: Node, delta: float) -> void:
+	game.reconcile_module_actors()
 	var cleric_menders_by_room: Dictionary = collect_cleric_menders_by_room(game)
-	var targetable_enemies_by_room: Dictionary = collect_targetable_enemies_by_room(game)
+	var targetable_enemies_by_room: Dictionary = GAME_TARGETING_FLOW.targetable_hostile_enemies_by_room(game)
 	for room_coord_variant in game.rooms.keys():
 		var room_coord: Vector2i = room_coord_variant
 		var room: Dictionary = game.rooms[room_coord]
@@ -1558,13 +1544,15 @@ static func process_modules(game: Node, delta: float) -> void:
 			var slot_position: Vector2 = slot_positions[slot_index]
 			var module_type: String = game.canonical_minor_module_type(String(module_data.get("type", game.MINOR_MODULE_TURRET)))
 			module_data["type"] = module_type
+			var module_targeting: Dictionary = game.minor_module_targeting_definition(module_type)
+			var module_targets: Array = GAME_TARGETING_FLOW.select_actor_targets(slot_position, room_targetable_enemies, String(module_targeting.get("strategy", "nearest")), float(module_targeting.get("range", 0.0)))
 			match module_type:
 				game.MINOR_MODULE_BLIGHT_GAS:
 					var gas_hit: bool = false
-					var gas_visual_target: Variant = nearest_enemy_for_module_candidates(room_targetable_enemies, slot_position, 620.0)
+					var gas_visual_target: Variant = module_targets[0] if not module_targets.is_empty() else null
 					var gas_slow_duration: float = 1.4 + float(clampi(game.minor_module_level(module_type), 1, 4)) * 0.2
 					var gas_damage_per_second: float = game.minor_module_damage(module_type)
-					for enemy_variant in room_targetable_enemies:
+					for enemy_variant in module_targets:
 						var enemy: Variant = enemy_variant
 						if not game.enemy_is_active(enemy):
 							continue
@@ -1594,7 +1582,7 @@ static func process_modules(game: Node, delta: float) -> void:
 							"width": 3.0,
 						})
 				game.MINOR_MODULE_RUNEBURST_MORTAR:
-					var mortar_target: Variant = nearest_enemy_for_module_candidates(room_targetable_enemies, slot_position, 620.0)
+					var mortar_target: Variant = module_targets[0] if not module_targets.is_empty() else null
 					if mortar_target != null:
 						module_data["cooldown"] = game.minor_module_cooldown(module_type)
 						var splash_center: Vector2 = mortar_target.global_position
@@ -1625,15 +1613,15 @@ static func process_modules(game: Node, delta: float) -> void:
 							"width": 3.0,
 						})
 				game.MINOR_MODULE_ARCANA_TURRET:
-					var arcana_target: Variant = strongest_enemy_for_module_candidates(room_targetable_enemies, slot_position, 620.0)
+					var arcana_target: Variant = module_targets[0] if not module_targets.is_empty() else null
 					if arcana_target != null:
 						var arcana_level: int = clampi(game.minor_module_level(module_type), 1, 4)
 						var arcana_damage_cap: float = float(game.minor_module_arcana_turret_max_damage(arcana_level))
 						var arcana_damage: float = minf(maxf(float(game.science), 0.0), arcana_damage_cap)
 						module_data["cooldown"] = game.minor_module_cooldown(module_type)
-						spawn_laser_projectile(game, slot_position, arcana_target, arcana_damage, game.minor_module_color(module_type), game.minor_module_projectile_width(module_type), game.minor_module_projectile_speed(module_type), 0, 0, 0.0, "arcana_bolt")
+						spawn_projectile(game, slot_position, arcana_target, arcana_damage, game.minor_module_attack_definition(module_type), "Arcana Turret")
 				game.MINOR_MODULE_CONVERSION:
-					var conversion_target: Variant = strongest_enemy_for_module_candidates(room_targetable_enemies, slot_position, 620.0)
+					var conversion_target: Variant = module_targets[0] if not module_targets.is_empty() else null
 					if conversion_target != null:
 						module_data["cooldown"] = game.minor_module_cooldown(module_type)
 						var conversion_center: Vector2 = conversion_target.global_position
@@ -1657,12 +1645,12 @@ static func process_modules(game: Node, delta: float) -> void:
 				game.MINOR_MODULE_BOUNTY_INDUSTRY, game.MINOR_MODULE_BOUNTY_FOOD, game.MINOR_MODULE_BOUNTY_SCIENCE:
 					pass
 				_:
-					var turret_target: Variant = nearest_enemy_for_module_candidates(room_targetable_enemies, slot_position, 620.0)
+					var turret_target: Variant = module_targets[0] if not module_targets.is_empty() else null
 					if turret_target == null:
 						room["minor_modules"][module_index] = module_data
 						continue
 					module_data["cooldown"] = game.minor_module_cooldown(module_type)
-					spawn_arrow_projectile(game, slot_position, turret_target, game.minor_module_damage(module_type), game.minor_module_color(module_type), game.minor_module_projectile_width(module_type), game.minor_module_projectile_speed(module_type))
+					spawn_projectile(game, slot_position, turret_target, game.minor_module_damage(module_type), game.minor_module_attack_definition(module_type), "Crossbow")
 			room["minor_modules"][module_index] = module_data
 		game.rooms[room_coord] = room
 
@@ -1694,71 +1682,113 @@ static func apply_cleric_mend_to_room(game: Node, room: Dictionary, delta: float
 		module_data["health"] = minf(float(module_data.get("health", 0.0)) + repair_amount, game.MINOR_MODULE_MAX_HEALTH)
 		room["minor_modules"][module_index] = module_data
 
-static func spawn_arrow_projectile(game: Node, origin: Vector2, target: Variant, damage: float, color: Color = Color("d8bf7a"), width: float = 2.4, speed: float = 950.0, bounces: int = 0, pierce: int = 0, expose_stacks: int = 0, expose_duration: float = 0.0) -> void:
-	var target_position: Vector2 = target.global_position if is_instance_valid(target) else origin
-	var projectile: Dictionary = {
-		"kind": "imp_arrow" if expose_stacks > 0 else "arrow",
-		"position": origin,
-		"previous": origin,
-		"target": target,
-		"target_position": target_position,
-		"damage": damage,
-		"speed": speed,
-		"color": color,
-		"width": width,
-		"expose_stacks": maxi(expose_stacks, 0),
-		"expose_duration": maxf(expose_duration, 0.0),
-	}
-	if bounces > 0 or pierce > 0:
-		var direction: Vector2 = (target_position - origin).normalized()
-		if direction == Vector2.ZERO:
-			direction = Vector2.RIGHT
-		projectile["motion_mode"] = "linear"
-		projectile["velocity"] = direction * maxf(speed, 1.0)
-		projectile["room"] = game.room_at_world_position(origin)
-		projectile["radius"] = maxf(width * 1.6, 6.0)
-		projectile["pierce"] = maxi(0, pierce)
-		projectile["max_pierce"] = int(projectile["pierce"]) + 1
-		projectile["pierced_count"] = 0
-		projectile["bounces"] = maxi(0, bounces)
-		projectile["remaining_bounces"] = maxi(0, bounces)
-		projectile["hit_enemy_uids"] = []
-		projectile["expire_after_hit"] = false
-		projectile["lifetime_left"] = maxf(origin.distance_to(target_position) / maxf(speed, 1.0) + 0.6, 0.35)
-	game.projectiles.append(projectile)
+static func attack_definition(game: Node, attack_id: String) -> Dictionary:
+	var definition: Dictionary = GAME_HERO_DEFS.attack_definition(attack_id)
+	if definition.is_empty():
+		definition = GAME_ENEMY_DEFS.attack_definition(attack_id)
+	if definition.is_empty():
+		definition = GAME_CARD_DEFS.attack_definition(game, attack_id)
+	return definition
 
-static func spawn_laser_projectile(game: Node, origin: Vector2, target: Variant, damage: float, color: Color = Color("89f2ff"), width: float = 4.0, speed: float = 950.0, bounces: int = 0, pierce: int = 0, knockback_force: float = 0.0, projectile_kind: String = "laser") -> void:
+static func attack_delivery(game: Node, attack_id: String) -> String:
+	return String(attack_definition(game, attack_id).get("delivery", ""))
+
+static func execute_attack(game: Node, attacker: Variant, target: Variant, attack_id: String) -> bool:
+	if attacker == null or target == null or not is_instance_valid(attacker) or not is_instance_valid(target):
+		return false
+	var definition: Dictionary = attack_definition(game, attack_id)
+	if definition.is_empty() or (not game.is_hero_actor(attacker) and not game.is_enemy_actor(attacker)):
+		return false
+	var attack_room: Vector2i = Vector2i(attacker.current_room)
+	if game.is_hero_actor(target) and not game.hero_is_in_room(target, attack_room):
+		return false
+	if game.is_enemy_actor(target) and Vector2i(target.current_room) != attack_room:
+		return false
+	if game.is_module_actor(target) and (not target.is_active() or Vector2i(target.current_room) != attack_room):
+		return false
+	var target_position: Vector2 = game.clamp_point_to_room(target.global_position, attack_room)
+	var enemy_definition: Dictionary = GAME_ENEMY_DEFS.enemy_role_definition(attacker.enemy_role) if game.is_enemy_actor(attacker) else {}
+	var source_label: String = String(attacker.hero_name) if game.is_hero_actor(attacker) else String(enemy_definition.get("attack_label", String(attacker.enemy_role).capitalize()))
+	var damage: float = float(attacker.current_attack_damage()) if game.is_hero_actor(attacker) else float(attacker.attack_damage)
+	attacker.trigger_attack(target_position, String(definition.get("visual_style", "")))
+	match String(definition.get("delivery", "melee")):
+		"fireball":
+			if game.is_module_actor(target):
+				target.take_damage(damage, Vector2.RIGHT, source_label)
+			var defeated_heroes: Array[String] = game.explode_enemy_fireball(attack_room, target_position, damage, float(definition.get("blast_radius", 68.0)), float(definition.get("blast_force", 360.0)), source_label)
+			if defeated_heroes.size() == 1:
+				game.status_message = String(enemy_definition.get("attack_single_defeat_status_template", "%s defeated %s.")) % [source_label, defeated_heroes[0]]
+			elif defeated_heroes.size() > 1:
+				game.status_message = String(enemy_definition.get("attack_multiple_defeat_status", "%s defeated multiple heroes.")) % source_label
+			else:
+				game.status_message = String(enemy_definition.get("attack_status_template", "%s attacks %s.")) % [source_label, attack_target_label(game, target)]
+		"melee":
+			game.queue_pending_melee_attack(attacker, target, damage, attacker.melee_impact_delay(), source_label)
+			if game.is_enemy_actor(attacker):
+				game.status_message = String(enemy_definition.get("attack_status_template", "%s attacks %s.")) % [source_label, attack_target_label(game, target)]
+		_:
+			spawn_projectile(game, attacker.global_position, target, damage, definition, source_label)
+	return true
+
+static func attack_target_label(game: Node, target: Variant) -> String:
+	if game.is_hero_actor(target):
+		return String(target.hero_name)
+	if game.is_enemy_actor(target):
+		return String(target.get_meta("summon_source_label", "a summoned ally")).to_lower()
+	if game.is_module_actor(target):
+		return game.build_type_label(String(target.module_type)).to_lower()
+	return "a target"
+
+static func apply_projectile_curve(projectile: Dictionary, origin: Vector2, target_position: Vector2, speed: float, curve_offset: float) -> void:
+	if absf(curve_offset) <= 0.001:
+		return
+	var initial_direction: Vector2 = (target_position - origin).normalized()
+	if initial_direction == Vector2.ZERO:
+		initial_direction = Vector2.RIGHT
+	projectile["velocity"] = initial_direction.rotated(curve_offset) * maxf(speed, 1.0)
+	projectile["curve_turn_rate"] = 5.5
+
+static func spawn_projectile(game: Node, origin: Vector2, target: Variant, damage: float, definition: Dictionary, source_label: String = "") -> void:
 	var target_position: Vector2 = target.global_position if is_instance_valid(target) else origin
+	var delivery: String = String(definition.get("delivery", "laser"))
 	var projectile: Dictionary = {
-		"kind": projectile_kind,
+		"kind": String(definition.get("projectile_kind", delivery)),
+		"motion": String(definition.get("projectile_motion", "direct")),
 		"position": origin,
 		"previous": origin,
 		"target": target,
 		"target_position": target_position,
-		"damage": damage,
-		"speed": speed,
-		"color": color,
-		"width": width,
-		"knockback_force": maxf(knockback_force, 0.0),
-		"knockback_duration": 0.16,
+		"damage": float(definition.get("damage", definition.get("base_damage", damage))),
+		"speed": float(definition.get("projectile_speed", 950.0)),
+		"color": definition.get("projectile_color", definition.get("color", Color.WHITE)),
+		"width": float(definition.get("projectile_width", 4.0)),
+		"source_label": source_label,
+		"expose_stacks": int(definition.get("expose_stacks_per_hit", 0)),
+		"expose_duration": float(definition.get("expose_duration", 0.0)),
+		"knockback_force": float(definition.get("knockback_force", 0.0)),
+		"knockback_duration": float(definition.get("knockback_duration", 0.16)),
 	}
-	if bounces > 0 or pierce > 0:
-		var direction: Vector2 = (target_position - origin).normalized()
-		if direction == Vector2.ZERO:
-			direction = Vector2.RIGHT
-		projectile["motion_mode"] = "linear"
-		projectile["velocity"] = direction * maxf(speed, 1.0)
-		projectile["room"] = game.room_at_world_position(origin)
-		projectile["radius"] = maxf(width * 1.5, 7.0)
-		projectile["pierce"] = maxi(0, pierce)
-		projectile["max_pierce"] = int(projectile["pierce"]) + 1
-		projectile["pierced_count"] = 0
-		projectile["bounces"] = maxi(0, bounces)
-		projectile["remaining_bounces"] = maxi(0, bounces)
-		projectile["hit_enemy_uids"] = []
-		projectile["expire_after_hit"] = false
-		projectile["lifetime_left"] = maxf(origin.distance_to(target_position) / maxf(speed, 1.0) + 0.55, 0.3)
+	if String(projectile["motion"]) == "homing":
+		var target_direction: Vector2 = (target_position - origin).normalized()
+		if target_direction == Vector2.ZERO:
+			target_direction = Vector2.RIGHT
+		var launch_direction: Vector2 = target_direction
+		if String(definition.get("projectile_initial_direction", "")) == "perpendicular":
+			var curve_sign: float = 1.0 if float(definition.get("projectile_curve_offset", 0.0)) >= 0.0 else -1.0
+			launch_direction = Vector2(-target_direction.y, target_direction.x) * curve_sign
+		projectile.merge({
+			"velocity": Vector2.ZERO,
+			"travel_direction": launch_direction,
+			"current_speed": 0.0,
+			"acceleration": float(definition.get("projectile_acceleration", 2400.0)),
+			"curve_turn_rate": float(definition.get("projectile_turn_rate", 3.0)),
+			"glow_radius": float(definition.get("projectile_glow_radius", 14.0)),
+			"hit_radius": float(definition.get("projectile_hit_radius", 12.0)),
+		})
+	else:
+		apply_projectile_curve(projectile, origin, target_position, float(projectile["speed"]), float(definition.get("projectile_curve_offset", 0.0)))
 	game.projectiles.append(projectile)
+	game.broadcast_network_projectile_visual(projectile)
 
 static func spawn_module_visual_projectile(game: Node, projectile_kind: String, origin: Vector2, target_position: Vector2, color: Color, width: float, speed: float) -> void:
 	if origin.distance_to(target_position) <= 6.0:
@@ -1775,81 +1805,35 @@ static func spawn_module_visual_projectile(game: Node, projectile_kind: String, 
 		"width": width,
 	})
 
-static func spawn_magic_missile_projectile(game: Node, origin: Vector2, target: Variant, damage: float, color: Color = Color("c18dff"), width: float = 4.8, speed: float = 1180.0, curve_offset: float = 0.0) -> void:
-	var target_position: Vector2 = target.global_position if is_instance_valid(target) else origin
-	var target_direction: Vector2 = (target_position - origin).normalized()
-	if target_direction == Vector2.ZERO:
-		target_direction = Vector2.RIGHT
-	var curve_sign: float = 1.0 if curve_offset >= 0.0 else -1.0
-	var launch_direction: Vector2 = Vector2(-target_direction.y, target_direction.x) * curve_sign
-	if launch_direction == Vector2.ZERO:
-		launch_direction = Vector2.RIGHT * curve_sign
-	game.projectiles.append({
-		"kind": "magic_missile",
-		"position": origin,
-		"previous": origin,
-		"target": target,
-		"target_position": target_position,
-		"damage": damage,
-		"speed": speed,
-		"color": color,
-		"width": width,
-		"velocity": Vector2.ZERO,
-		"travel_direction": launch_direction,
-		"current_speed": 0.0,
-		"acceleration": maxf(speed * 2.6, 1500.0),
-		"curve_turn_rate": 2.8,
-		"glow_radius": 22.0,
-		"hit_radius": 12.0,
-	})
-
-static func spawn_fire_bolt_projectile(game: Node, origin: Vector2, target: Variant, damage: float, color: Color = Color("ff8e47"), width: float = 4.4, speed: float = 1120.0, bounces: int = 0, pierce: int = 0, knockback_force: float = 0.0) -> void:
-	var target_position: Vector2 = target.global_position if is_instance_valid(target) else origin
-	var projectile: Dictionary = {
-		"kind": "fire_bolt",
-		"position": origin,
-		"previous": origin,
-		"target": target,
-		"target_position": target_position,
-		"damage": damage,
-		"speed": speed,
-		"color": color,
-		"width": width,
-		"knockback_force": maxf(knockback_force, 0.0),
-		"knockback_duration": 0.16,
-	}
-	if bounces > 0 or pierce > 0:
-		var direction: Vector2 = (target_position - origin).normalized()
-		if direction == Vector2.ZERO:
-			direction = Vector2.RIGHT
-		projectile["motion_mode"] = "linear"
-		projectile["velocity"] = direction * maxf(speed, 1.0)
-		projectile["room"] = game.room_at_world_position(origin)
-		projectile["radius"] = maxf(width * 1.45, 7.0)
-		projectile["pierce"] = maxi(0, pierce)
-		projectile["max_pierce"] = int(projectile["pierce"]) + 1
-		projectile["pierced_count"] = 0
-		projectile["bounces"] = maxi(0, bounces)
-		projectile["remaining_bounces"] = maxi(0, bounces)
-		projectile["hit_enemy_uids"] = []
-		projectile["expire_after_hit"] = false
-		projectile["lifetime_left"] = maxf(origin.distance_to(target_position) / maxf(speed, 1.0) + 0.55, 0.3)
-	game.projectiles.append(projectile)
-
-static func apply_enemy_ranged_damage_to_hero(game: Node, hero: Variant, damage: float, source_label: String, expose_stacks: int = 0, expose_duration: float = 0.0) -> void:
-	if hero == null or not is_instance_valid(hero) or not game.hero_is_active(hero):
+static func apply_projectile_hit(game: Node, projectile: Dictionary, target: Variant, impact_direction: Vector2) -> void:
+	if target == null or not is_instance_valid(target):
 		return
-	var was_invulnerable: bool = float(hero.invulnerability_time_left) > 0.0
-	var adjusted_damage: float = game.adjusted_incoming_damage_for_hero(hero, damage)
-	var previous_rage: int = int(hero.fighter_rage)
-	var defeated: bool = hero.take_damage(adjusted_damage, false)
-	if not was_invulnerable and expose_stacks > 0 and hero.has_method("apply_expose_stack"):
-		hero.apply_expose_stack(expose_stacks, 3, expose_duration)
-	maybe_show_fighter_rage_popup(game, hero, previous_rage)
-	if defeated and game.try_auto_cast_fatal_shield(hero, adjusted_damage):
+	var resolved_direction: Vector2 = impact_direction.normalized()
+	if resolved_direction == Vector2.ZERO:
+		resolved_direction = Vector2.RIGHT
+	var damage: float = float(projectile.get("damage", 0.0))
+	if game.is_enemy_actor(target) and game.enemy_is_active(target):
+		target.take_damage(damage, resolved_direction)
+		var knockback_force: float = projectile_total_knockback_force(projectile)
+		if knockback_force > 0.0:
+			game.knockback_actor(target, resolved_direction, knockback_force, clampf(float(projectile.get("knockback_duration", 0.16)), 0.08, 0.5), target.current_room)
+		return
+	if game.is_module_actor(target) and target.is_active():
+		target.take_damage(damage, resolved_direction, String(projectile.get("source_label", "A ranged attack")))
+		return
+	if not game.is_hero_actor(target) or not game.hero_is_active(target):
+		return
+	var was_invulnerable: bool = float(target.invulnerability_time_left) > 0.0
+	var adjusted_damage: float = game.adjusted_incoming_damage_for_hero(target, damage)
+	var previous_rage: int = int(target.fighter_rage)
+	var defeated: bool = target.take_damage(adjusted_damage, false)
+	if not was_invulnerable and int(projectile.get("expose_stacks", 0)) > 0 and target.has_method("apply_expose_stack"):
+		target.apply_expose_stack(int(projectile["expose_stacks"]), 3, float(projectile.get("expose_duration", 0.0)))
+	maybe_show_fighter_rage_popup(game, target, previous_rage)
+	if defeated and game.try_auto_cast_fatal_shield(target, adjusted_damage):
 		return
 	if defeated:
-		game.finalize_hero_death(hero, source_label)
+		game.finalize_hero_death(target, String(projectile.get("source_label", "A ranged attack")))
 
 static func try_spawn_enemy_dust_drop(game: Node, enemy: Variant) -> void:
 	if enemy == null or not is_instance_valid(enemy):
@@ -1880,6 +1864,16 @@ static func advance_projectiles(game: Node, delta: float) -> void:
 	var active_projectiles: Array = []
 	for projectile in game.projectiles:
 		var projectile_kind: String = String(projectile.get("kind", "laser"))
+		if bool(projectile.get("network_visual_only", false)):
+			var visual_position: Vector2 = Vector2(projectile.get("position", Vector2.ZERO))
+			var visual_target: Vector2 = Vector2(projectile.get("target_position", visual_position))
+			var visual_offset: Vector2 = visual_target - visual_position
+			if visual_offset.length() <= 6.0:
+				continue
+			projectile["previous"] = visual_position
+			projectile["position"] = visual_position.move_toward(visual_target, float(projectile.get("speed", game.PROJECTILE_SPEED)) * delta)
+			active_projectiles.append(projectile)
+			continue
 		if projectile_uses_linear_motion(projectile):
 			projectile["lifetime_left"] = float(projectile.get("lifetime_left", projectile.get("lifetime", 2.2))) - delta
 			if float(projectile["lifetime_left"]) <= 0.0:
@@ -1935,7 +1929,7 @@ static func advance_projectiles(game: Node, delta: float) -> void:
 				continue
 			active_projectiles.append(projectile)
 			continue
-		if projectile_kind == "magic_missile":
+		if String(projectile.get("motion", "direct")) == "homing":
 			var missile_position: Vector2 = projectile.get("position", Vector2.ZERO)
 			var missile_target_position: Vector2 = projectile.get("target_position", missile_position)
 			var missile_target: Variant = projectile.get("target", null)
@@ -1957,15 +1951,7 @@ static func advance_projectiles(game: Node, delta: float) -> void:
 			projectile["current_speed"] = current_missile_speed
 			var missile_hit_radius: float = maxf(float(projectile.get("hit_radius", 12.0)), 6.0)
 			if missile_offset.length() <= missile_hit_radius:
-				if game.enemy_is_active(missile_target):
-					var missile_impact_direction: Vector2 = missile_offset.normalized()
-					if missile_impact_direction == Vector2.ZERO:
-						missile_impact_direction = missile_travel_direction
-					if missile_impact_direction == Vector2.ZERO:
-						missile_impact_direction = Vector2.RIGHT
-					missile_target.take_damage(float(projectile.get("damage", 0.0)), missile_impact_direction)
-				elif game.hero_is_active(missile_target):
-					apply_enemy_ranged_damage_to_hero(game, missile_target, float(projectile.get("damage", 0.0)), String(projectile.get("source_label", "A magic missile")))
+				apply_projectile_hit(game, projectile, missile_target, missile_offset if missile_offset.length() > 0.001 else missile_travel_direction)
 				continue
 			var desired_direction: Vector2 = missile_offset.normalized()
 			var stored_direction: Vector2 = Vector2(projectile.get("travel_direction", desired_direction))
@@ -1982,10 +1968,7 @@ static func advance_projectiles(game: Node, delta: float) -> void:
 				projectile["velocity"] = desired_direction * current_missile_speed
 				projectile["travel_direction"] = desired_direction
 				if assisted_position.distance_to(missile_target_position) <= missile_hit_radius or game.point_distance_to_segment(missile_target_position, missile_position, assisted_position) <= missile_hit_radius:
-					if game.enemy_is_active(missile_target):
-						missile_target.take_damage(float(projectile.get("damage", 0.0)), desired_direction)
-					elif game.hero_is_active(missile_target):
-						apply_enemy_ranged_damage_to_hero(game, missile_target, float(projectile.get("damage", 0.0)), String(projectile.get("source_label", "A magic missile")))
+					apply_projectile_hit(game, projectile, missile_target, desired_direction)
 					continue
 				active_projectiles.append(projectile)
 				continue
@@ -1994,17 +1977,7 @@ static func advance_projectiles(game: Node, delta: float) -> void:
 			var missile_step: float = minf(current_missile_speed * delta, missile_offset.length())
 			var missile_next_position: Vector2 = missile_position + missile_velocity.normalized() * missile_step
 			if missile_next_position.distance_to(missile_target_position) <= missile_hit_radius or game.point_distance_to_segment(missile_target_position, missile_position, missile_next_position) <= missile_hit_radius:
-				if game.enemy_is_active(missile_target):
-					var missile_finish_direction: Vector2 = missile_velocity.normalized()
-					if missile_finish_direction == Vector2.ZERO:
-						missile_finish_direction = desired_direction
-					if missile_finish_direction == Vector2.ZERO:
-						missile_finish_direction = missile_travel_direction
-					if missile_finish_direction == Vector2.ZERO:
-						missile_finish_direction = Vector2.RIGHT
-					missile_target.take_damage(float(projectile.get("damage", 0.0)), missile_finish_direction)
-				elif game.hero_is_active(missile_target):
-					apply_enemy_ranged_damage_to_hero(game, missile_target, float(projectile.get("damage", 0.0)), String(projectile.get("source_label", "A magic missile")))
+				apply_projectile_hit(game, projectile, missile_target, missile_velocity if missile_velocity.length() > 0.001 else desired_direction)
 				continue
 			projectile["position"] = missile_next_position
 			projectile["velocity"] = missile_velocity
@@ -2025,25 +1998,22 @@ static func advance_projectiles(game: Node, delta: float) -> void:
 			target = null
 		var offset: Vector2 = target_position - current_position_simple
 		if offset.length() <= 6.0:
-			if game.enemy_is_active(target):
-				var impact_direction_simple: Vector2 = offset.normalized()
-				if impact_direction_simple == Vector2.ZERO:
-					impact_direction_simple = (current_position_simple - previous_position_simple).normalized()
-				if impact_direction_simple == Vector2.ZERO:
-					impact_direction_simple = Vector2(projectile.get("velocity", Vector2.ZERO)).normalized()
-				if impact_direction_simple == Vector2.ZERO:
-					impact_direction_simple = Vector2.RIGHT
-				target.take_damage(float(projectile["damage"]), impact_direction_simple)
-				var direct_hit_knockback_force: float = projectile_total_knockback_force(projectile)
-				if direct_hit_knockback_force > 0.0:
-					var direct_hit_knockback_duration: float = clampf(float(projectile.get("knockback_duration", 0.16)), 0.08, 0.5)
-					game.knockback_actor(target, impact_direction_simple, direct_hit_knockback_force, direct_hit_knockback_duration, target.current_room)
-			elif game.hero_is_active(target):
-				apply_enemy_ranged_damage_to_hero(game, target, float(projectile.get("damage", 0.0)), String(projectile.get("source_label", "A ranged attack")), int(projectile.get("expose_stacks", 0)), float(projectile.get("expose_duration", 0.0)))
+			var impact_direction_simple: Vector2 = offset if offset.length() > 0.001 else current_position_simple - previous_position_simple
+			if impact_direction_simple.length() <= 0.001:
+				impact_direction_simple = Vector2(projectile.get("velocity", Vector2.RIGHT))
+			apply_projectile_hit(game, projectile, target, impact_direction_simple)
 			continue
+		var travel_direction: Vector2 = offset.normalized()
+		if projectile.has("curve_turn_rate"):
+			var projectile_speed: float = maxf(float(projectile["speed"]), 1.0)
+			var projectile_velocity: Vector2 = Vector2(projectile.get("velocity", travel_direction * projectile_speed))
+			projectile_velocity = projectile_velocity.move_toward(travel_direction * projectile_speed, projectile_speed * float(projectile["curve_turn_rate"]) * delta)
+			if projectile_velocity.length() > 0.001:
+				travel_direction = projectile_velocity.normalized()
+			projectile["velocity"] = projectile_velocity
 		var travel_distance: float = minf(float(projectile["speed"]) * delta, offset.length())
 		projectile["previous"] = current_position_simple
-		projectile["position"] = current_position_simple + offset.normalized() * travel_distance
+		projectile["position"] = current_position_simple + travel_direction * travel_distance
 		active_projectiles.append(projectile)
 	game.projectiles = active_projectiles
 
@@ -2403,142 +2373,17 @@ static func draw_effect_strip_along_line(surface: CanvasItem, texture: Texture2D
 	surface.draw_texture_rect_region(texture, Rect2(0.0, -beam_width * 0.5, beam_length, beam_width), source_rect, modulate, false, true)
 	surface.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
-static func nearest_enemy_in_room(game: Node, room_coord: Vector2i, origin: Vector2, max_range: float) -> Variant:
-	var closest_enemy: Variant = null
-	var closest_distance: float = max_range
-	for enemy in game.enemies:
-		if not game.enemy_is_active(enemy) or enemy.current_room != room_coord or enemy.moving_between_rooms:
-			continue
-		if enemy.has_method("is_converted") and enemy.is_converted():
-			continue
-		var distance: float = origin.distance_to(enemy.global_position)
-		if distance <= closest_distance:
-			closest_distance = distance
-			closest_enemy = enemy
-	return closest_enemy
-
 static func hero_combat_target(game: Node, hero: Variant) -> Variant:
 	if hero == null or not is_instance_valid(hero):
 		return null
-	var choices: Array = []
-	for enemy in game.enemies:
-		if not game.enemy_is_active(enemy) or Vector2i(enemy.current_room) != Vector2i(hero.current_room) or bool(enemy.moving_between_rooms):
-			continue
-		if enemy.has_method("is_converted") and enemy.is_converted():
-			continue
-		choices.append({
-			"category": GAME_HERO_TARGET_PRIORITY_DEFS.TARGET_CATEGORY_HOSTILE_ENEMY,
-			"position": enemy.global_position,
-			"actor": enemy,
-		})
 	var priority_table: Dictionary = GAME_HERO_TARGET_PRIORITY_DEFS.priority_table_for_hero(hero)
-	var target_choice: Dictionary = GAME_TARGETING_FLOW.persistent_actor_target_choice(hero, HERO_COMBAT_TARGET_CHOICE_META, choices, priority_table)
-	return target_choice.get("actor", null)
-
-static func strongest_enemy_in_room(game: Node, room_coord: Vector2i, origin: Vector2, max_range: float) -> Variant:
-	var chosen_enemy: Variant = null
-	var chosen_health: float = -1.0
-	var chosen_distance: float = max_range
-	for enemy in game.enemies:
-		if not game.enemy_is_active(enemy) or enemy.current_room != room_coord or enemy.moving_between_rooms:
-			continue
-		if enemy.has_method("is_converted") and enemy.is_converted():
-			continue
-		var distance_value: float = origin.distance_to(enemy.global_position)
-		if distance_value > max_range:
-			continue
-		var health_value: float = float(enemy.current_health)
-		if chosen_enemy == null or health_value > chosen_health or (is_equal_approx(health_value, chosen_health) and distance_value < chosen_distance):
-			chosen_enemy = enemy
-			chosen_health = health_value
-			chosen_distance = distance_value
-	return chosen_enemy
-
-static func enemy_is_targetable_by_module(game: Node, enemy: Variant, room_coord: Vector2i) -> bool:
-	if not game.enemy_is_active(enemy):
-		return false
-	if enemy.has_method("is_converted") and enemy.is_converted():
-		return false
-	return enemy.current_room == room_coord or enemy.pending_room == room_coord or enemy.next_room == room_coord
-
-static func collect_targetable_enemies_by_room(game: Node) -> Dictionary:
-	var enemies_by_room: Dictionary = {}
-	for enemy_variant in game.enemies:
-		var enemy: Variant = enemy_variant
-		if not game.enemy_is_active(enemy):
-			continue
-		if enemy.has_method("is_converted") and enemy.is_converted():
-			continue
-		var candidate_rooms: Array[Vector2i] = [Vector2i(enemy.current_room), Vector2i(enemy.pending_room), Vector2i(enemy.next_room)]
-		var visited_rooms: Dictionary = {}
-		for candidate_room in candidate_rooms:
-			if candidate_room == game.INVALID_ROOM or visited_rooms.has(candidate_room) or not game.rooms.has(candidate_room):
-				continue
-			visited_rooms[candidate_room] = true
-			if not enemies_by_room.has(candidate_room):
-				enemies_by_room[candidate_room] = []
-			(enemies_by_room[candidate_room] as Array).append(enemy)
-	return enemies_by_room
-
-static func nearest_enemy_for_module_candidates(candidates: Array, origin: Vector2, max_range: float) -> Variant:
-	var closest_enemy: Variant = null
-	var closest_distance: float = max_range
-	for candidate_variant in candidates:
-		var enemy: Variant = candidate_variant
-		if enemy == null or not is_instance_valid(enemy):
-			continue
-		var distance_value: float = origin.distance_to(enemy.global_position)
-		if distance_value <= closest_distance:
-			closest_distance = distance_value
-			closest_enemy = enemy
-	return closest_enemy
-
-static func strongest_enemy_for_module_candidates(candidates: Array, origin: Vector2, max_range: float) -> Variant:
-	var chosen_enemy: Variant = null
-	var chosen_health: float = -1.0
-	var chosen_distance: float = max_range
-	for candidate_variant in candidates:
-		var enemy: Variant = candidate_variant
-		if enemy == null or not is_instance_valid(enemy):
-			continue
-		var distance_value: float = origin.distance_to(enemy.global_position)
-		if distance_value > max_range:
-			continue
-		var health_value: float = float(enemy.current_health)
-		if chosen_enemy == null or health_value > chosen_health or (is_equal_approx(health_value, chosen_health) and distance_value < chosen_distance):
-			chosen_enemy = enemy
-			chosen_health = health_value
-			chosen_distance = distance_value
-	return chosen_enemy
-
-static func nearest_enemy_for_module(game: Node, room_coord: Vector2i, origin: Vector2, max_range: float) -> Variant:
-	var closest_enemy: Variant = null
-	var closest_distance: float = max_range
-	for enemy in game.enemies:
-		if not enemy_is_targetable_by_module(game, enemy, room_coord):
-			continue
-		var distance_value: float = origin.distance_to(enemy.global_position)
-		if distance_value <= closest_distance:
-			closest_distance = distance_value
-			closest_enemy = enemy
-	return closest_enemy
-
-static func strongest_enemy_for_module(game: Node, room_coord: Vector2i, origin: Vector2, max_range: float) -> Variant:
-	var chosen_enemy: Variant = null
-	var chosen_health: float = -1.0
-	var chosen_distance: float = max_range
-	for enemy in game.enemies:
-		if not enemy_is_targetable_by_module(game, enemy, room_coord):
-			continue
-		var distance_value: float = origin.distance_to(enemy.global_position)
-		if distance_value > max_range:
-			continue
-		var health_value: float = float(enemy.current_health)
-		if chosen_enemy == null or health_value > chosen_health or (is_equal_approx(health_value, chosen_health) and distance_value < chosen_distance):
-			chosen_enemy = enemy
-			chosen_health = health_value
-			chosen_distance = distance_value
-	return chosen_enemy
+	return GAME_TARGETING_FLOW.select_in_room_actor_target(
+		game,
+		hero,
+		GAME_TARGETING_FLOW.targetable_hostile_enemies_in_room(game, Vector2i(hero.current_room)),
+		priority_table,
+		HERO_COMBAT_TARGET_CHOICE_META
+	)
 
 static func add_resource_amount(game: Node, resource_id: String, amount: int) -> void:
 	if amount <= 0:

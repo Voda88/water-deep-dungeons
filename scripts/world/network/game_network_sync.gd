@@ -12,25 +12,35 @@ static func maybe_broadcast_network_snapshot(game: Node, delta: float) -> void:
 	if game.network_snapshot_timer < game.NETWORK_SNAPSHOT_INTERVAL:
 		return
 	game.network_snapshot_timer = 0.0
-	broadcast_network_snapshot(game)
+	broadcast_network_snapshot(game, false)
 
-static func broadcast_network_snapshot(game: Node) -> void:
+static func broadcast_network_snapshot(game: Node, include_rooms: bool = true) -> void:
 	if not game.multiplayer_session_active() or not game.multiplayer.is_server():
 		return
-	game.receive_network_snapshot.rpc(build_network_snapshot(game))
+	if include_rooms:
+		game.receive_network_full_snapshot.rpc(build_network_snapshot(game, true))
+		return
+	game.receive_network_snapshot.rpc(build_network_snapshot(game, false))
 
-static func build_network_snapshot(game: Node) -> Dictionary:
+static func build_network_snapshot(game: Node, include_rooms: bool = true) -> Dictionary:
+	var room_visual_states: Dictionary = {}
+	for room_coord_variant in game.rooms.keys():
+		var room_coord: Vector2i = Vector2i(room_coord_variant)
+		var room: Dictionary = game.rooms[room_coord]
+		room_visual_states[room_coord] = {
+			"opened": bool(room.get("opened", false)),
+			"scry_revealed": bool(room.get("scry_revealed", false)),
+			"lit": bool(room.get("lit", false)),
+		}
 	var hero_states: Array = []
 	for hero in game.heroes:
 		if not is_instance_valid(hero):
 			continue
-		hero_states.append({
+		var hero_state: Dictionary = {
 			"hero_index": hero.hero_index,
 			"hero_name": hero.hero_name,
 			"hero_class_id": hero.hero_class_id,
 			"level": hero.level,
-			"pack_modules": hero.pack_modules.duplicate(true),
-			"inventory_items": hero.inventory_items.duplicate(true),
 			"position": hero.global_position,
 			"destination": hero.destination,
 			"current_room": hero.current_room,
@@ -87,8 +97,6 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 			"operate_started_at_door": hero.operate_started_at_door,
 			"operate_attuned": hero.operate_attuned,
 			"operate_turns_left": hero.operate_turns_left,
-			"applied_poisons": hero.applied_poisons.duplicate(true),
-			"hand_cards": hero.hand_cards.duplicate(true),
 			"attack_damage": hero.attack_damage,
 			"defence": hero.defence,
 			"wit": hero.wit,
@@ -107,69 +115,22 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 			"combat_multiplier": hero.combat_move_speed_multiplier,
 			"combat_mode": hero.combat_movement_mode,
 			"light_cantrip_active": hero.light_cantrip_active,
-			"learned_spells": hero.learned_spells.duplicate(),
-			"slotted_spells": hero.slotted_spells.duplicate(),
-			"active_floor_spells": hero.active_floor_spells.duplicate(),
-			"pending_item_fusions": hero.pending_item_fusions.duplicate(true),
 			"studying_spell_id": hero.studying_spell_id,
 			"studying_room": hero.studying_room,
 			"studying_started_at_door": hero.studying_started_at_door,
-		})
-	var projectile_states: Array = []
-	for projectile_variant in game.projectiles:
-		var projectile: Dictionary = projectile_variant
-		projectile_states.append({
-			"kind": projectile.get("kind", "laser"),
-			"position": projectile.get("position", Vector2.ZERO),
-			"previous": projectile.get("previous", Vector2.ZERO),
-			"target_position": projectile.get("target_position", Vector2.ZERO),
-			"motion_mode": String(projectile.get("motion_mode", "")),
-			"velocity": projectile.get("velocity", Vector2.ZERO),
-			"damage": float(projectile.get("damage", 0.0)),
-			"speed": float(projectile.get("speed", game.PROJECTILE_SPEED)),
-			"color": projectile.get("color", Color.WHITE),
-			"width": float(projectile.get("width", 4.0)),
-			"radius": float(projectile.get("radius", 0.0)),
-			"impact_radius": float(projectile.get("impact_radius", 0.0)),
-			"knockback_force": float(projectile.get("knockback_force", 0.0)),
-			"knockback_duration": float(projectile.get("knockback_duration", 0.18)),
-			"room": projectile.get("room", game.INVALID_ROOM),
-			"points": Array(projectile.get("points", [])).duplicate(true),
-			"lifetime_left": float(projectile.get("lifetime_left", 0.0)),
-			"blast_duration": float(projectile.get("blast_duration", 0.0)),
-			"pierce": int(projectile.get("pierce", maxi(0, int(projectile.get("max_pierce", 1)) - 1))),
-			"max_pierce": int(projectile.get("max_pierce", int(projectile.get("pierce", 0)) + 1)),
-			"pierced_count": int(projectile.get("pierced_count", 0)),
-			"bounces": int(projectile.get("bounces", 0)),
-			"remaining_bounces": int(projectile.get("remaining_bounces", 0)),
-			"expire_after_hit": bool(projectile.get("expire_after_hit", false)),
-			"final_hit_effect_kind": String(projectile.get("final_hit_effect_kind", "")),
-			"final_hit_effect_radius": float(projectile.get("final_hit_effect_radius", 0.0)),
-			"final_hit_effect_duration": float(projectile.get("final_hit_effect_duration", 0.0)),
-			"final_hit_effect_width": float(projectile.get("final_hit_effect_width", 0.0)),
-			"final_hit_effect_color": projectile.get("final_hit_effect_color", projectile.get("color", Color.WHITE)),
-			"final_hit_label": String(projectile.get("final_hit_label", "")),
-			"final_hit_label_color": projectile.get("final_hit_label_color", projectile.get("color", Color.WHITE)),
-			"rotation_angle": float(projectile.get("rotation_angle", 0.0)),
-			"spin_speed": float(projectile.get("spin_speed", 0.0)),
-			"hit_enemy_uids": Array(projectile.get("hit_enemy_uids", [])).duplicate(true),
-			"owner_hero_index": int(projectile.get("owner_hero_index", -1)),
-			"backstab_multiplier": float(projectile.get("backstab_multiplier", 1.0)),
-			"combo_damage_scale": float(projectile.get("combo_damage_scale", 1.5)),
-			"bounce_explosion_min_bounces": int(projectile.get("bounce_explosion_min_bounces", 0)),
-			"bounce_explosion_impact_radius": float(projectile.get("bounce_explosion_impact_radius", 0.0)),
-			"bounce_explosion_damage_multiplier": float(projectile.get("bounce_explosion_damage_multiplier", 1.0)),
-			"bounce_explosion_triggered": bool(projectile.get("bounce_explosion_triggered", false)),
-			"combo_flatfooted_level_2_threshold": int(projectile.get("combo_flatfooted_level_2_threshold", 2)),
-			"combo_flatfooted_level_3_threshold": int(projectile.get("combo_flatfooted_level_3_threshold", 3)),
-			"combo_flatfooted_duration_level_2": float(projectile.get("combo_flatfooted_duration_level_2", 2.2)),
-			"combo_flatfooted_duration_level_3": float(projectile.get("combo_flatfooted_duration_level_3", 3.8)),
-			"combo_flatfooted_damage_taken_multiplier_level_2": float(projectile.get("combo_flatfooted_damage_taken_multiplier_level_2", 1.28)),
-			"combo_flatfooted_damage_taken_multiplier_level_3": float(projectile.get("combo_flatfooted_damage_taken_multiplier_level_3", 1.5)),
-			"combo_flatfooted_move_multiplier": float(projectile.get("combo_flatfooted_move_multiplier", 1.0)),
-			"combo_flatfooted_attack_speed_multiplier": float(projectile.get("combo_flatfooted_attack_speed_multiplier", 1.0)),
-			"combo_gain": int(projectile.get("combo_gain", 0)),
-		})
+		}
+		if include_rooms:
+			hero_state.merge({
+				"pack_modules": hero.pack_modules.duplicate(true),
+				"inventory_items": hero.inventory_items.duplicate(true),
+				"applied_poisons": hero.applied_poisons.duplicate(true),
+				"hand_cards": hero.hand_cards.duplicate(true),
+				"learned_spells": hero.learned_spells.duplicate(),
+				"slotted_spells": hero.slotted_spells.duplicate(),
+				"active_floor_spells": hero.active_floor_spells.duplicate(),
+				"pending_item_fusions": hero.pending_item_fusions.duplicate(true),
+			})
+		hero_states.append(hero_state)
 	var enemy_states: Array = []
 	for enemy in game.enemies:
 		if not is_instance_valid(enemy):
@@ -190,17 +151,11 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 			"converted_time_left": enemy.converted_time_left,
 			"death_started": enemy.death_started,
 		})
-	return {
-		"rooms": game.rooms.duplicate(true),
-		"projectiles": projectile_states,
+	var snapshot: Dictionary = {
+		"room_visual_states": room_visual_states,
 		"floating_resource_texts": game.floating_resource_texts.duplicate(true),
 		"pending_enemy_spawns": game.pending_enemy_spawns.duplicate(true),
 		"pending_room_constructions": game.pending_room_constructions.duplicate(true),
-		"global_item_card_states": game.global_item_card_states.duplicate(true),
-		"global_item_passive_timers": game.global_item_passive_timers.duplicate(true),
-		"hero_owner_peer_ids": game.hero_owner_peer_ids.duplicate(true),
-		"rejoin_claimable_hero_indices": game.rejoin_claimable_hero_indices.duplicate(true),
-		"lobby_peer_ready": game.lobby_peer_ready.duplicate(true),
 		"lobby_game_started": game.lobby_game_started,
 		"heroes": hero_states,
 		"enemies": enemy_states,
@@ -216,9 +171,6 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 		"industry": game.industry,
 		"science": game.science,
 		"research_reroll_count": game.research_reroll_count,
-		"minor_module_levels": game.minor_module_levels.duplicate(true),
-		"major_module_levels": game.major_module_levels.duplicate(true),
-		"active_research": game.active_research.duplicate(true),
 		"opened_rooms": game.opened_rooms,
 		"wave_index": game.wave_index,
 		"doors_opened": game.doors_opened,
@@ -233,17 +185,88 @@ static func build_network_snapshot(game: Node) -> Dictionary:
 		"next_enemy_uid": game.next_enemy_uid,
 		"next_item_uid": game.next_item_uid,
 	}
+	if include_rooms:
+		snapshot["rooms"] = game.rooms.duplicate(true)
+		snapshot["global_item_card_states"] = game.global_item_card_states.duplicate(true)
+		snapshot["global_item_passive_timers"] = game.global_item_passive_timers.duplicate(true)
+		snapshot["hero_owner_peer_ids"] = game.hero_owner_peer_ids.duplicate(true)
+		snapshot["rejoin_claimable_hero_indices"] = game.rejoin_claimable_hero_indices.duplicate(true)
+		snapshot["lobby_peer_ready"] = game.lobby_peer_ready.duplicate(true)
+		snapshot["minor_module_levels"] = game.minor_module_levels.duplicate(true)
+		snapshot["major_module_levels"] = game.major_module_levels.duplicate(true)
+		snapshot["active_research"] = game.active_research.duplicate(true)
+	return snapshot
 
 static func receive_network_snapshot(game: Node, snapshot: Dictionary) -> void:
 	if game.authoritative_simulation_active():
 		return
 	apply_network_snapshot(game, snapshot)
 
+static func receive_network_full_snapshot(game: Node, snapshot: Dictionary) -> void:
+	if game.authoritative_simulation_active():
+		return
+	apply_network_snapshot(game, snapshot)
+
+static func network_projectile_visual_state(projectile: Dictionary) -> Dictionary:
+	return {
+		"kind": projectile.get("kind", "laser"),
+		"position": projectile.get("position", Vector2.ZERO),
+		"previous": projectile.get("previous", Vector2.ZERO),
+		"target_position": projectile.get("target_position", Vector2.ZERO),
+		"speed": float(projectile.get("speed", 950.0)),
+		"color": projectile.get("color", Color.WHITE),
+		"width": float(projectile.get("width", 4.0)),
+		"network_visual_only": true,
+	}
+
+static func receive_network_projectile_visual(game: Node, projectile: Dictionary) -> void:
+	if game.authoritative_simulation_active():
+		return
+	game.projectiles.append(projectile.duplicate(true))
+
+static func receive_lobby_ready_confirmation(game: Node, ready: bool) -> void:
+	if game.authoritative_simulation_active():
+		return
+	game.lobby_peer_ready[game.local_peer_id()] = ready
+	game.update_hud()
+
+static func room_layout_signature(rooms: Dictionary) -> String:
+	var tokens: Array[String] = []
+	for room_coord_variant in rooms.keys():
+		var room_coord: Vector2i = Vector2i(room_coord_variant)
+		var room: Dictionary = Dictionary(rooms[room_coord_variant])
+		tokens.append("%s|%s|%s|%s|%s" % [room_coord, room.get("world_center", Vector2.ZERO), room.get("room_scene_path", ""), room.get("door_dirs", []), room.get("door_positions_normalized", {})])
+	tokens.sort()
+	return ";".join(tokens)
+
 static func apply_network_snapshot(game: Node, snapshot: Dictionary) -> void:
 	var previous_lobby_started: bool = game.lobby_game_started
-	game.rooms = Dictionary(snapshot.get("rooms", {})).duplicate(true)
-	game.normalize_runtime_rooms_slot_capacity()
-	game.projectiles = Array(snapshot.get("projectiles", [])).duplicate(true)
+	if snapshot.has("rooms"):
+		var synchronized_rooms: Dictionary = Dictionary(snapshot["rooms"]).duplicate(true)
+		var next_layout_signature: String = room_layout_signature(synchronized_rooms)
+		var layout_changed: bool = next_layout_signature != game.network_room_layout_signature
+		game.rooms = synchronized_rooms
+		game.normalize_runtime_rooms_slot_capacity()
+		if layout_changed:
+			game.network_room_layout_signature = next_layout_signature
+			game.invalidate_static_dungeon_layer()
+	var room_visual_states: Dictionary = Dictionary(snapshot.get("room_visual_states", {}))
+	if not room_visual_states.is_empty():
+		for room_coord_variant in room_visual_states.keys():
+			var room_coord: Vector2i = Vector2i(room_coord_variant)
+			if not game.rooms.has(room_coord):
+				continue
+			var visual_state: Dictionary = Dictionary(room_visual_states[room_coord_variant])
+			var local_room: Dictionary = game.rooms[room_coord]
+			var visibility_changed: bool = bool(visual_state.get("opened", false)) != bool(local_room.get("opened", false)) or bool(visual_state.get("scry_revealed", false)) != bool(local_room.get("scry_revealed", false))
+			local_room["opened"] = bool(visual_state.get("opened", local_room.get("opened", false)))
+			local_room["scry_revealed"] = bool(visual_state.get("scry_revealed", local_room.get("scry_revealed", false)))
+			local_room["lit"] = bool(visual_state.get("lit", local_room.get("lit", false)))
+			if visibility_changed:
+				game.sync_static_room_instance(room_coord)
+		game.refresh_static_visible_room_states()
+	if snapshot.has("projectiles"):
+		game.projectiles = Array(snapshot["projectiles"]).duplicate(true)
 	game.floating_resource_texts = Array(snapshot.get("floating_resource_texts", [])).duplicate(true)
 	game.pending_wave_spawn_builds.clear()
 	game.pending_enemy_spawns = Array(snapshot.get("pending_enemy_spawns", [])).duplicate(true)
@@ -283,7 +306,10 @@ static func apply_network_snapshot(game: Node, snapshot: Dictionary) -> void:
 	game.door_wave_spawns_incoming = bool(snapshot.get("door_wave_spawns_incoming", false))
 	game.next_enemy_uid = int(snapshot.get("next_enemy_uid", game.next_enemy_uid))
 	game.next_item_uid = int(snapshot.get("next_item_uid", game.next_item_uid))
-	apply_hero_snapshots(game, Array(snapshot.get("heroes", [])))
+	var hero_states: Array = Array(snapshot.get("heroes", []))
+	if not hero_states.is_empty() and game.heroes.is_empty():
+		game.spawn_heroes()
+	apply_hero_snapshots(game, hero_states)
 	apply_enemy_snapshots(game, Array(snapshot.get("enemies", [])))
 	var crystal_holder_index: int = int(snapshot.get("crystal_holder_index", -1))
 	game.crystal_holder = game.heroes[crystal_holder_index] if crystal_holder_index >= 0 and crystal_holder_index < game.heroes.size() else null
@@ -297,9 +323,12 @@ static func apply_network_snapshot(game: Node, snapshot: Dictionary) -> void:
 		game.hero_select_overlay.visible = false
 		if game.hero_select_toggle_button != null:
 			game.hero_select_toggle_button.text = "Lobby"
+	elif not game.lobby_game_started and previous_lobby_started:
+		game.set_hero_select_overlay_visible(true)
 	process_client_pending_local_requests(game)
 	game.refresh_camera_bounds()
 	game.update_hud()
+	game.update_network_ui()
 	game.queue_redraw()
 
 static func process_client_pending_local_requests(game: Node) -> void:
@@ -323,7 +352,8 @@ static func apply_hero_snapshots(game: Node, hero_states: Array) -> void:
 			continue
 		var hero_class_id: String = String(hero_state.get("hero_class_id", hero.hero_class_id))
 		var hero_name: String = String(hero_state.get("hero_name", hero.hero_name))
-		game.apply_hero_class_to_node(hero, hero_class_id, hero_name)
+		if hero.hero_class_id != hero_class_id or hero.hero_name != hero_name:
+			game.apply_hero_class_to_node(hero, hero_class_id, hero_name)
 		game.hero_profiles[hero_index]["class_id"] = hero_class_id
 		game.hero_profiles[hero_index]["name"] = hero_name
 		game.hero_profiles[hero_index]["dead"] = bool(hero_state.get("dead_started", false))
@@ -403,23 +433,31 @@ static func apply_hero_snapshots(game: Node, hero_states: Array) -> void:
 		if bool(hero_state.get("dead_started", false)):
 			hero.begin_death()
 		hero.cooldown_left = float(hero_state.get("cooldown_left", hero.cooldown_left))
-		hero.current_room = hero_state.get("current_room", hero.current_room)
-		hero.pending_room = hero_state.get("pending_room", hero.pending_room)
-		hero.pending_open_room = hero_state.get("pending_open_room", hero.pending_open_room)
-		hero.pending_open_origin_room = hero_state.get("pending_open_origin_room", hero.pending_open_origin_room)
-		hero.player_command_locked = bool(hero_state.get("player_command_locked", hero.player_command_locked))
+		var predicting_local_movement: bool = not game.authoritative_simulation_active() and game.can_local_control_hero_index(hero_index) and (not hero.move_steps.is_empty() or hero.pending_room != game.HERO_INVALID_ROOM)
+		if not predicting_local_movement:
+			hero.current_room = hero_state.get("current_room", hero.current_room)
+			hero.pending_room = hero_state.get("pending_room", hero.pending_room)
+			hero.pending_open_room = hero_state.get("pending_open_room", hero.pending_open_room)
+			hero.pending_open_origin_room = hero_state.get("pending_open_origin_room", hero.pending_open_origin_room)
+			hero.player_command_locked = bool(hero_state.get("player_command_locked", hero.player_command_locked))
 		hero.carrying_crystal = bool(hero_state.get("carrying_crystal", false))
-		hero.attack_effect_left = float(hero_state.get("attack_effect_left", 0.0))
-		hero.attack_direction = Vector2(hero_state.get("attack_direction", Vector2.RIGHT))
-		hero.attack_style = String(hero_state.get("attack_style", ""))
+		var host_attack_effect_left: float = float(hero_state.get("attack_effect_left", 0.0))
+		if host_attack_effect_left > hero.attack_effect_left + 0.02:
+			hero.attack_effect_left = host_attack_effect_left
+			hero.attack_direction = Vector2(hero_state.get("attack_direction", Vector2.RIGHT))
+			hero.attack_style = String(hero_state.get("attack_style", ""))
 		hero.preferred_attack_style = String(hero_state.get("preferred_attack_style", hero.preferred_attack_style))
 		hero.combat_move_speed_multiplier = float(hero_state.get("combat_multiplier", hero.combat_move_speed_multiplier))
 		hero.set_calm_movement_multiplier(float(hero_state.get("calm_multiplier", hero.calm_move_speed_multiplier)))
 		hero.set_combat_movement_mode(bool(hero_state.get("combat_mode", false)))
 		hero.light_cantrip_active = bool(hero_state.get("light_cantrip_active", hero.light_cantrip_active))
-		hero.global_position = Vector2(hero_state.get("position", hero.global_position))
-		hero.destination = Vector2(hero_state.get("destination", hero.destination))
-		hero.move_steps.clear()
+		if not predicting_local_movement:
+			var host_position: Vector2 = Vector2(hero_state.get("position", hero.global_position))
+			if not hero.network_position_initialized or hero.global_position.distance_to(host_position) > 140.0:
+				hero.global_position = host_position
+				hero.network_position_initialized = true
+			hero.destination = Vector2(hero_state.get("destination", host_position))
+			hero.move_steps.clear()
 		hero.queue_redraw()
 
 static func apply_enemy_snapshots(game: Node, enemy_states: Array) -> void:
@@ -449,8 +487,11 @@ static func apply_enemy_snapshots(game: Node, enemy_states: Array) -> void:
 		enemy.previous_room = enemy_state.get("previous_room", enemy.previous_room)
 		enemy.next_room = enemy_state.get("next_room", enemy.next_room)
 		enemy.moving_between_rooms = bool(enemy_state.get("moving_between_rooms", false))
-		enemy.global_position = Vector2(enemy_state.get("position", enemy.global_position))
-		enemy.destination = Vector2(enemy_state.get("destination", enemy.destination))
+		var host_position: Vector2 = Vector2(enemy_state.get("position", enemy.global_position))
+		if not enemy.network_position_initialized or enemy.global_position.distance_to(host_position) > 140.0:
+			enemy.global_position = host_position
+			enemy.network_position_initialized = true
+		enemy.destination = Vector2(enemy_state.get("destination", host_position))
 		enemy.move_steps.clear()
 		if bool(enemy_state.get("death_started", false)):
 			enemy.begin_death()
@@ -485,7 +526,15 @@ static func server_request_world_command(game: Node, hero_index: int, world_posi
 	if not peer_can_control_hero(game, sender_peer_id, hero_index):
 		return
 	game.execute_world_command_for_hero(hero_index, world_position, false)
-	broadcast_network_snapshot(game)
+	broadcast_network_snapshot(game, false)
+
+static func server_request_network_full_snapshot(game: Node) -> void:
+	if not game.multiplayer.is_server():
+		return
+	var sender_peer_id: int = game.multiplayer.get_remote_sender_id()
+	if sender_peer_id <= 0:
+		return
+	game.receive_network_full_snapshot.rpc_id(sender_peer_id, build_network_snapshot(game, true))
 
 static func server_request_room_loot(game: Node, hero_index: int, room_coord: Vector2i) -> void:
 	if not game.multiplayer.is_server():
@@ -493,8 +542,8 @@ static func server_request_room_loot(game: Node, hero_index: int, room_coord: Ve
 	var sender_peer_id: int = game.multiplayer.get_remote_sender_id()
 	if not peer_can_control_hero(game, sender_peer_id, hero_index):
 		return
-	game.request_room_loot_for_hero(hero_index, room_coord)
-	broadcast_network_snapshot(game)
+	game.request_room_loot_for_hero(hero_index, room_coord, false)
+	broadcast_network_snapshot(game, false)
 
 static func server_request_room_light(game: Node, hero_index: int, room_coord: Vector2i) -> void:
 	if not game.multiplayer.is_server():
@@ -565,6 +614,7 @@ static func server_request_lobby_ready(game: Node, ready: bool) -> void:
 	var sender_peer_id: int = game.multiplayer.get_remote_sender_id()
 	game.lobby_peer_ready[sender_peer_id] = ready
 	game.update_hud()
+	game.receive_lobby_ready_confirmation.rpc_id(sender_peer_id, ready)
 	broadcast_network_snapshot(game)
 
 static func server_request_play_card(game: Node, hero_index: int, card_uid: int, target_world_position: Vector2) -> void:

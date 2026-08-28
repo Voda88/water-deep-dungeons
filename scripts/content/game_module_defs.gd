@@ -306,6 +306,36 @@ static func minor_module_projectile_speed(module_type: String, base_projectile_s
 		_:
 			return base_projectile_speed + 80.0
 
+static func minor_module_projectile_curve_offset(module_type: String) -> float:
+	match canonical_minor_module_type(module_type):
+		MINOR_MODULE_ARCANA_TURRET:
+			return 0.18
+		_:
+			return 0.0
+
+static func minor_module_targeting_definition(module_type: String) -> Dictionary:
+	match canonical_minor_module_type(module_type):
+		MINOR_MODULE_BLIGHT_GAS:
+			return {"strategy": "all", "range": 0.0}
+		MINOR_MODULE_ARCANA_TURRET, MINOR_MODULE_CONVERSION:
+			return {"strategy": "strongest", "range": 620.0}
+		MINOR_MODULE_BOUNTY_INDUSTRY, MINOR_MODULE_BOUNTY_FOOD, MINOR_MODULE_BOUNTY_SCIENCE:
+			return {"strategy": "none", "range": 0.0}
+		_:
+			return {"strategy": "nearest", "range": 620.0}
+
+static func minor_module_attack_definition(module_type: String, base_projectile_speed: float) -> Dictionary:
+	var canonical_type: String = canonical_minor_module_type(module_type)
+	var delivery: String = "laser" if canonical_type == MINOR_MODULE_ARCANA_TURRET else "arrow"
+	return {
+		"delivery": delivery,
+		"projectile_kind": "arcana_bolt" if canonical_type == MINOR_MODULE_ARCANA_TURRET else "arrow",
+		"projectile_color": minor_module_color(canonical_type),
+		"projectile_width": minor_module_projectile_width(canonical_type),
+		"projectile_speed": minor_module_projectile_speed(canonical_type, base_projectile_speed),
+		"projectile_curve_offset": minor_module_projectile_curve_offset(canonical_type),
+	}
+
 static func minor_module_bounty_resource_id(module_type: String) -> String:
 	match canonical_minor_module_type(module_type):
 		MINOR_MODULE_BOUNTY_INDUSTRY:
